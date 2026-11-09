@@ -174,3 +174,7 @@ Small, optional additions the build needed:
 
 Scale is applied to a drawing's parts rather than its group, so rings, misregistration and boil
 stay in canvas units at any size. The types live in `packages/scene/src/types.ts`.
+
+## License
+
+All rights reserved. See [LICENSE](LICENSE).

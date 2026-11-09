@@ -1,6 +1,7 @@
 {
   "name": "scena",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "description": "Illustrated link-in-bio: scene format, renderer and the bring-your-own-drawings studio.",
   "packageManager": "pnpm@10.13.1",

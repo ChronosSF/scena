@@ -1,0 +1,8 @@
+# Deterministic line endings: the renderer snapshot and the parity test compare files byte for byte.
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.webp binary
+*.jpg binary
+*.woff2 binary

@@ -44,7 +44,11 @@ export function lintScene(scene: SceneDocument): LintReport {
   for (const l of layers) {
     if (Array.isArray(l.parts)) for (const p of l.parts) for (const id of partAssets(p)) nodes += assetNodeCount(assets[id], scene.canvas);
     else if (l.asset) nodes += assetNodeCount(assets[l.asset], scene.canvas);
+    if (l.assetDark) nodes += assetNodeCount(assets[l.assetDark], scene.canvas);
   }
+  // a recoloured vector lettering is drawn twice: the ink and its riso shadow
+  const lt = scene.header?.lettering, lta = lt ? assets[lt.asset] : undefined;
+  if (lta) nodes += assetNodeCount(lta) * (lta.kind === "svg-inline" && lta.colorRoles?.length ? 2 : 1);
   checks.push({ id: "nodes", level: level(nodes, LIMITS.nodes), label: "Drawing complexity",
     detail: `${nodes} of ${LIMITS.nodes} shapes${nodes > LIMITS.nodes ? ". Simplify paths or merge shapes before export." : ""}` });
 
@@ -96,6 +100,15 @@ export function lintScene(scene: SceneDocument): LintReport {
   // 7. frame-flip animation (ADR 0002)
   const frames = lintFrames(scene);
   if (frames) checks.push(frames);
+
+  // 8. uploaded backgrounds and the lettered name (ADR 0003): the heaviest things a page carries
+  const bg = lintBackgrounds(scene);
+  if (bg) checks.push(bg);
+  if (lt) {
+    const bytes = lta?.bytes || 0;
+    checks.push({ id: "lettering", level: bytes > LIMITS.letteringBytes ? "error" : bytes > LIMITS.letteringBytesSoft ? "warn" : "ok", label: "Lettered name",
+      detail: `${kb(bytes)} of ${kb(LIMITS.letteringBytes)}${bytes > LIMITS.letteringBytesSoft ? `; keep it under ${kb(LIMITS.letteringBytesSoft)} (simplify the paths, or a smaller PNG)` : ""}` });
+  }
 
   // 8. boil strategy (section 8.2)
   const b = scene.effects?.boil;
@@ -155,6 +168,32 @@ function lintFrames(scene: SceneDocument): LintCheck | null {
   return { id: "frames", level: errors.length ? "error" : warns.length ? "warn" : "ok", label: "Frame animation", detail };
 }
 
+const isUploadedBackground = (scene: SceneDocument, l: Layer) =>
+  l.type === "background" && (Array.isArray(l.parts) || (!!l.asset && scene.assets?.[l.asset]?.kind !== "procedural"));
+
+/** Byte budget per uploaded background (its art and its dark variant). */
+function lintBackgrounds(scene: SceneDocument): LintCheck | null {
+  const assets = scene.assets || {};
+  const layers = (scene.layers || []).filter((l) => isUploadedBackground(scene, l));
+  if (!layers.length) return null;
+  const errors: string[] = [], warns: string[] = [];
+  let total = 0;
+  for (const l of layers) {
+    const ids = [...new Set([...(Array.isArray(l.parts) ? l.parts.flatMap(partAssets) : l.asset ? [l.asset] : []), ...(l.assetDark ? [l.assetDark] : [])])];
+    const bytes = ids.reduce((s, id) => s + (assets[id]?.bytes || 0), 0);
+    total += bytes;
+    const name = l.name || l.id;
+    if (bytes > LIMITS.backgroundBytes) errors.push(`${name}: ${kb(bytes)}, the limit is ${kb(LIMITS.backgroundBytes)}`);
+    else if (bytes > LIMITS.backgroundBytesSoft) warns.push(`${name}: ${kb(bytes)}; under ${kb(LIMITS.backgroundBytesSoft)} keeps the page quick`);
+    for (const id of ids) {
+      const a = assets[id];
+      if (a?.kind === "raster" && Math.max(a.width, a.height) > LIMITS.backgroundPx * 1.5) warns.push(`${name}: ${a.width}×${a.height} px is more than a 400-unit board needs at 3x`);
+    }
+  }
+  return { id: "backgrounds", level: errors.length ? "error" : warns.length ? "warn" : "ok", label: "Background",
+    detail: errors.length || warns.length ? [...errors, ...warns].join("; ") : layers.length === 1 ? `${kb(total)} of ${kb(LIMITS.backgroundBytes)}` : `${layers.length} backgrounds, ${kb(total)} in all; up to ${kb(LIMITS.backgroundBytes)} each` };
+}
+
 /** Content checks the studio shows next to the scene lint. */
 export function lintPage(scene: SceneDocument, page: PageDocument): LintCheck[] {
   const checks: LintCheck[] = [];
@@ -166,6 +205,9 @@ export function lintPage(scene: SceneDocument, page: PageDocument): LintCheck[] 
     if (!link || !link.enabled) continue;
     if (!link.url || !link.url.trim()) noUrl.push(link.title || o.name || o.id);
     if (!link.title || !link.title.trim()) noTitle.push(o.name || o.id);
+  }
+  if (scene.header?.lettering && !page.profile?.displayName?.trim()) {
+    checks.push({ id: "name", level: "error", label: "Name", detail: "The name is drawn, but screen readers and the page title still need it typed" });
   }
   if (objects.length) {
     checks.push({ id: "urls", level: noUrl.length ? "warn" : "ok", label: "Links",

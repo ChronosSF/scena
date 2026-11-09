@@ -2,7 +2,7 @@
 // Both validators return a list of readable error strings; an empty list means valid.
 // They take `unknown` because their whole job is to check untrusted JSON.
 
-import { SCHEMA_VERSION, ROLES, KINDS, PART_ROLES, WHENS, STATUSES, LAYER_TYPES, ASSET_KINDS, EFFECTS, LIMITS, FRAMES, FRAME_PLAYS } from "./constants.ts";
+import { SCHEMA_VERSION, ROLES, KINDS, PART_ROLES, WHENS, STATUSES, LAYER_TYPES, ASSET_KINDS, EFFECTS, LIMITS, FRAMES, FRAME_PLAYS, BACKGROUND_FITS, TYPEFACES, typeface } from "./constants.ts";
 import { isColor } from "./color.ts";
 import { fragmentProblem, isSafeRasterUrl } from "./safety.ts";
 import type { DocumentKind, PageDocument, SceneDocument } from "./types.ts";
@@ -119,8 +119,11 @@ export function validateScene(doc: unknown): string[] {
     }
     v.need(paletteIds.has(t.defaultPalette), "theme.defaultPalette", `"${t.defaultPalette}" is not one of the palettes`);
     if (v.obj(t.font, "theme.font")) {
-      if (v.str(t.font.family, "theme.font.family")) v.need(/^[\w \-]+$/.test(t.font.family), "theme.font.family", "only letters, digits, spaces and hyphens");
+      // the renderer builds a font URL from the family, so it has to be one of the curated faces
+      const face = typeface(t.font.family);
+      if (v.str(t.font.family, "theme.font.family")) v.need(!!face, "theme.font.family", `"${t.font.family}" is not one of the curated typefaces: ${TYPEFACES.map((f) => f.family).join(", ")}`);
       v.need(Array.isArray(t.font.weights) && t.font.weights.every((w: unknown) => isNum(w) && w >= 100 && w <= 900), "theme.font.weights", "expected weights between 100 and 900");
+      if (face && Array.isArray(t.font.weights)) v.need(t.font.weights.every((w: unknown) => face.weights.includes(w as number)), "theme.font.weights", `${face.family} comes in ${face.weights.join(", ")}`);
       v.str(t.font.fallback, "theme.font.fallback", { empty: true });
       if (isStr(t.font.fallback)) v.need(/^[\w \-",']*$/.test(t.font.fallback), "theme.font.fallback", "contains characters that are not allowed in a font list");
     }
@@ -206,6 +209,7 @@ export function validateScene(doc: unknown): string[] {
         if (l.transform.scale !== undefined) v.num(l.transform.scale, `${path}.transform.scale`, { min: 0.01, max: 100 });
       }
       if (l.opacity !== undefined) v.num(l.opacity, `${path}.opacity`, { min: 0, max: 1 });
+      validateBackground(v, l, path, doc.assets);
       if (l.effects !== undefined) v.need(Array.isArray(l.effects) && l.effects.every((e: Loose) => EFFECTS.includes(e)), `${path}.effects`, `allowed: ${EFFECTS.join(", ")}`);
       const hasParts = Array.isArray(l.parts);
       if (l.type === "object") {
@@ -249,7 +253,34 @@ export function validateScene(doc: unknown): string[] {
     v.need(isBool(doc.editable.allowDisableSlots), "editable.allowDisableSlots", "expected true or false");
   }
   validateCopy(v, doc.copy);
+  if (isObj(doc.editable) && doc.editable.font !== undefined) v.need(isBool(doc.editable.font), "editable.font", "expected true or false");
+  if (doc.header !== undefined && v.obj(doc.header, "header") && doc.header.lettering !== undefined && v.obj(doc.header.lettering, "header.lettering")) {
+    const lt = doc.header.lettering;
+    if (v.str(lt.asset, "header.lettering.asset")) {
+      const a = isObj(doc.assets) ? doc.assets[lt.asset] : undefined;
+      if (v.need(isObj(a), "header.lettering.asset", `no asset "${lt.asset}"`)) v.need(a.kind === "svg-inline" || a.kind === "raster", "header.lettering.asset", "lettering is an SVG or a PNG/WebP");
+    }
+    if (lt.maxWidth !== undefined) v.num(lt.maxWidth, "header.lettering.maxWidth", { min: 20, max: 100 });
+    if (lt.tilt !== undefined) v.need(isBool(lt.tilt), "header.lettering.tilt", "expected true or false");
+  }
   return errors;
+}
+
+/** Background-only fields; backgrounds never boil, lift, ring or take taps. */
+function validateBackground(v: Checker, l: Loose, path: string, assets: Loose): void {
+  const bg = l.type === "background";
+  for (const k of ["fit", "clip", "assetDark"]) if (l[k] !== undefined && !bg) v.need(false, `${path}.${k}`, "only background layers have this");
+  if (!bg) return;
+  if (l.fit !== undefined) v.oneOf(l.fit, BACKGROUND_FITS, `${path}.fit`);
+  if (l.clip !== undefined) v.need(isBool(l.clip), `${path}.clip`, "expected true or false");
+  if (l.effects !== undefined) v.need(Array.isArray(l.effects) && l.effects.length === 0, `${path}.effects`, "backgrounds never boil, lift or ring");
+  v.need(l.hotspot === undefined, `${path}.hotspot`, "backgrounds take no taps");
+  if (l.assetDark !== undefined && v.str(l.assetDark, `${path}.assetDark`)) {
+    const a = isObj(assets) ? assets[l.assetDark] : undefined, base = isObj(assets) && isStr(l.asset) ? assets[l.asset] : undefined;
+    if (!v.need(isObj(a), `${path}.assetDark`, `no asset "${l.assetDark}"`)) return;
+    v.need(isStr(l.asset) && !Array.isArray(l.parts), `${path}.assetDark`, "a dark variant needs a single-asset background");
+    if (isObj(base)) v.need((a.kind === "raster") === (base.kind === "raster") && a.kind !== "procedural", `${path}.assetDark`, "the dark variant must be the same kind of art as the background");
+  }
 }
 
 /** Frame-flip fields of one part. Returns the part's timing key when it is animated. */

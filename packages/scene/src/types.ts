@@ -75,6 +75,8 @@ export type Hotspot =
 
 export type Effect = "boil" | "lift" | "ring";
 export type LayerType = "background" | "decor" | "foreground" | "object";
+/** How an uploaded background meets the board: "cover" fills it (cropping), "contain" shows all of it. */
+export type BackgroundFit = "cover" | "contain";
 
 interface LayerBase {
   id: string;
@@ -87,6 +89,18 @@ interface LayerBase {
   asset?: string;
   /** Multi-part art. Required on objects; EXT: also allowed on decor. */
   parts?: Part[];
+  /**
+   * EXT, background layers only: fit the art to the board, centred (the mat's box when
+   * `clip` is set, else the canvas). Without `fit`, `transform` places it like a drawing.
+   */
+  fit?: BackgroundFit;
+  /** EXT, background layers only: clip to the mat's rounded shape. */
+  clip?: boolean;
+  /**
+   * EXT, background layers only: a dark-mode variant of `asset` (the same kind). Without one,
+   * a raster background is multiplied onto the dark mat at the palette's fill opacity.
+   */
+  assetDark?: string;
 }
 
 export interface ArtLayer extends LayerBase {
@@ -192,6 +206,16 @@ export interface FontSpec {
   fallback: string;
 }
 
+/** EXT: a hand-lettered name, drawn in place of the typed name. */
+export interface Lettering {
+  /** an svg-inline or raster asset */
+  asset: string;
+  /** largest width as a percentage of the header, 20 to 100; default 85 */
+  maxWidth?: number;
+  /** the header's slight tilt, as on the typed name; default true */
+  tilt?: boolean;
+}
+
 export interface Copy {
   /** Prompt under the drawing ("Tap anything on my desk."). */
   hint?: string;
@@ -222,9 +246,15 @@ export interface SceneDocument {
   /** slot ids */
   fallback: { heading: string; order: string[] };
   assets: Record<string, Asset>;
-  editable: { palettes: "all" | string[]; allowDisableSlots: boolean };
+  /**
+   * `font` (EXT): page owners may pick another face from the curated list (presets, later).
+   * The scene's author always sets theme.font directly.
+   */
+  editable: { palettes: "all" | string[]; allowDisableSlots: boolean; font?: boolean };
   /** EXT: default prompt and drawing label */
   copy?: Copy;
+  /** EXT: the page header as the author designed it: a hand-lettered name. */
+  header?: { lettering?: Lettering };
 }
 
 export interface LinkContent {

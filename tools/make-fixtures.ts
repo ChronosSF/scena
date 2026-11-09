@@ -7,6 +7,7 @@ import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { MUG_FRAMES, mugFile } from "../packages/scenes/scripts/mug-art.ts";
+import { PIA_DOT, PIA_STROKES, PIA_SWASH, PIA_VIEWBOX, deskTopFile, letteringFile } from "../packages/scenes/scripts/board-art.ts";
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures");
 const out = (f: string, data: string | Buffer) => { writeFileSync(join(dir, f), data); console.log("wrote fixtures/" + f); };
@@ -229,3 +230,95 @@ function apng(w: number, h: number, frames: Buffer[], delayMs: number): Buffer {
   return Buffer.concat(parts);
 }
 out("blink-animated.png", apng(FW, FH, blink, 250));
+
+// 8. Board and lettering (ADR 0003): a drawn desk top and a lettered "Pia" in the sentinel
+//    colours, the same "Pia" as a PNG (own colours, like a scan), and a small paper texture.
+out("drawn-desk.svg", deskTopFile());
+out("pia-lettering.svg", letteringFile());
+
+// a deterministic random source, so the fixtures do not change between runs
+let seed = 7;
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+/** A small RGBA canvas with anti-aliased strokes. */
+function canvas(w: number, h: number) {
+  const buf = Buffer.alloc(w * h * 4);
+  const blendAt = (x: number, y: number, [r, g, b]: Rgb, a: number) => {
+    if (a <= 0 || x < 0 || y < 0 || x >= w || y >= h) return;
+    const i = (y * w + x) * 4, da = buf[i + 3]! / 255, oa = a + da * (1 - a);
+    buf[i] = Math.round((r * a + buf[i]! * da * (1 - a)) / oa);
+    buf[i + 1] = Math.round((g * a + buf[i + 1]! * da * (1 - a)) / oa);
+    buf[i + 2] = Math.round((b * a + buf[i + 2]! * da * (1 - a)) / oa);
+    buf[i + 3] = Math.round(oa * 255);
+  };
+  /** A polyline of round-capped segments; each pixel takes the strongest coverage once. */
+  const line = (pts: Pt[], width: number, col: Rgb, alpha = 1) => {
+    const cover = new Map<number, number>();
+    for (let k = 0; k < pts.length - 1; k++) {
+      const [x1, y1] = pts[k]!, [x2, y2] = pts[k + 1]!;
+      const dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy || 1;
+      for (let y = Math.floor(Math.min(y1, y2) - width); y <= Math.ceil(Math.max(y1, y2) + width); y++) {
+        for (let x = Math.floor(Math.min(x1, x2) - width); x <= Math.ceil(Math.max(x1, x2) + width); x++) {
+          const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / len2));
+          const a = Math.max(0, Math.min(1, width / 2 - Math.hypot(x - (x1 + t * dx), y - (y1 + t * dy)) + 0.5));
+          const key = y * w + x;
+          if (a > (cover.get(key) || 0)) cover.set(key, a);
+        }
+      }
+    }
+    for (const [key, a] of cover) blendAt(key % w, Math.floor(key / w), col, a * alpha);
+  };
+  const disc = (cx: number, cy: number, rad: number, col: Rgb) => {
+    for (let y = Math.floor(cy - rad - 1); y <= cy + rad + 1; y++) for (let x = Math.floor(cx - rad - 1); x <= cx + rad + 1; x++) blendAt(x, y, col, Math.min(1, rad + 0.5 - Math.hypot(x - cx, y - cy)));
+  };
+  return { buf, line, disc, blendAt };
+}
+
+/** Points along an absolute "M x y C ..." path, scaled. */
+function samplePath(d: string, k: number, steps = 24): Pt[] {
+  const n = d.match(/-?\d+(\.\d+)?/g)!.map(Number);
+  const pts: Pt[] = [[n[0]! * k, n[1]! * k]];
+  for (let i = 2; i + 5 < n.length; i += 6) {
+    const [x0, y0] = [pts[pts.length - 1]![0] / k, pts[pts.length - 1]![1] / k];
+    const [c1x, c1y, c2x, c2y, x, y] = n.slice(i, i + 6) as [number, number, number, number, number, number];
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps, u = 1 - t;
+      pts.push([(u * u * u * x0 + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * x) * k, (u * u * u * y0 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y) * k]);
+    }
+  }
+  return pts;
+}
+
+// "Pia" as a PNG: dark brush ink with a soft red swash, on transparency, 3x
+{
+  const K = 3, { w, h } = PIA_VIEWBOX;
+  const c = canvas(w * K, h * K);
+  c.line(samplePath(PIA_SWASH, K), 7 * K, [222, 84, 64], 0.85);
+  for (const d of PIA_STROKES) c.line(samplePath(d, K), 9 * K, [38, 30, 26]);
+  c.disc(PIA_DOT.cx * K, PIA_DOT.cy * K, PIA_DOT.r * K, [222, 84, 64]);
+  out("pia-lettering.png", png(w * K, h * K, c.buf));
+}
+
+// a paper texture: warm off-white, soft mottling, fine grain and a few fibres; 600 x 660
+{
+  const PW = 600, PH = 660, cell = 30;
+  const gw = Math.ceil(PW / cell) + 2, gh = Math.ceil(PH / cell) + 2;
+  const grid = Array.from({ length: gw * gh }, () => rand());
+  const smooth = (x: number, y: number) => {
+    const gx = x / cell, gy = y / cell, x0 = Math.floor(gx), y0 = Math.floor(gy), fx = gx - x0, fy = gy - y0;
+    const at = (i: number, j: number) => grid[j * gw + i]!;
+    const top = at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx, bot = at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx;
+    return top * (1 - fy) + bot * fy;
+  };
+  const c = canvas(PW, PH);
+  for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
+    const v = Math.round((smooth(x, y) - 0.5) * 10 + (rand() - 0.5) * 4) & ~1; // quantised, so the PNG stays small
+    const i = (y * PW + x) * 4;
+    c.buf[i] = 243 + v; c.buf[i + 1] = 237 + v; c.buf[i + 2] = 224 + v; c.buf[i + 3] = 255;
+  }
+  for (let f = 0; f < 140; f++) {
+    const x = rand() * PW, y = rand() * PH, a = rand() * Math.PI, len = 8 + rand() * 22, bend = (rand() - 0.5) * 6;
+    c.line([[x, y], [x + Math.cos(a) * len / 2 + bend, y + Math.sin(a) * len / 2 - bend], [x + Math.cos(a) * len, y + Math.sin(a) * len]], 1.1, [198, 186, 160], 0.35);
+  }
+  out("paper-texture.png", png(PW, PH, c.buf));
+}

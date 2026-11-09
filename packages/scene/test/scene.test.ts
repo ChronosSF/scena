@@ -1,7 +1,7 @@
 // Scene model: validation, migration and the budget lint, against the built-in desk.
 import { describe, expect, test } from "vitest";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { contrast, documentKind, lintScene, migrate, parseColor, safeHref, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
+import { contrast, documentKind, lintPage, lintScene, migrate, parseColor, safeHref, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const desk = DESK_SCENE, pia = PIA_PAGE;
@@ -198,5 +198,85 @@ describe("frame-flip animation", () => {
     const nodes = (s: SceneDocument) => Number(lintScene(s).checks.find((c) => c.id === "nodes")!.detail.split(" ")[0]);
     const extra = (desk.assets["cat-lines"]!.nodeCount || 0) + (desk.assets["cat-fills"]!.nodeCount || 0);
     expect(nodes(animatedDesk({ frames: 2 }))).toBe(nodes(desk) + extra);
+  });
+});
+
+describe("board, typeface and lettering (ADR 0003)", () => {
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  const raster = (id: string, bytes = 70) => ({ id, kind: "raster", url: png, width: 600, height: 660, bbox: { x: 0, y: 0, w: 600, h: 660 }, bytes, sha256: "" });
+  function boarded() {
+    const s = clone(desk) as any;
+    s.assets.paper = raster("paper");
+    s.assets["paper-dark"] = raster("paper-dark");
+    s.layers.splice(2, 0, { id: "paper", type: "background", asset: "paper", fit: "cover", clip: true, assetDark: "paper-dark" });
+    s.assets.pia = { ...clone(s.assets["cat-lines"]), id: "pia" };
+    s.header = { lettering: { asset: "pia", maxWidth: 70, tilt: false } };
+    s.editable.font = false;
+    return s;
+  }
+
+  test("backgrounds, lettering and editable.font are additive within version 1", () => {
+    const s = boarded();
+    expect(validateScene(s)).toEqual([]);
+    expect(migrate(s, "scene")).toEqual(s);
+  });
+
+  test("background fields are checked, and backgrounds never boil or take taps", () => {
+    const s = boarded();
+    const bg = s.layers[2];
+    bg.fit = "stretch";
+    bg.clip = "yes";
+    bg.effects = ["boil"];
+    bg.hotspot = { shape: "auto", pad: 10 };
+    s.assets["paper-dark"] = { ...clone(s.assets["cup-lines"]), id: "paper-dark" };
+    s.layers.find((l: any) => l.id === "cup").fit = "cover";
+    const errs = validateScene(s);
+    for (const msg of ['.fit: "stretch" is not one of cover, contain', ".clip: expected true or false", ".effects: backgrounds never boil, lift or ring",
+      ".hotspot: backgrounds take no taps", ".assetDark: the dark variant must be the same kind of art as the background", '("cup").fit: only background layers have this'])
+      expect(errs.some((e) => e.includes(msg)), msg).toBe(true);
+  });
+
+  test("the typeface must be one of the curated faces, in weights it comes in", () => {
+    const s = clone(desk) as any;
+    s.theme.font = { family: "Comic Sans MS", weights: [400], fallback: "cursive" };
+    expect(validateScene(s).some((e) => e.startsWith('theme.font.family: "Comic Sans MS" is not one of the curated typefaces'))).toBe(true);
+    s.theme.font = { family: "Patrick Hand", weights: [400, 800], fallback: "sans-serif" };
+    expect(validateScene(s)).toContain("theme.font.weights: Patrick Hand comes in 400");
+    s.theme.font = { family: "Caveat", weights: [400, 600, 700], fallback: "cursive" };
+    expect(validateScene(s)).toEqual([]);
+    s.editable.font = "sometimes";
+    expect(validateScene(s)).toContain("editable.font: expected true or false");
+  });
+
+  test("lettering needs an SVG or raster asset and a sensible width", () => {
+    const s = boarded();
+    s.header.lettering = { asset: "mat", maxWidth: 5, tilt: "no" };
+    const errs = validateScene(s);
+    expect(errs).toContain("header.lettering.asset: lettering is an SVG or a PNG/WebP");
+    expect(errs).toContain("header.lettering.maxWidth: 5 is below 20");
+    expect(errs).toContain("header.lettering.tilt: expected true or false");
+  });
+
+  test("lint: byte budgets for backgrounds and lettering, and the typed name behind the lettering", () => {
+    const check = (s: SceneDocument, id: string) => lintScene(s).checks.find((c) => c.id === id);
+    expect(check(clone(desk), "backgrounds")).toBeUndefined();
+    expect(check(clone(desk), "lettering")).toBeUndefined();
+    const s = boarded();
+    expect(check(s, "backgrounds")).toMatchObject({ level: "ok", detail: "1 KB of 300 KB" });
+    s.assets.paper.bytes = 200 * 1024;
+    expect(check(s, "backgrounds")!.level).toBe("warn");
+    s.assets.paper.bytes = 290 * 1024; // with the 70 B dark variant: still under 300 KB
+    expect(check(s, "backgrounds")!.level).toBe("warn");
+    s.assets["paper-dark"].bytes = 40 * 1024;
+    expect(check(s, "backgrounds")).toMatchObject({ level: "error", detail: expect.stringContaining("the limit is 300 KB") });
+    expect(check(s, "lettering")!.level).toBe("ok");
+    s.assets.pia.bytes = 90 * 1024;
+    expect(check(s, "lettering")!.level).toBe("warn");
+    s.assets.pia.bytes = 160 * 1024;
+    expect(check(s, "lettering")!.level).toBe("error");
+    const page = clone(pia);
+    page.profile.displayName = " ";
+    expect(lintPage(s, page).find((c) => c.id === "name")).toMatchObject({ level: "error" });
+    expect(lintPage(s, clone(pia)).find((c) => c.id === "name")).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@
 // Screenshots go to tools/out/.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { launch, sleep, type Page } from "./cdp.ts";
@@ -234,6 +235,33 @@ await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "z", code: "KeyZ
 await sleep(300);
 check("removing a frame, and undo brings it back", removed === 3 && (await page.eval<any>(FRAMES_STATE)).counts[0] === 4, { removed });
 
+// ---------------------------------------------------------------- backgrounds (ADR 0003)
+const BOARD = `(() => { const s = sceneStudio.store.getSnapshot(); const proc = (l) => l.type === "background" && l.asset && s.scene.assets[l.asset] && s.scene.assets[l.asset].kind === "procedural";
+  const bgs = s.scene.layers.filter((l) => l.type === "background" && !proc(l)); const a = s.scene.assets["paper-texture"];
+  return { sel: s.sel, bgs: bgs.map((l) => ({ id: l.id, fit: l.fit, clip: l.clip, first: s.scene.layers[0].id === l.id })), surface: s.scene.layers.filter(proc).map((l) => l.id),
+    paper: a && { w: a.width, h: a.height, type: a.url.slice(5, 15), bytes: a.bytes }, inspector: document.getElementById("inspector").getAttribute("aria-label"), errs: sceneStudio.validateScene(s.scene) }; })()`;
+await setFiles("#background-file", [fixture("paper-texture.png")]);
+await sleep(1500);
+let board = await page.eval<any>(BOARD);
+check("a paper texture added as the background replaces the mat: untrimmed, WebP, fitted and clipped", board.bgs[0]?.id === "paper-texture" && board.bgs[0].first && board.bgs[0].fit === "cover" && board.bgs[0].clip === true &&
+  !board.surface.length && board.paper.type === "image/webp" && board.paper.w === 600 && board.paper.h === 660 && board.inspector === "Background settings" && !board.errs.length, board);
+await clickOn('[aria-label="Placement"] input[value="over"] + span');
+board = await page.eval<any>(BOARD);
+check("Over the mat brings the cutting mat back under it, contained", board.surface.length === 2 && board.bgs[0].fit === "contain" && !board.bgs[0].first, board);
+await clickOn('[data-layer-row="teapot-sentinel"] button[aria-haspopup="menu"]');
+await clickOn('[data-ui="menu-use-background"]');
+await sleep(400);
+board = await page.eval<any>(BOARD);
+const teapotBg = board.bgs.some((b: any) => b.id === "teapot-sentinel") && !(await state()).layers.includes("teapot-sentinel:decor");
+await clickOn('[data-ui="use-drawing"]');
+check("Use as background from a drawing's menu, and Use as drawing puts it back", teapotBg && (await state()).layers.includes("teapot-sentinel:decor"), board.bgs);
+await clickOn('[data-ui="samples"]');
+await clickOn('[data-sample-bg="desk-top"]');
+board = await page.eval<any>(BOARD);
+const boardHtml = await page.eval<string>(`document.querySelector("#stage .st-svg svg").innerHTML`);
+check("the drawn desk top sample goes over the mat; both backgrounds draw clipped, without boil", board.bgs.map((b: any) => b.id).join() === "paper-texture,desk-top" &&
+  (boardHtml.match(/<g class="bg" aria-hidden="true" clip-path=/g) || []).length === 2 && !/filter="url\(#ed-b-(paper-texture|desk-top)\)"/.test(boardHtml), board.bgs);
+
 // nothing selected: a press on the empty workspace shows the page settings
 const ws = await page.eval<[number, number]>(`(() => { const r = document.querySelector(".workspace").getBoundingClientRect(); return [r.x + 16, r.y + 120]; })()`);
 await page.click(ws[0], ws[1]);
@@ -251,6 +279,30 @@ await clickOn('[aria-label="Motion"] input[value="off"] + span');
 const motion = await page.eval<any>(`({ doc: sceneStudio.store.getSnapshot().page.motion, stage: document.getElementById("stage").getAttribute("data-motion") })`);
 check("motion set to Off from the page settings", motion.doc === "off" && motion.stage === "off", motion);
 await clickOn('[aria-label="Motion"] input[value="auto"] + span');
+
+// typeface and lettering (ADR 0003)
+await clickOn('input[name="typeface"][value="Patrick Hand"] + .face-card');
+const face = await page.eval<any>(`({ font: sceneStudio.store.getSnapshot().scene.theme.font, css: getComputedStyle(document.querySelector("#stage .bio")).fontFamily })`);
+check("a curated typeface from the page settings reaches the canvas", face.font.family === "Patrick Hand" && face.font.weights.join() === "400" && face.css.startsWith('"Patrick Hand"'), face);
+const LETTERING = `(() => { const s = sceneStudio.store.getSnapshot(); const lt = s.scene.header && s.scene.header.lettering; const a = lt && s.scene.assets[lt.asset];
+  return { kind: a && a.kind, svgs: document.querySelectorAll("#stage .name.lettered .lt").length, shadow: !!document.querySelector("#stage .lt-sh"), sticker: !!document.querySelector("#stage .lettering .sticker"),
+    typed: (document.querySelector("#stage .name .vh") || {}).textContent, layers: s.scene.layers.length, errs: sceneStudio.validateScene(s.scene) }; })()`;
+await setFiles("#lettering-file", [fixture("pia-lettering.svg")]);
+await sleep(1200);
+let lt = await page.eval<any>(LETTERING);
+check("vector lettering replaces the visible name, with its riso shadow; the typed name stays for screen readers", lt.kind === "svg-inline" && lt.svgs === 2 && lt.shadow && lt.typed === "Your Name" && !lt.errs.length, lt);
+await clickOn('[data-ui="remove-lettering"]');
+await setFiles("#lettering-file", [fixture("pia-lettering.png")]);
+await sleep(1200);
+lt = await page.eval<any>(LETTERING);
+check("raster lettering: one copy, on a paper sticker in dark mode, no shadow", lt.kind === "raster" && lt.svgs === 1 && !lt.shadow && lt.sticker, lt);
+await setFiles("#file", [fixture("pia-lettering.svg")]);
+await sleep(1200);
+const layersBefore = (await page.eval<any>(LETTERING)).layers;
+await clickOn('[data-ui="use-lettering"]');
+await sleep(800);
+lt = await page.eval<any>(LETTERING);
+check("Use as name lettering moves a drawing into the header", lt.kind === "svg-inline" && lt.svgs === 2 && lt.layers === layersBefore - 1, { ...lt, layersBefore });
 writeFileSync(join(out, "studio-edit.png"), await page.screenshot());
 
 // preview, and a real tap inside the sandboxed frame
@@ -306,6 +358,31 @@ await setFiles("#import-file", names.filter((n) => n.endsWith(".json")).map((n) 
 await sleep(1200);
 const afterImport = await page.eval<string>(`JSON.stringify({ s: sceneStudio.store.getSnapshot().scene, p: sceneStudio.store.getSnapshot().page })`);
 check("re-import restores scene and page exactly", afterImport === beforeImport, `${afterImport.length} B`);
+check("the round trip carries backgrounds, lettering and the typeface", /"type":"background","name":"Paper texture"/.test(afterImport) && /"lettering":\{"asset"/.test(afterImport) && /"family":"Patrick Hand"/.test(afterImport));
+
+// a realistic export: Pia's desk with the paper texture under it and her lettered name, against the plan's budget
+await clickOn('[data-ui="view-edit"]');
+await clickOn('[data-ui="more"]');
+await clickOn('[data-ui="menu-desk"]');
+await sleep(300);
+await setFiles("#background-file", [fixture("paper-texture.png")]);
+await sleep(1500);
+const wsAt = await page.eval<[number, number]>(`(() => { const r = document.querySelector(".workspace").getBoundingClientRect(); return [r.x + 16, r.y + 120]; })()`);
+await page.click(wsAt[0], wsAt[1]);
+await sleep(300);
+await setFiles("#lettering-file", [fixture("pia-lettering.svg")]);
+await sleep(1200);
+await page.eval(`(() => { window.__dl = {}; const orig = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl[this.download] = fetch(this.href).then((r) => r.text()); else orig.call(this); }; })()`);
+await clickOn('[data-ui="export"]');
+await sleep(400);
+await clickOn('dialog[open] [data-ui="dl-page"]');
+await sleep(300);
+const piaHtml = await page.eval<string>(`(async () => { for (const v of Object.values(window.__dl)) return await v; return ""; })()`);
+await page.eval(`document.querySelector("dialog[open]")?.close()`);
+writeFileSync(join(out, "pia-board-lettering.html"), piaHtml);
+const piaGz = gzipSync(Buffer.from(piaHtml), { level: 9 }).length;
+check("Pia's desk with a paper background and lettering exports within the 60 KB compressed budget", piaGz <= 60 * 1024 && piaHtml.includes("data:image/webp") && piaHtml.includes('class="name lettered"'),
+  { raw: `${(piaHtml.length / 1024).toFixed(1)} KB`, gzip: `${(piaGz / 1024).toFixed(1)} KB` });
 
 // keyboard: Tab reaches the skip link first, and focus is drawn
 await clickOn('[data-ui="view-edit"]');
@@ -319,10 +396,11 @@ const focusRing = await page.eval<any>(`(() => { const a = document.activeElemen
 check("Tab lands on a visible skip link with a focus ring", focusRing.el === "skip" && focusRing.outline !== "none" && focusRing.top >= 0, focusRing);
 
 // the chrome follows the OS; the page keeps its own appearance
+const pageTheme = await page.eval<string | null>(`document.getElementById("stage").getAttribute("data-theme")`);
 await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "dark" }] });
 await sleep(300);
 const dark = await page.eval<any>(`({ chrome: getComputedStyle(document.querySelector(".panel")).backgroundColor, page: document.getElementById("stage").getAttribute("data-theme") })`);
-check("dark chrome, page appearance unchanged", dark.chrome === "rgb(24, 24, 27)" && dark.page === "dark", dark);
+check("dark chrome, page appearance unchanged", dark.chrome === "rgb(24, 24, 27)" && dark.page === pageTheme, { ...dark, before: pageTheme });
 writeFileSync(join(out, "studio-dark.png"), await page.screenshot());
 await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "light" }] });
 

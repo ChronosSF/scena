@@ -32,7 +32,7 @@ pnpm install
 pnpm dev          # the studio with hot reload at http://localhost:5173 (and /demo-desk.html)
 pnpm build        # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm preview      # serve the build at http://localhost:4173
-pnpm test         # 53 tests: renderer snapshots and parity, scene model and lint, studio editing operations, frames
+pnpm test         # 70 tests: renderer snapshots and parity, scene model and lint, studio editing operations, frames, board and lettering
 pnpm typecheck    # every package, the page runtime, the scripts and the tools
 pnpm check        # typecheck + test + build
 
@@ -46,7 +46,7 @@ Other tools, all optional:
 | `pnpm gen` | Rebuilds the page runtime into `packages/renderer/src/runtime.generated.ts` (dev, build, test and typecheck run it first) |
 | `pnpm encode:desk` | Regenerates `desk.scene.json` and `pia.page.json` from the hand-encoding of the original prototype |
 | `pnpm encode:samples` | Regenerates `samples.json`: the frame-animated steaming mug sample |
-| `pnpm fixtures` | Regenerates the test drawings in `fixtures/`, including the mug's three SVG frames and a blinking face as a PNG sequence and as an animated PNG |
+| `pnpm fixtures` | Regenerates the test drawings in `fixtures/`, including the mug's three SVG frames, a blinking face as a PNG sequence and as an animated PNG, a paper texture, a drawn desk top and a lettered "Pia" (SVG and PNG) |
 | `pnpm parity` | Confirms the renderer reproduces the prototype's `demo-desk.html` (apart from the runtime) |
 | `pnpm verify:studio [url]` | Drives the studio in headless Chrome through real mouse, keyboard and file-chooser input. Default target: the build from file://. Run `pnpm build` first |
 | `pnpm verify:runtime` | Checks every branch of the boil control (lite mode, slow device, Save-Data, reduced motion, offscreen, hidden, idle) on the built demo page, and that frames flip, hold frame 1 and pause with it on `demo-frames.html` |
@@ -113,6 +113,10 @@ The preview takes two to four seconds to paint the first time (web font plus the
 - **2:20** Drop `fixtures/steam-mug-1.svg`, `-2` and `-3` together and choose "One drawing with
   3 frames": the mug steams. "Draw it three times; we flip the drawings, like a flipbook." Click
   frame 2 to see the onion skin, then set it to "Once on tap".
+- **2:25** Drop `fixtures/paper-texture.png` on "Add a background": it replaces the cutting mat,
+  clipped to its shape. Then, in the page settings, drop `fixtures/pia-lettering.svg` on "Name
+  lettering": her name is drawn, in the palette's ink with a riso shadow, and screen readers
+  still hear the typed name. Try a typeface: Caveat.
 - **2:30** Preview, phone frame: "This is the exact file we publish." Tap the plant, then the mug.
 - **2:45** Export: one HTML file of about 20 KB with no outside scripts. Then "Open Pia's finished
   desk": "Her whole page is the same format your drawings just became."
@@ -134,7 +138,8 @@ contrast, layout and the reasoning are in [docs/design/studio-ui.md](docs/design
 | Page runtime | 3.1 KB minified, 1.5 KB gzipped | 5 KB |
 | `demo-desk.html` | 23.6 KB raw, 7.3 KB gzipped | 60 KB gzipped |
 | `demo-frames.html` (the desk plus the steaming mug, three frames) | 27.1 KB raw, 8.0 KB gzipped | 60 KB gzipped |
-| Studio build (`dist/index.html`, React and Radix included) | 537 KB raw, 168 KB gzipped | — |
+| Pia's desk with a paper-texture background and her lettered name, exported from the studio | 31.0 KB raw, 12.8 KB gzipped | 60 KB gzipped |
+| Studio build (`dist/index.html`, React and Radix included) | 570 KB raw, 178 KB gzipped | — |
 | Frames: three objects flipping at 6 fps on top of the boil, 1× to 6× CPU | 8 to 30 ms of main thread per second; boil frames unchanged at 16.7 ms ([ADR 0002](docs/adr/0002-frame-animation.md)) | < 16 ms main-thread per frame |
 | Desk lint | 113 of 400 shapes, 5 of 8 clickable, 20 of 24 assets, worst contrast 5.2:1 | 4.5:1 |
 | Boil frame cost, headless Chrome, 375×812 at 3×, software rendering, 1× to 6× CPU slowdown | 16.6–16.7 ms per frame; drawing work 9–10 ms per seed change with per-object filters (11–14 ms with the prototype's single filter) | < 16 ms main-thread per frame |
@@ -160,7 +165,12 @@ Small, optional additions the build needed:
 - `name` on layers, `bbox` on assets and `name` on palettes;
 - a `listLabel` per link (the prototype's list says "Portfolio" while its panel says "Sketchbook");
 - `copy.hint` and `copy.sceneLabel`;
-- art classes `ink`, `stroke-*`, `art-text` and `on-accent` alongside `role-*`.
+- art classes `ink`, `stroke-*`, `art-text` and `on-accent` alongside `role-*`;
+- frame-flip animation on parts: `frames`, `fps`, `play`, `boil`, and `crop` on raster assets
+  ([ADR 0002](docs/adr/0002-frame-animation.md));
+- `fit`, `clip` and `assetDark` on background layers, a curated `theme.font` (validated against
+  `TYPEFACES`), `editable.font`, and `header.lettering` for a hand-lettered name
+  ([ADR 0003](docs/adr/0003-board-type-lettering.md)).
 
 Scale is applied to a drawing's parts rather than its group, so rings, misregistration and boil
 stay in canvas units at any size. The types live in `packages/scene/src/types.ts`.

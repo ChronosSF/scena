@@ -8,7 +8,7 @@ import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
+import { BACKGROUND_SAMPLES, DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import { validateScene, type PageDocument, type Part, type SceneDocument } from "@scena/scene";
 import { renderPage, renderParts, RUNTIME_JS, RUNTIME_SHA256 } from "../src/index.ts";
 import { buildRuntime } from "../scripts/build-runtime.ts";
@@ -16,7 +16,7 @@ import { buildRuntime } from "../scripts/build-runtime.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..", "..", "..");
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
-const desk = DESK_SCENE, pia = PIA_PAGE;
+const desk = DESK_SCENE, pia = PIA_PAGE, PIA = PIA_PAGE;
 const { html } = renderPage(desk, pia, { demo: true });
 const count = (re: RegExp) => (html.match(re) || []).length;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
@@ -335,5 +335,92 @@ describe("frame-flip animation", () => {
   test("scenes without frames get no frame CSS", () => {
     expect(html).not.toContain(".fr{");
     expect(html).not.toContain("--fd");
+  });
+});
+
+describe("board, typeface and lettering (ADR 0003)", () => {
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  const raster = (id: string, w = 600, h = 660) => ({ id, kind: "raster" as const, url: png, width: w, height: h, bbox: { x: 0, y: 0, w, h }, bytes: 70, sha256: "" });
+  const pia = PIA;
+  const letteringSrc = '<path class="stroke-accent2" fill="none" stroke-width="7" stroke-linecap="round" d="M14 106 C 70 99, 140 112, 206 101"/><path class="ink" stroke-width="9" d="M24 96 C 25 72, 22 42, 25 14"/><circle class="role-accent1" cx="99" cy="34" r="6.5"/>';
+
+  /** Replace the mat: the generated mat and grid go, a paper texture fills the mat's shape; vector lettering; Caveat. */
+  function replaced(): SceneDocument {
+    const s = clone(desk);
+    s.layers = s.layers.filter((l) => l.type !== "background");
+    delete s.assets.mat; delete s.assets["grid-24"];
+    s.assets.paper = raster("paper");
+    s.layers.unshift({ id: "paper", type: "background", name: "Paper", asset: "paper", fit: "cover", clip: true });
+    s.assets.pia = { id: "pia", kind: "svg-inline", src: letteringSrc, width: 202, height: 102, bbox: { x: 9, y: 9, w: 202, h: 102 }, bytes: letteringSrc.length, sha256: "", colorRoles: ["line", "accent1", "accent2"], nodeCount: 3 };
+    s.header = { lettering: { asset: "pia" } };
+    s.theme.font = { family: "Caveat", weights: [400, 600, 700], fallback: `"Segoe Print", "Bradley Hand", cursive` };
+    return s;
+  }
+  /** Over the mat: the drawn desk top on the cutting mat, a dark variant for a texture, raster lettering, tilt off. */
+  function over(): SceneDocument {
+    const s = clone(desk);
+    const top = BACKGROUND_SAMPLES[0]!;
+    Object.assign(s.assets, clone(top.assets));
+    s.layers.splice(2, 0, clone(top.layer));
+    s.assets.grain = raster("grain", 400, 400);
+    s.assets["grain-dark"] = raster("grain-dark", 400, 400);
+    s.layers.splice(3, 0, { id: "grain", type: "background", asset: "grain", assetDark: "grain-dark", fit: "contain" });
+    s.assets.sig = raster("sig", 660, 354);
+    s.header = { lettering: { asset: "sig", maxWidth: 60, tilt: false } };
+    return s;
+  }
+  const A = renderPage(replaced(), pia).html, B = renderPage(over(), pia).html;
+
+  test("snapshots: an uploaded background in both placements, lettering in vector and raster", async () => {
+    expect(validateScene(replaced())).toEqual([]);
+    expect(validateScene(over())).toEqual([]);
+    await expect(A).toMatchFileSnapshot("./__snapshots__/board-replace.html");
+    await expect(B).toMatchFileSnapshot("./__snapshots__/board-over.html");
+  });
+
+  test("a fitted background fills the mat's shape, clipped to it, and never boils", () => {
+    // cover: 600 x 660 into the 388 x 428 mat box, centred
+    expect(A).toContain('<clipPath id="bg-clip"><rect x="6" y="6" width="388" height="428" rx="18"/></clipPath>');
+    expect(A).toMatch(/<g class="bg" aria-hidden="true" clip-path="url\(#bg-clip\)"><g transform="translate\(5\.45 6\) scale\(0\.6485\)"><rect class="bg-base" x="0" y="0" width="600" height="660"\/><g class="bgr"><image /);
+    expect(A).not.toContain('<rect class="mat"');
+    expect(A).not.toContain('filter id="b-paper"');
+    // over: the drawn desk top keeps its riso fills offset, on the cutting mat, contained
+    expect(B).toContain('<rect class="mat" x="6" y="6" width="388" height="428" rx="18"/>');
+    expect(B).toMatch(/<g class="bg" aria-hidden="true" clip-path="url\(#bg-clip\)"><g transform="translate\(6 6\.6\) scale\(0\.97\)"><g class="fills" transform="translate\(3 3\)">/);
+    expect(B.indexOf('class="grid"')).toBeLessThan(B.indexOf('class="bg"'));
+    expect(B.indexOf('class="bg"')).toBeLessThan(B.indexOf('data-k="social"'));
+  });
+
+  test("dark mode: a dark variant swaps in; a raster without one is multiplied onto the dark mat", () => {
+    expect(B).toMatch(/<g class="bg" aria-hidden="true"><g class="w-light" transform="[^"]+"><image [^>]+\/><\/g><g class="w-dark" transform="[^"]+"><image /);
+    expect(B).not.toMatch(/class="bg-base"[^]*?href="[^"]*" x="0" y="0" width="400" height="400"/);
+    expect(A).toContain('.bg-base{display:none;fill:var(--mat)}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .bg-base{display:inline}}:root[data-theme="dark"] .bg-base{display:inline}');
+    expect(A).toContain(':root[data-theme="dark"] .bgr{mix-blend-mode:multiply;opacity:var(--fill-op)}');
+  });
+
+  test("vector lettering replaces the visible name, with a riso shadow; the name stays for screen readers", () => {
+    expect(A).toContain('<h1 class="name lettered"><span class="vh">Pia Morandi</span><span class="lettering" aria-hidden="true"><svg class="lt lt-sh" viewBox="9 9 202 102" focusable="false">');
+    expect((A.match(/<svg class="lt/g) || []).length).toBe(2);
+    expect(A).toContain("<title>Pia Morandi, illustrator</title>"); // the typed name and SEO title are untouched
+    expect(A).toContain(".lt-sh{transform:translate(3px,3px);--line:var(--accent1);--accent2:var(--accent1)");
+    expect(A).toContain(".lettering{display:grid;width:min(85%,14.85rem)}");
+    expect(A).toContain(".vh{position:absolute;width:1px;height:1px;");
+    // the panel and the plain list are unchanged
+    expect(A).toContain('<h2 class="links-h" id="links-h">Or skip the desk</h2>');
+  });
+
+  test("raster lettering: one copy on a dark-mode sticker, no shadow; tilt can be turned off", () => {
+    expect(B).toMatch(/<h1 class="name lettered flat"><span class="vh">Pia Morandi<\/span><span class="lettering" aria-hidden="true"><svg class="lt" viewBox="0 0 660 354" focusable="false"><rect class="sticker" [^>]+\/><image /);
+    expect(B).not.toContain("lt-sh\"");
+    expect(B).toContain(".name.flat{transform:none}");
+    expect(B).toContain(".lettering{display:grid;width:min(60%,13.98rem)}");
+  });
+
+  test("a curated typeface: its font link, weights and the name's size factor; Shantell needs nothing", () => {
+    expect(A).toContain('<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&amp;display=swap" rel="stylesheet">');
+    expect(A).toContain('--font:"Caveat", "Segoe Print", "Bradley Hand", cursive');
+    expect(A).toContain("body{font-size-adjust:0.51}.name,.art-text{font-size-adjust:none}.name{font-size:clamp(3.25rem,15vw,4.38rem);font-weight:700}.tag h2,.btn{font-weight:700}.art-text,.stat,.links-h,.links a{font-weight:600}");
+    expect(B).not.toContain("font-size-adjust");
+    expect(html).not.toMatch(/font-size-adjust|\.bg-base|\.lettering|bg-clip/);
   });
 });

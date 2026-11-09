@@ -9,6 +9,8 @@ import { kb } from "../util.ts";
 import { APPEARANCE, SceneNameInput, setAppearance } from "./TopBar.tsx";
 import { IconButton, NumberField, Section, Segmented, SelectField, Switch, TextField } from "./ui.tsx";
 import { FramesSection } from "./FramesSection.tsx";
+import { BackgroundInspector, LetteringSection, TypefaceSection, UseAsSection } from "./BoardSections.tsx";
+import { isBackground } from "../board.ts";
 import { frameCount, frameTiming } from "../frames.ts";
 
 const ROLE_WORD: Record<string, string> = { line: "ink", accent1: "colour 1", accent2: "colour 2" };
@@ -41,9 +43,9 @@ export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
   const { scene, sel } = useStudio();
   const layer = getLayer(scene, sel);
   return (
-    <aside className="panel panel-right" id="inspector" tabIndex={-1} aria-label={layer ? "Drawing settings" : "Page settings"} hidden={props.hidden}
+    <aside className="panel panel-right" id="inspector" tabIndex={-1} aria-label={!layer ? "Page settings" : isBackground(scene, layer) ? "Background settings" : "Drawing settings"} hidden={props.hidden}
       {...(props.tabbed ? { role: "tabpanel", "aria-labelledby": "tab-inspect" } : {})}>
-      {layer ? <LayerInspector key={layer.id} layer={layer} /> : <PageInspector />}
+      {!layer ? <PageInspector /> : isBackground(scene, layer) ? <BackgroundInspector key={layer.id} layer={layer} /> : <LayerInspector key={layer.id} layer={layer} />}
     </aside>
   );
 }
@@ -162,6 +164,8 @@ function LayerInspector({ layer }: { layer: Layer }) {
           )}
         </Section>
       ) : null}
+
+      <UseAsSection layer={layer} />
     </div>
   );
 }
@@ -183,6 +187,9 @@ function PageInspector() {
         <TextField label="Bio" value={page.profile.bio} max={LIMITS.bio} multiline onChange={(v) => store.change(({ page: p }) => { p.profile.bio = v; })} />
         <HandleField handle={page.handle} />
       </Section>
+
+      <LetteringSection />
+      <TypefaceSection />
 
       <Section title="Palette">
         <div className="palettes" role="radiogroup" aria-label="Palette">

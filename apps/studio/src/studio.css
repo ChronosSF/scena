@@ -348,6 +348,26 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 .layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layer-badge { display: inline-flex; align-items: center; gap: 3px; flex: none; height: 18px; padding: 0 5px; border-radius: var(--ui-r-sm); background: var(--ui-accent-soft); color: var(--ui-accent-text); font-size: var(--ui-xs); font-weight: 500; }
 .layer-badge .lucide { width: 11px; height: 11px; }
+.insp-title { padding: 0 6px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.faces { display: grid; gap: 6px; }
+.face { position: relative; display: block; }
+.face input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.face-card { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--ui-line); border-radius: var(--ui-r); background: var(--ui-panel); transition: border-color var(--ui-fast) var(--ui-ease), box-shadow var(--ui-fast) var(--ui-ease); }
+.face:hover .face-card { border-color: var(--ui-control); }
+.face input:checked + .face-card { border-color: var(--ui-accent); box-shadow: 0 0 0 1px var(--ui-accent); }
+.face input:focus-visible + .face-card { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
+.face-sample { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.25; color: var(--ui-text); }
+.face-meta { font-size: var(--ui-xs); line-height: var(--ui-xs-lh); color: var(--ui-text-3); }
+.file-row { display: flex; align-items: center; gap: var(--ui-2); min-height: var(--ui-h-control); margin-bottom: var(--ui-2); font-size: var(--ui-sm); }
+.file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lettering-preview { display: grid; place-items: center; height: 84px; margin-bottom: var(--ui-2); padding: 8px; border-radius: var(--ui-r); background: var(--ui-field); box-shadow: inset 0 0 0 1px var(--ui-line); }
+.lettering-preview .thumb-scope svg { display: block; max-width: 100%; max-height: 68px; width: auto; height: 68px; overflow: visible; }
+.use-as { display: flex; gap: var(--ui-2); flex-wrap: wrap; }
+.layer-note { flex: none; font-size: var(--ui-xs); color: var(--ui-text-3); }
+.bg-group { border-top: 1px solid var(--ui-line); }
+.bg-group.over { background: var(--ui-accent-soft); }
+.bg-add { padding: 0 var(--ui-3) var(--ui-3); }
+.bg-drop { height: 40px; }
 .layer-frames { display: inline-flex; align-items: center; gap: 3px; flex: none; height: 18px; padding: 0 5px; border-radius: var(--ui-r-sm); background: var(--ui-field); box-shadow: inset 0 0 0 1px var(--ui-line); color: var(--ui-text-2); font-size: var(--ui-xs); font-weight: 500; font-variant-numeric: tabular-nums; }
 .layer-frames .lucide { width: 11px; height: 11px; }
 .layer-tools { display: flex; align-items: center; opacity: 0; transition: opacity var(--ui-fast) var(--ui-ease); }

@@ -149,9 +149,17 @@ the preview only, never to the export.
 
   The rows run front to back. Each has a thumbnail rendered by the page renderer, the name, a
   frames badge with the frame count for animated drawings, a Link badge for clickable drawings,
-  and, on hover or selection, a visibility toggle and a menu (forward, back, delete). Rows reorder by dragging; the pointer is captured only after 5 px, so
-  clicks still select. On the keyboard, Alt+Up and Alt+Down reorder, Up and Down move between
-  rows, and Delete removes.
+  and, on hover or selection, a visibility toggle and a menu (forward, back, "Use as
+  background", "Use as name lettering", delete). Rows reorder by dragging; the pointer is
+  captured only after 5 px, so clicks still select. On the keyboard, Alt+Up and Alt+Down reorder,
+  Up and Down move between rows, and Delete removes.
+
+  Under the drawings, a **Background** group ([ADR 0003](../adr/0003-board-type-lettering.md))
+  lists uploaded backgrounds apart, since they sit under every drawing and do not reorder with
+  them. Each row shows "Replaces mat" or "Over mat" and has a menu with "Use as drawing" and
+  Delete. The group ends in a dashed "Add a background" target (choose or drop a paper, a scan,
+  a drawn desk), and the whole group accepts dropped files. The Samples menu has a "Backgrounds"
+  part with the drawn desk top.
 - **Workspace.** A neutral surface with the page floating at fit-to-width. On a desktop, Fit also
   keeps the header and the drawing in view, and never goes above 100%, so PNGs stay sharp.
   - A frame label shows the address and the canvas size.
@@ -170,8 +178,27 @@ the preview only, never to the export.
     with inline validation, and the wording in the plain list.
   - Commissions: status and note, for commission links.
   - Tap area.
-- **Inspector, nothing selected.** The Page: profile, palette swatches, light or dark, motion,
-  canvas surface and size, the words around the drawing, and the keyboard shortcuts.
+  - Use as: "Background" and "Name lettering" buttons.
+- **Inspector, background selected.**
+  - A header: thumbnail, name, and what it is ("Background · WebP · 600×660 · 5 KB").
+  - Background:
+    - Placement, a segmented control: Replace the mat, Over the mat.
+    - Fit, a segmented control: Cover, Contain.
+    - "Clip to the mat's shape", a switch.
+  - Dark mode: a dark variant with its own drop target and Remove. Without a variant, one line
+    says what happens: a raster is multiplied onto the dark mat; a sentinel-painted SVG
+    recolours.
+  - "Use as drawing".
+  - Backgrounds get no handles on the canvas; they are set here.
+- **Inspector, nothing selected.** The Page:
+  - Profile.
+  - Name lettering: a drop target, then a preview on a field-coloured card, the file row with
+    Remove, a width slider and a "Tilt like the typed name" switch.
+  - Typeface: six cards in a radio group. Each card shows the page's name in that face, at its
+    name size, with the face and a two-word note under it. The chosen one gets the accent
+    outline, like a palette chip.
+  - Palette swatches, light or dark, motion, canvas surface and size, the words around the
+    drawing, and the keyboard shortcuts.
 - **Empty state.** A card centred on the empty mat: "Add your first drawing", with Upload and Add
   a sample. It is chrome, so it sits outside the page's CSS and does not scale with the zoom.
 - **Frames** ([ADR 0002](../adr/0002-frame-animation.md)). A collapsible section under Placement.

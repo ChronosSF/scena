@@ -106,7 +106,7 @@ async function planVector(scene: SceneDocument, items: Item[], roles: PartRole[]
   return { kind: "vector", add, replace, rows: outRows, roles: outRoles, added: results.length, notes };
 }
 
-async function mergeFills(fills: SvgInlineAsset, lines: SvgInlineAsset, id: string): Promise<SvgInlineAsset> {
+export async function mergeFills(fills: SvgInlineAsset, lines: SvgInlineAsset, id: string): Promise<SvgInlineAsset> {
   const src = fills.src + lines.src;
   const a = fills.bbox || { x: 0, y: 0, w: fills.width, h: fills.height }, b = lines.bbox || { x: 0, y: 0, w: lines.width, h: lines.height };
   const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y), x1 = Math.max(a.x + a.w, b.x + b.w), y1 = Math.max(a.y + a.h, b.y + b.h);

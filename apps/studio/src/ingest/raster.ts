@@ -215,6 +215,37 @@ export async function ingestRasterFrames(imgs: Img[], o: { ids: string[]; ref?: 
   };
 }
 
+/** WebP where the browser can encode it (much smaller for textures and scans), else PNG. */
+function bestDataUrl(c: HTMLCanvasElement): string {
+  const webp = c.toDataURL("image/webp", 0.82);
+  return webp.startsWith("data:image/webp") ? webp : c.toDataURL("image/png");
+}
+
+export interface BackgroundIngest {
+  asset: RasterAsset;
+  report: { original: string; final: string; format: "WebP" | "PNG"; outBytes: number };
+}
+
+/**
+ * A raster background (ADR 0003): never trimmed (a texture is all "drawing"), scaled down to
+ * what the board needs at 3x, and re-encoded as WebP where the browser can.
+ */
+export async function ingestBackground(bytes: Uint8Array, o: { id: string; name?: string; canvas: { width: number; height: number } }): Promise<BackgroundIngest> {
+  const img = await decodeRaster(bytes, o.name);
+  const k = Math.min(1, (o.canvas.width * LIMITS.backgroundPx) / 400 / img.w, (o.canvas.height * LIMITS.backgroundPx) / 400 / img.h);
+  const ow = Math.max(1, Math.round(img.w * k)), oh = Math.max(1, Math.round(img.h * k));
+  const c = document.createElement("canvas");
+  c.width = ow; c.height = oh;
+  const g = c.getContext("2d")!;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(img.source, 0, 0, ow, oh);
+  const url = bestDataUrl(c);
+  const outBytes = Math.round(((url.length - url.indexOf(",") - 1) * 3) / 4);
+  const asset: RasterAsset = { id: o.id, kind: "raster", url, width: ow, height: oh, bbox: { x: 0, y: 0, w: ow, h: oh }, bytes: outBytes, sha256: await sha256Hex(url), nodeCount: 1 };
+  if (o.name) asset.source = o.name;
+  return { asset, report: { original: `${img.w}×${img.h}`, final: `${ow}×${oh}`, format: url.startsWith("data:image/webp") ? "WebP" : "PNG", outBytes } };
+}
+
 /** Redraws an existing frame into a larger shared box: the same pixels, more transparent margin. */
 export async function padRaster(asset: RasterAsset, crop: RasterCrop, scale: number): Promise<RasterAsset> {
   const img = await loadImage(await (await fetch(asset.url)).blob());

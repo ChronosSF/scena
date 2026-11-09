@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, ChevronRight, Ellipsis, Eye, EyeOff, Film, Link, Shapes, Trash2, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from "react";
+import { ArrowDown, ArrowRight, ArrowUp, ChevronRight, Ellipsis, Eye, EyeOff, Film, ImageUp, Link, PenLine, Shapes, SquareDashed, Trash2, Undo2, Upload } from "lucide-react";
 import { resolvePalette } from "@scena/renderer";
-import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
+import { BACKGROUND_SAMPLES, DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import type { Layer } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
 import { SAMPLES, drawings, isHidden } from "../model.ts";
@@ -11,12 +11,14 @@ import * as actions from "../actions.ts";
 import { usePrefersDark } from "../hooks.ts";
 import { announce } from "../ui.ts";
 import { frameCount } from "../frames.ts";
+import { backgrounds, placementOf } from "../board.ts";
 import { Button, IconButton, Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Popover, PopoverContent, PopoverTrigger, Tip } from "./ui.tsx";
 
 export const openFilePicker = () => document.getElementById("file")?.click();
 
 /** The five desk objects, rendered once with the desk's own palette for the menu. */
 const SAMPLE_THUMBS = SAMPLES.map((s) => ({ s, svg: drawingThumb({ ...DESK_SCENE, assets: s.assets }, PIA_PAGE, s.layer, `menu-${s.key}`) }));
+const BACKGROUND_THUMBS = BACKGROUND_SAMPLES.map((b) => ({ b, svg: drawingThumb({ ...DESK_SCENE, assets: b.assets }, PIA_PAGE, b.layer, `menu-${b.key}`) }));
 
 export function SamplesMenu({ trigger }: { trigger: "button" | "empty" }) {
   return (
@@ -32,6 +34,14 @@ export function SamplesMenu({ trigger }: { trigger: "button" | "empty" }) {
           <MenuItem key={s.key} onSelect={() => actions.addSample(s.key)} data-sample={s.key}>
             <span className="menu-thumb"><span className="stage thumb-scope" dangerouslySetInnerHTML={{ __html: svg }} /></span>
             {s.name}
+          </MenuItem>
+        ))}
+        <MenuSeparator />
+        <MenuLabel>Backgrounds</MenuLabel>
+        {BACKGROUND_THUMBS.map(({ b, svg }) => (
+          <MenuItem key={b.key} onSelect={() => actions.addBackgroundSample(b.key)} data-sample-bg={b.key}>
+            <span className="menu-thumb"><span className="stage thumb-scope" dangerouslySetInnerHTML={{ __html: svg }} /></span>
+            {b.name}
           </MenuItem>
         ))}
       </MenuContent>
@@ -123,11 +133,75 @@ function LayerRow(props: { layer: Layer; index: number; count: number; dragging:
             <MenuItem icon={ArrowUp} onSelect={() => actions.reorder(layer.id, 1)} disabled={index === 0} meta="Alt+↑">Bring forward</MenuItem>
             <MenuItem icon={ArrowDown} onSelect={() => actions.reorder(layer.id, -1)} disabled={index === count - 1} meta="Alt+↓">Send back</MenuItem>
             <MenuSeparator />
+            <MenuItem icon={SquareDashed} onSelect={() => void actions.useAsBackground(layer.id)} data-ui="menu-use-background">Use as background</MenuItem>
+            <MenuItem icon={PenLine} onSelect={() => void actions.useAsLettering(layer.id)} data-ui="menu-use-lettering">Use as name lettering</MenuItem>
+            <MenuSeparator />
             <MenuItem icon={Trash2} onSelect={() => actions.remove(layer.id)} danger meta="Del">Delete</MenuItem>
           </MenuContent>
         </Menu>
       </span>
     </li>
+  );
+}
+
+/** Backgrounds sit under every drawing, so they are listed apart and are not reordered with them. */
+function BackgroundGroup() {
+  const { scene, page, sel, rev } = useStudio();
+  const list = backgrounds(scene);
+  const input = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
+  const theme = page.theme.mode === "auto" ? undefined : page.theme.mode;
+  const thumbs = useMemo(() => list.map((l) => drawingThumb(scene, page, l, `bg-${l.id}`)), [rev]); // documents mutate in place
+  const placement = placementOf(scene);
+  const files = (e: DragEvent) => !!e.dataTransfer?.types?.includes("Files");
+  return (
+    <div className={`bg-group${over ? " over" : ""}`} data-ui="background-group"
+      onDragOver={(e) => { if (files(e)) { e.preventDefault(); setOver(true); } }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { if (!files(e)) return; e.preventDefault(); setOver(false); void actions.addBackgrounds([...e.dataTransfer.files]); }}>
+      <div className="layers-head">
+        <span className="section-title" id="bg-title">Background</span>
+        <span className="count-badge">{list.length || ""}</span>
+      </div>
+      {list.length ? (
+        <ul className="layers" aria-labelledby="bg-title">
+          {list.map((l, i) => {
+            const name = l.name || l.id;
+            const isSel = l.id === sel;
+            return (
+              <li key={l.id} className={`layer${isSel ? " is-sel" : ""}`} data-bg-row={l.id}>
+                <button type="button" className="layer-main" aria-pressed={isSel} onClick={() => store.select(l.id)} data-layer-button={l.id}>
+                  <span className="layer-thumb"><span className="stage thumb-scope" data-theme={theme} dangerouslySetInnerHTML={{ __html: thumbs[i] || "" }} /></span>
+                  <span className="layer-name">{name}</span>
+                  <span className="layer-note">{i === 0 && placement === "replace" ? "Replaces mat" : "Over mat"}</span>
+                </button>
+                <span className="layer-tools">
+                  <Menu>
+                    <Tip label="More">
+                      <MenuTrigger asChild>
+                        <button type="button" className="icon-btn sm" aria-label={`More for ${name}`}><Ellipsis aria-hidden="true" strokeWidth={1.75} /></button>
+                      </MenuTrigger>
+                    </Tip>
+                    <MenuContent align="end">
+                      <MenuItem icon={Undo2} onSelect={() => actions.useAsDrawing(l.id)} data-ui="menu-use-drawing">Use as drawing</MenuItem>
+                      <MenuSeparator />
+                      <MenuItem icon={Trash2} onSelect={() => actions.remove(l.id)} danger>Delete</MenuItem>
+                    </MenuContent>
+                  </Menu>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      <div className="bg-add">
+        <button type="button" className={`drop bg-drop${over ? " over" : ""}`} onClick={() => input.current?.click()} data-ui="add-background">
+          <ImageUp aria-hidden="true" strokeWidth={1.75} /> {list.length ? "Add another background" : "Add a background: paper, a scan, a drawn desk"}
+        </button>
+        <input ref={input} type="file" id="background-file" accept=".svg,.png,.webp,image/svg+xml,image/png,image/webp" hidden
+          onChange={(e) => { const fs = [...(e.target.files || [])]; e.target.value = ""; if (fs.length) void actions.addBackgrounds(fs); }} />
+      </div>
+    </div>
   );
 }
 
@@ -228,6 +302,7 @@ export function LayersPanel(props: { hidden?: boolean; tabbed?: boolean }) {
       ) : (
         <p className="empty-layers">No drawings yet. Upload your own, or start from a sample.</p>
       )}
+      <BackgroundGroup />
       <div className="panel-foot">
         <button type="button" className="link-btn" onClick={actions.openDesk} data-ui="open-desk">Open Pia's finished desk</button> to see a whole page made the same way.
       </div>

@@ -3,7 +3,7 @@
 // ":root") and the studio canvas (root ".stage"), which is why every class rule
 // carries the scope prefix S.
 
-import { FRAMES, parseColor, type FontSpec, type FramePlay, type Palette, type PaletteMode, type Role, type SceneDocument } from "@scena/scene";
+import { DEFAULT_TYPEFACE, FRAMES, TEXT_X_HEIGHT, parseColor, typeface, type FontSpec, type FramePlay, type Palette, type PaletteMode, type Role, type SceneDocument } from "@scena/scene";
 import { num } from "./escape.ts";
 
 export interface CssOptions {
@@ -118,7 +118,52 @@ export function pageCss(scene: SceneDocument, palette: Palette, o: CssOptions = 
     o.forceMotion ? "" : `@media (prefers-reduced-motion:reduce){${S}.obj .lift,${S}.ring,${S}.btn${page ? ",.toast" : ""}{transition:none}}`,
     `${R}[data-motion="off"] .lift,${R}[data-motion="off"] .ring,${R}[data-motion="off"] .btn{transition:none}`,
     frameCss(scene, R, S, !!o.forceMotion),
+    typefaceCss(scene, B, S),
+    boardCss(scene, S, dark),
+    letteringCss(scene, S),
   ].filter(Boolean).join("\n");
+}
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * The curated face's weights and the name's size (ADR 0003). Shantell Sans needs nothing:
+ * the rules above are written for it, so the desk's CSS does not change.
+ */
+function typefaceCss(scene: SceneDocument, B: string, S: string): string {
+  const face = typeface(scene.theme?.font?.family);
+  if (!face || face.family === DEFAULT_TYPEFACE.family) return "";
+  const f = face.size;
+  // running text keeps Shantell's x-height, so a small-eyed face like Caveat stays readable;
+  // the name has its own size factor, and lettering inside drawings keeps the size it was drawn at
+  return `${B}{font-size-adjust:${TEXT_X_HEIGHT}}${S}.name,${S}.art-text{font-size-adjust:none}` +
+    `${S}.name{font-size:clamp(${r2(2.6 * f)}rem,${r2(12 * f)}vw,${r2(3.5 * f)}rem);font-weight:${face.display}}` +
+    `${S}.tag h2,${S}.btn{font-weight:${face.display}}${S}.art-text,${S}.stat,${S}.links-h,${S}.links a{font-weight:${face.strong}}`;
+}
+
+/** Uploaded backgrounds: a raster without a dark variant is multiplied onto the dark mat. */
+function boardCss(scene: SceneDocument, S: string, dark: (sel: string) => string): string {
+  const uploaded = (scene.layers || []).some((l) => l.type === "background" && (Array.isArray(l.parts) || (l.asset && scene.assets?.[l.asset]?.kind !== "procedural")));
+  if (!uploaded) return "";
+  return `${S}.bg-base{display:none;fill:var(--mat)}` + dark(`.bg-base{display:inline}`) + dark(`.bgr{mix-blend-mode:multiply;opacity:var(--fill-op)}`);
+}
+
+/** The hand-lettered name: sized by its width, capped in height, and its riso shadow. */
+function letteringCss(scene: SceneDocument, S: string): string {
+  const lt = scene.header?.lettering;
+  const a = lt ? scene.assets?.[lt.asset] : undefined;
+  if (!lt || !a) return "";
+  const b = a.bbox || { w: a.width, h: a.height };
+  const ratio = (b.w || 1) / (b.h || 1);
+  const off = scene.effects?.fillOffset || { x: 3, y: 3 };
+  const width = Math.min(100, Math.max(20, lt.maxWidth ?? 85));
+  return `${S}.name.lettered{text-shadow:none}${S}.name.flat{transform:none}` +
+    `${S}.vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}` +
+    // as wide as asked, but never taller than 7.5rem
+    `${S}.lettering{display:grid;width:min(${num(width)}%,${r2(7.5 * ratio)}rem)}` +
+    // the ink copy is positioned so it paints over the transformed shadow
+    `${S}.lt{grid-area:1/1;display:block;width:100%;height:auto;overflow:visible;position:relative}` +
+    `${S}.lt-sh{transform:translate(${num(off.x)}px,${num(off.y)}px);--line:var(--accent1);--accent2:var(--accent1);--text:var(--accent1);--paper:var(--accent1);--mat:var(--accent1)}`;
 }
 
 /** The frame stacks a scene uses: frame counts per play mode, and frame rates. */

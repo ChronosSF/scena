@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="354" viewBox="0 0 220 118">
+  <title>Pia, lettered</title>
+  <path fill="none" stroke="#FFFF00" stroke-width="7" stroke-linecap="round" d="M14 106 C 70 99, 140 112, 206 101"/>
+  <path fill="none" stroke="#FF00FF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" d="M24 96 C 25 72, 22 42, 25 14"/>
+  <path fill="none" stroke="#FF00FF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" d="M25 17 C 66 6, 80 42, 28 54"/>
+  <path fill="none" stroke="#FF00FF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" d="M98 56 C 99 70, 97 82, 100 96"/>
+  <path fill="none" stroke="#FF00FF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" d="M156 62 C 130 50, 118 92, 144 95 C 158 97, 164 80, 166 62"/>
+  <path fill="none" stroke="#FF00FF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" d="M166 58 C 165 76, 167 88, 176 97"/>
+  <circle fill="#00FFFF" cx="99" cy="34" r="6.5"/>
+</svg>

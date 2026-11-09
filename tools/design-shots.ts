@@ -1,8 +1,9 @@
 // Screenshots of the studio for docs/design/: desktop light and dark, and a phone.
 //   node tools/design-shots.ts                       the static build from file:// (run pnpm build first)
 //   node tools/design-shots.ts http://localhost:5173/   the dev server
-// Pia's desk is opened and the envelope selected, so the inspector, the selection handles
-// and the layer list all show.
+// Pia's desk is opened with a paper texture under it and her lettered name in the header
+// (fixtures/), and the envelope selected, so the inspector, the selection handles, the
+// layer list and its Background group all show.
 
 import { writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -26,6 +27,19 @@ await page.eval(`localStorage.clear()`);
 await page.goto(target, 1500);
 await page.eval(`document.querySelector('[data-ui="open-desk"]').click()`);
 await sleep(400);
+const fixture = (f: string) => join(root, "fixtures", f);
+async function setFiles(selector: string, files: string[]) {
+  const { root: doc } = await page.send("DOM.getDocument", { depth: 0 });
+  const { nodeId } = await page.send("DOM.querySelector", { nodeId: doc.nodeId, selector });
+  await page.send("DOM.setFileInputFiles", { nodeId, files });
+}
+await page.send("DOM.enable");
+await setFiles("#background-file", [fixture("paper-texture.png")]);
+await sleep(1500);
+await page.eval(`sceneStudio.store.select(null)`);
+await sleep(300);
+await setFiles("#lettering-file", [fixture("pia-lettering.svg")]);
+await sleep(1200);
 await page.eval(`document.querySelector('[data-layer-button="envelope"]').click()`);
 await page.eval(`document.activeElement?.blur()`);
 await sleep(3800); // fonts, thumbnails, and the toast has gone
@@ -42,7 +56,7 @@ await shot("studio-dark.png");
 await media("light");
 await page.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
 await sleep(400);
-await page.eval(`document.querySelector(".workspace-scroll").scrollTop = 150`);
+await page.eval(`document.querySelector(".workspace-scroll").scrollTop = 0`); // the lettered name, then the desk
 await shot("studio-375.png");
 
 await chrome.close();

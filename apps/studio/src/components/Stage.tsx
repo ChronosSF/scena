@@ -247,7 +247,8 @@ export function Stage({ scale = 1 }: { scale?: number }) {
 
   // ------------------------------------------------------------ overlay
   const status = slot ? slotStatus(slot, page.links[slot.id]) : null;
-  const b = layer && view === "edit" ? layerBBox(scene, layer, status) : null;
+  // backgrounds are set in the inspector (fit, placement), not dragged: no handles
+  const b = layer && view === "edit" && layer.type !== "background" ? layerBBox(scene, layer, status) : null;
   let overlay = null, toolbar = null;
   if (layer && b && layer.transform) {
     const u = scene.canvas.width / ((figWidth || scene.canvas.width) * scale); // canvas units per screen pixel

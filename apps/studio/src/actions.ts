@@ -9,15 +9,21 @@ import {
   moveDrawing as moveDrawingDoc, toggleHidden as toggleHiddenDoc,
 } from "./model.ts";
 import { ingestSvg, resanitizeFragment } from "./ingest/svg.ts";
-import { ingestRaster, isAnimatedImage, sniff } from "./ingest/raster.ts";
-import { planFrames, type FramePlan } from "./ingest/frames.ts";
+import { ingestBackground, ingestRaster, isAnimatedImage, sniff } from "./ingest/raster.ts";
+import { mergeFills, planFrames, type FramePlan } from "./ingest/frames.ts";
+import {
+  isBackground, removeLettering as removeLetteringDoc, setClip, setDarkVariant, setFit, setLettering, setLetteringOptions as setLetteringOptionsDoc,
+  setPlacement, setTypeface as setTypefaceDoc, useAsBackground as useAsBackgroundDoc, useAsDrawing as useAsDrawingDoc, type Placement,
+} from "./board.ts";
+import { BACKGROUND_SAMPLES } from "@scena/scenes";
+import type { Asset, BackgroundFit, PartRole, RasterAsset, SvgInlineAsset } from "@scena/scene";
 import {
   alignVectorFrames, dropUnusedAssets, fpsWords, frameCount, frameTiming, moveFrame as moveFrameDoc, removeFrame as removeFrameDoc,
   setTiming, writeFrames, type Timing,
 } from "./frames.ts";
 import { blankDocs, store } from "./store.ts";
 import { announce, askFramesChoice, toast } from "./ui.ts";
-import { download, kb, prettyName } from "./util.ts";
+import { clone, download, kb, prettyName } from "./util.ts";
 
 const st = () => store.getSnapshot();
 
@@ -190,6 +196,7 @@ async function addSeparately(files: File[], at?: Point | null): Promise<void> {
         msg = `Added ${name}: ${r.report.nodes} shapes, ${bits.join("; ")}.`;
       } else {
         const r = await ingestRaster(bytes, { id, name: file.name });
+        rasterSources.set(id, file); // kept for this session: "Use as background" re-reads it at full size
         store.change(({ scene }) => { addDrawing(scene, { id, name, assets: [r.asset], parts: [{ asset: id, role: "lines" }], at: pos }); return { sel: id }; });
         msg = `Added ${name}: ${r.report.trimmed ? `trimmed the empty canvas, ${r.report.original} to ${r.report.final}` : r.report.final}, ${kb(r.report.outBytes)}.`;
       }
@@ -302,6 +309,176 @@ export function setFrameTiming(layerId: string, patch: Partial<Timing>): void {
 export function showFrame(at: number | null): void {
   if (at === null) store.set({ playFrames: true });
   else store.set({ playFrames: false, frameAt: at });
+}
+
+// ------------------------------------------------------------------ board and header (ADR 0003)
+
+/** The original files of raster drawings added this session, by asset id. */
+const rasterSources = new Map<string, File>();
+
+const PLACEMENT_WORDS: Record<Placement, string> = { replace: "replacing the mat", over: "over the mat" };
+
+/** Ingests one file as background art: a raster untrimmed at board size (WebP), an SVG as usual. */
+async function backgroundArt(file: File, id: string): Promise<{ assets: Asset[]; parts?: { asset: string; role: PartRole }[]; raster: boolean; note: string }> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (sniff(bytes) === "svg") {
+    const r = await ingestSvg(new TextDecoder().decode(bytes), { prefix: id, name: file.name });
+    return { assets: r.assets, parts: r.parts, raster: false, note: r.report.recoloured.length ? "recoloured to the palette" : "its own colours" };
+  }
+  const r = await ingestBackground(bytes, { id, name: file.name, canvas: st().scene.canvas });
+  return { assets: [r.asset], raster: true, note: `${r.report.final} ${r.report.format}, ${kb(r.report.outBytes)}` };
+}
+
+/** Files dropped on, or chosen in, the Background group. A raster replaces the mat; a drawn SVG goes over it. */
+export async function addBackgrounds(files: File[]): Promise<void> {
+  for (const file of files) {
+    try {
+      const base = file.name.replace(/\.[^.]+$/, "") || "background";
+      const id = freshId(st().scene, base);
+      const art = await backgroundArt(file, id);
+      const placement: Placement = art.raster ? "replace" : "over";
+      store.change(({ scene, stash }) => {
+        for (const a of art.assets) scene.assets[a.id] = a;
+        scene.layers.push({ id, type: "background", name: prettyName(base), ...(art.parts ? { parts: art.parts } : { asset: art.assets[0]!.id }) });
+        setPlacement(scene, stash, id, placement);
+        return { sel: id };
+      });
+      toast(`Added ${prettyName(base)} as the background, ${PLACEMENT_WORDS[placement]}: ${art.note}.`);
+    } catch (err) {
+      toast(`${file.name} was not added. ${(err as Error).message}`, "error");
+    }
+  }
+}
+
+export function addBackgroundSample(key: string): void {
+  const sample = BACKGROUND_SAMPLES.find((b) => b.key === key);
+  if (!sample) return;
+  const id = freshId(st().scene, key);
+  store.change(({ scene, stash }) => {
+    const map: Record<string, string> = {};
+    for (const [aid, a] of Object.entries(sample.assets)) {
+      const copy = clone(a);
+      copy.id = aid.replace(key, id);
+      map[aid] = copy.id;
+      scene.assets[copy.id] = copy;
+    }
+    const layer = clone(sample.layer);
+    layer.id = id;
+    if (layer.asset) layer.asset = map[layer.asset]!;
+    if (layer.parts) layer.parts = layer.parts.map((p) => ({ ...p, asset: map[p.asset]! }));
+    scene.layers.push(layer);
+    setPlacement(scene, stash, id, "over");
+    return { sel: id };
+  });
+  toast(`Added ${sample.name} as the background, over the mat.`);
+}
+
+/** A drawing becomes the background. A raster added this session is re-read at board size first. */
+export async function useAsBackground(layerId: string, placement?: Placement): Promise<void> {
+  const layer = getLayer(st().scene, layerId);
+  if (!layer || isBackground(st().scene, layer)) return;
+  const main = (layer.parts || []).filter((p) => !p.when);
+  const only = main.length === 1 ? st().scene.assets[main[0]!.asset] : layer.asset ? st().scene.assets[layer.asset] : undefined;
+  const raster = only?.kind === "raster";
+  let fresh: RasterAsset | null = null;
+  const src = only && rasterSources.get(only.id);
+  if (src) {
+    try { fresh = (await ingestBackground(new Uint8Array(await src.arrayBuffer()), { id: only.id, name: src.name, canvas: st().scene.canvas })).asset; } catch { fresh = null; }
+  }
+  const where = placement || (raster ? "replace" : "over");
+  store.change(({ scene, page, stash }) => {
+    if (fresh) scene.assets[fresh.id] = fresh;
+    useAsBackgroundDoc(scene, page, stash, layerId, where);
+    return { sel: layerId };
+  });
+  toast(`${layer.name || layerId} is the background now, ${PLACEMENT_WORDS[where]}. "Use as drawing" puts it back.`);
+}
+
+export function useAsDrawing(layerId: string): void {
+  const layer = getLayer(st().scene, layerId);
+  store.change(({ scene, stash }) => { useAsDrawingDoc(scene, stash, layerId); return { sel: layerId }; });
+  announce(`${layer?.name || layerId} is a drawing again.`);
+}
+
+export const setBackgroundPlacement = (id: string, p: Placement) => store.change(({ scene, stash }) => setPlacement(scene, stash, id, p));
+export const setBackgroundFit = (id: string, fit: BackgroundFit) => store.change(({ scene }) => setFit(scene, id, fit));
+export const setBackgroundClip = (id: string, clip: boolean) => store.change(({ scene }) => setClip(scene, id, clip));
+
+/** A dark-mode variant of a background: the same kind of art as the background itself. */
+export async function addDarkVariant(layerId: string, file: File): Promise<void> {
+  const scene0 = st().scene;
+  const layer = getLayer(scene0, layerId);
+  const base = layer?.asset ? scene0.assets[layer.asset] : undefined;
+  if (!layer || !base) { toast("A dark variant needs a background made of one image.", "error"); return; }
+  try {
+    const id = freshId(scene0, `${layerId}-dark`);
+    const art = await backgroundArt(file, id);
+    if (art.raster !== (base.kind === "raster")) throw new Error(`the background is ${base.kind === "raster" ? "a PNG" : "an SVG"}; its dark variant has to be too.`);
+    const asset = art.raster ? art.assets[0]! : await mergedOrSingle(art.assets, `${id}-all`);
+    store.change(({ scene }) => { scene.assets[asset.id] = asset; setDarkVariant(scene, layerId, asset.id); });
+    toast(`Added a dark-mode variant: ${art.note}.`);
+  } catch (err) {
+    toast(`The dark variant was not added. ${(err as Error).message}`, "error");
+  }
+}
+export const removeDarkVariant = (id: string) => store.change(({ scene }) => setDarkVariant(scene, id, null));
+
+/** One asset from an ingested SVG's parts (lettering and dark variants are a single image). */
+async function mergedOrSingle(assets: Asset[], id: string): Promise<Asset> {
+  if (assets.length === 1) return assets[0]!;
+  const fills = assets.find((a) => a.id.endsWith("-fills")) as SvgInlineAsset, lines = assets.find((a) => a.id.endsWith("-lines")) as SvgInlineAsset;
+  return mergeFills(fills, lines, id);
+}
+
+/** The hand-lettered name from a file: an SVG (recoloured with the palette) or a PNG. */
+export async function setLetteringFile(file: File): Promise<void> {
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const id = freshId(st().scene, "name-lettering");
+    let asset: Asset, note: string;
+    if (sniff(bytes) === "svg") {
+      const r = await ingestSvg(new TextDecoder().decode(bytes), { prefix: id, name: file.name });
+      asset = r.all.id === id ? r.all : { ...r.all, id };
+      note = r.report.recoloured.length ? "recoloured to the palette, with the riso shadow" : "in its own colours";
+    } else {
+      const r = await ingestRaster(bytes, { id, name: file.name });
+      asset = r.asset;
+      note = `${r.report.final} PNG, on a paper sticker in dark mode`;
+    }
+    store.change(({ scene }) => { scene.assets[asset.id] = asset; setLettering(scene, asset.id); });
+    toast(`Your lettered name is in the header: ${note}. The typed name stays for screen readers and the page title.`);
+  } catch (err) {
+    toast(`${file.name} was not used. ${(err as Error).message}`, "error");
+  }
+}
+
+/** A drawing on the canvas becomes the lettered name (frame 1, fills folded into the lines). */
+export async function useAsLettering(layerId: string): Promise<void> {
+  const scene0 = st().scene;
+  const layer = getLayer(scene0, layerId);
+  if (!layer) return;
+  const main = (layer.parts || []).filter((p) => !p.when);
+  const ids = main.length ? main.map((p) => (p.frames ? p.frames[0]! : p.asset)) : layer.asset ? [layer.asset] : [];
+  const assets = ids.map((id) => scene0.assets[id]).filter((a): a is Asset => !!a && (a.kind === "svg-inline" || a.kind === "raster"));
+  if (!assets.length || (assets.length > 1 && assets.some((a) => a.kind === "raster"))) { toast("This drawing cannot be used as lettering.", "error"); return; }
+  const asset = assets.length === 1 ? clone(assets[0]!) : await mergedOrSingle(assets, freshId(scene0, "name-lettering"));
+  if (assets.length === 1) asset.id = freshId(scene0, "name-lettering");
+  store.change((s) => {
+    s.scene.assets[asset.id] = asset;
+    setLettering(s.scene, asset.id);
+    removeLayer(s.scene, s.page, layerId);
+    delete s.stash[layerId];
+    return { sel: null };
+  });
+  toast(`${layer.name || layerId} is your lettered name now, in the header.`);
+}
+
+export const removeLettering = () => { store.change(({ scene }) => removeLetteringDoc(scene)); announce("Lettering removed; the typed name shows again."); };
+export const setLetteringOptions = (o: { maxWidth?: number; tilt?: boolean }) => store.change(({ scene }) => setLetteringOptionsDoc(scene, o));
+
+export function setTypeface(family: string): void {
+  store.change(({ scene }) => { setTypefaceDoc(scene, family); });
+  announce(`Typeface: ${family}.`);
 }
 
 /** Import scene and/or page JSON. Returns the problems found; nothing changes unless there are none. */

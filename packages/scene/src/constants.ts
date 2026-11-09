@@ -1,4 +1,4 @@
-import type { AssetKind, CommissionStatus, Effect, FramePlay, LayerType, PartRole, Role, SlotKind, When } from "./types.ts";
+import type { AssetKind, BackgroundFit, CommissionStatus, Effect, FramePlay, LayerType, PartRole, Role, SlotKind, When } from "./types.ts";
 
 export const SCHEMA_VERSION = 1 as const;
 export const ROLES: readonly Role[] = ["paper", "mat", "card", "grid", "line", "accent1", "accent2", "text", "muted"];
@@ -10,6 +10,40 @@ export const LAYER_TYPES: readonly LayerType[] = ["background", "decor", "foregr
 export const ASSET_KINDS: readonly AssetKind[] = ["svg-inline", "svg", "raster", "procedural"];
 export const EFFECTS: readonly Effect[] = ["boil", "lift", "ring"];
 export const FRAME_PLAYS: readonly FramePlay[] = ["always", "hover", "selected", "once-on-tap"];
+export const BACKGROUND_FITS: readonly BackgroundFit[] = ["cover", "contain"];
+
+/** The mat's shape: backgrounds clip to it ("Replace the mat"), and fit into it when clipped. */
+export const MAT_SHAPE = { inset: 6, rx: 18 } as const;
+
+/**
+ * The curated typefaces (ADR 0003). The renderer builds a Google Fonts URL from the family,
+ * so a scene may only name one of these. `display` and `strong` are the weights the page
+ * uses for the name, headings and buttons, and for emphasis; `size` scales the name so it
+ * fills the header the same way whatever the face's proportions (measured against Shantell
+ * Sans at 800: about halfway between matching its width and matching its cap height).
+ */
+export interface Typeface {
+  family: string;
+  /** what it is like, for the studio */
+  note: string;
+  weights: readonly number[];
+  display: number;
+  strong: number;
+  size: number;
+  fallback: string;
+}
+export const TYPEFACES: readonly Typeface[] = [
+  { family: "Shantell Sans", note: "Marker, the default", weights: [400, 600, 800], display: 800, strong: 600, size: 1, fallback: `"Chalkboard SE", "Comic Neue", "Segoe Print", "Trebuchet MS", sans-serif` },
+  { family: "Caveat", note: "Quick pen", weights: [400, 600, 700], display: 700, strong: 600, size: 1.25, fallback: `"Segoe Print", "Bradley Hand", cursive` },
+  { family: "Patrick Hand", note: "Felt-tip capitals", weights: [400], display: 400, strong: 400, size: 1.25, fallback: `"Segoe Print", "Comic Neue", sans-serif` },
+  { family: "Kalam", note: "Pencil", weights: [400, 700], display: 700, strong: 700, size: 1.1, fallback: `"Segoe Print", "Bradley Hand", cursive` },
+  { family: "Fredoka", note: "Rounded, friendly", weights: [400, 600, 700], display: 700, strong: 600, size: 1.1, fallback: `"Trebuchet MS", "Arial Rounded MT Bold", sans-serif` },
+  { family: "Instrument Serif", note: "Editorial serif, for contrast", weights: [400], display: 400, strong: 400, size: 1.25, fallback: `Georgia, "Times New Roman", serif` },
+];
+export const DEFAULT_TYPEFACE = TYPEFACES[0]!;
+/** Shantell Sans's x-height; other faces set their running text to it (font-size-adjust). */
+export const TEXT_X_HEIGHT = 0.51;
+export const typeface = (family: string | undefined): Typeface | undefined => TYPEFACES.find((t) => t.family === family);
 /** Frame-flip animation defaults and hard limits (the budget is in LIMITS). */
 export const FRAMES = { fps: 6, minFps: 2, maxFps: 12, min: 2, max: 12, play: "always" } as const;
 
@@ -37,4 +71,12 @@ export const LIMITS = {
   frames: 6,
   /** drawings looping all the time ("always") */
   alwaysPlaying: 4,
+  /** an uploaded background (asset and dark variant): warn above, error above */
+  backgroundBytesSoft: 150 * 1024,
+  backgroundBytes: 300 * 1024,
+  /** long side of a raster background: a 400-unit canvas at 3x */
+  backgroundPx: 1200,
+  /** a hand-lettered name: warn above, error above */
+  letteringBytesSoft: 60 * 1024,
+  letteringBytes: 150 * 1024,
 } as const;

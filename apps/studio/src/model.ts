@@ -5,7 +5,7 @@
 import type {
   ArtLayer, Asset, Hotspot, Layer, LinkContent, ObjectLayer, PageDocument, Part, ProceduralAsset, SceneDocument, Slot, SlotKind, Transform,
 } from "@scena/scene";
-import { layerBBox, translateForCenter, type Point } from "@scena/renderer";
+import { isUploadedBackground, layerBBox, translateForCenter, type Point } from "@scena/renderer";
 import { DESK_SCENE, MUG_SAMPLE, PIA_PAGE, type SampleDrawing } from "@scena/scenes";
 import { clone } from "./util.ts";
 import { dropUnusedAssets } from "./frames.ts";
@@ -55,6 +55,9 @@ export interface Stash {
   hotspot?: Hotspot;
   /** Opacity to restore when a hidden decoration is shown again. */
   opacity?: number;
+  /** Where a drawing was before it became a background, and the surface a background replaced. */
+  transform?: Transform;
+  surface?: Surface;
 }
 
 export function blankScene(): SceneDocument {
@@ -294,10 +297,10 @@ export function currentSurface(scene: SceneDocument): Surface {
 }
 
 export function setSurface(scene: SceneDocument, surface: Surface): void {
-  for (const l of scene.layers) {
-    if (l.type === "background" && l.asset && scene.assets[l.asset]?.kind === "procedural") delete scene.assets[l.asset];
-  }
-  scene.layers = scene.layers.filter((l) => l.type !== "background");
+  // only the generated surface changes; uploaded backgrounds stay, above it
+  const generated = scene.layers.filter((l) => l.type === "background" && !isUploadedBackground(scene, l));
+  for (const l of generated) if (l.asset && scene.assets[l.asset]?.kind === "procedural") delete scene.assets[l.asset];
+  scene.layers = scene.layers.filter((l) => !generated.includes(l));
   const add: ArtLayer[] = [];
   const proc = (id: string, generator: ProceduralAsset["generator"], params: ProceduralAsset["params"]) => {
     scene.assets[id] = { id, kind: "procedural", generator, params, width: scene.canvas.width, height: scene.canvas.height, bytes: 0, sha256: "" };

@@ -3,7 +3,7 @@
 // original prototype); edit the encoder, then run `pnpm encode:desk`.
 // samples.json holds extra sample drawings (scripts/encode-samples.ts): the steaming mug.
 
-import type { Asset, ObjectLayer, PageDocument, SceneDocument, Slot } from "@scena/scene";
+import type { ArtLayer, Asset, ObjectLayer, PageDocument, SceneDocument, Slot } from "@scena/scene";
 import desk from "../desk.scene.json" with { type: "json" };
 import pia from "../pia.page.json" with { type: "json" };
 import samples from "../samples.json" with { type: "json" };
@@ -22,6 +22,16 @@ export interface SampleDrawing {
 
 /** The steaming mug: three frames of rising steam over a still colour layer (ADR 0002). */
 export const MUG_SAMPLE: SampleDrawing = (samples as unknown as Record<string, SampleDrawing>).mug!;
+
+/** A background offered on its own (ADR 0003): its layer, fitted and clipped, and its assets. */
+export interface SampleBackground {
+  key: string;
+  name: string;
+  layer: ArtLayer;
+  assets: Record<string, Asset>;
+}
+/** The drawn desk top: plank seams and a wash of colour, painted to recolour with any palette. */
+export const BACKGROUND_SAMPLES: SampleBackground[] = Object.values((samples as unknown as { backgrounds: Record<string, SampleBackground> }).backgrounds);
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 

@@ -6,7 +6,7 @@
 // built-in scenes and uploads alike.
 
 import {
-  FRAMES, STATUS_TEXT, STATUS_WORD, fragmentProblem, isSafeRasterUrl, safeHref, safeId,
+  FRAMES, MAT_SHAPE, STATUS_TEXT, STATUS_WORD, fragmentProblem, isSafeRasterUrl, safeHref, safeId,
   type Asset, type CommissionStatus, type FramePlay, type Layer, type LinkContent, type Palette, type PageDocument, type Part,
   type ProceduralAsset, type SceneDocument, type Slot, type When,
 } from "@scena/scene";
@@ -297,6 +297,100 @@ function ringMarkup(g: HotspotGeometry | null, cls: "ring" | "hit", extra = ""):
   return `<path class="${cls}"${cls === "ring" ? ' pathLength="1" vector-effect="non-scaling-stroke"' : ""} d="${esc(g.d)}"${tf ? ` transform="${tf}"` : ""}/>`;
 }
 
+// ------------------------------------------------------------------ backgrounds and lettering (ADR 0003)
+
+/** An uploaded background: any background layer whose art is not generated (mat, grid, dots). */
+export function isUploadedBackground(scene: SceneDocument, layer: Layer): boolean {
+  if (layer.type !== "background") return false;
+  return Array.isArray(layer.parts) || (!!layer.asset && scene.assets?.[layer.asset]?.kind !== "procedural");
+}
+
+/** The board a fitted background fills: the mat's box when clipped to it, else the canvas. */
+function board(scene: SceneDocument, clip: boolean) {
+  const W = scene.canvas.width, H = scene.canvas.height, i = clip ? MAT_SHAPE.inset : 0;
+  return { x: i, y: i, w: W - i * 2, h: H - i * 2 };
+}
+
+/** translate + scale that fits a box into the board ("cover" fills it, "contain" shows all of it), centred. */
+export function fitTransform(scene: SceneDocument, b: { x: number; y: number; w: number; h: number }, fit: "cover" | "contain", clip: boolean): { x: number; y: number; s: number } {
+  const T = board(scene, clip);
+  const s = (fit === "cover" ? Math.max : Math.min)(T.w / (b.w || 1), T.h / (b.h || 1));
+  return { x: T.x + T.w / 2 - (b.x + b.w / 2) * s, y: T.y + T.h / 2 - (b.y + b.h / 2) * s, s };
+}
+
+/**
+ * An uploaded background: fitted to the board (or placed by its transform), optionally
+ * clipped to the mat's rounded shape. Never boiled, never tappable. In dark mode it shows
+ * its dark variant; a raster without one is multiplied onto the dark mat at the palette's
+ * fill opacity, so a light paper texture turns into dark paper rather than glowing.
+ */
+function backgroundMarkup(ctx: Ctx, layer: Layer, clipId: string): string {
+  const scene = ctx.scene;
+  // background layers are art layers: drop the placement here, it is applied around the art below
+  const still: Layer = { id: layer.id, type: "background", ...(layer.asset ? { asset: layer.asset } : {}), ...(layer.parts ? { parts: layer.parts } : {}) };
+  const one = (asset: string | undefined, cls: string): string => {
+    const l: Layer = asset ? { id: layer.id, type: "background", asset } : still;
+    const b = layerBBox(scene, l);
+    const art = partsList(ctx, l, null).map((x) => x.html).join("");
+    if (!art || !b) return "";
+    const raster = hasRaster(ctx, l);
+    // dark mode for a raster without a variant: a mat-coloured base under the image, multiplied onto it
+    const inner = raster && !layer.assetDark
+      ? `<rect class="bg-base" x="${num(b.x)}" y="${num(b.y)}" width="${num(b.w)}" height="${num(b.h)}"/><g class="bgr">${art}</g>`
+      : art;
+    let tf: string;
+    if (layer.fit) {
+      const f = fitTransform(scene, b, layer.fit, !!layer.clip);
+      tf = `translate(${num(f.x)} ${num(f.y)}) scale(${Math.round(f.s * 10000) / 10000})`; // 4 decimals: the board is 400 units, a pixel matters
+    } else {
+      tf = transformAttr(layer.transform);
+      const s = scaleOf(layer);
+      if (s !== 1) tf = `${tf} scale(${num(s)})`.trim();
+    }
+    return `<g${cls ? ` class="${cls}"` : ""}${tf ? ` transform="${tf}"` : ""}>${inner}</g>`;
+  };
+  const body = layer.assetDark ? one(layer.asset, "w-light") + one(layer.assetDark, "w-dark") : one(undefined, "");
+  if (!body) return "";
+  return `<g class="bg" aria-hidden="true"${layer.clip ? ` clip-path="url(#${clipId})"` : ""}>${body}</g>`;
+}
+
+/** The mat's rounded shape, for clipped backgrounds. */
+function matClip(scene: SceneDocument, id: string): string {
+  const b = board(scene, true);
+  return `<clipPath id="${id}"><rect x="${num(b.x)}" y="${num(b.y)}" width="${num(b.w)}" height="${num(b.h)}" rx="${num(MAT_SHAPE.rx)}"/></clipPath>`;
+}
+
+/**
+ * The header with a hand-lettered name: the drawing shows, the typed name stays in the h1 for
+ * screen readers (visually hidden) and in <title>. Vector lettering painted with the sentinel
+ * colours recolours with the palette and gets the riso shadow: a second copy in accent1, offset
+ * like the typed name's text-shadow. Raster lettering gets the dark-mode paper sticker instead.
+ */
+function letteredHeader(ctx: Ctx, name: string, bio: string): string | null {
+  const lt = ctx.scene.header?.lettering;
+  const a = lt ? ctx.scene.assets?.[lt.asset] : undefined;
+  if (!lt || !a || (a.kind !== "svg-inline" && a.kind !== "raster")) return null;
+  const art = assetMarkup(ctx, a);
+  if (!art) return null;
+  const b = bboxOf(a)!;
+  const vb = `${num(b.x)} ${num(b.y)} ${num(b.w)} ${num(b.h)}`;
+  const svg = (cls: string, inner: string) => `<svg class="${cls}" viewBox="${vb}" focusable="false">${inner}</svg>`;
+  let drawn: string;
+  if (a.kind === "raster") {
+    const pad = Math.max(b.w, b.h) * 0.03;
+    drawn = svg("lt", `<rect class="sticker" x="${num(b.x - pad)}" y="${num(b.y - pad)}" width="${num(b.w + pad * 2)}" height="${num(b.h + pad * 2)}" rx="${num(pad * 2)}"/>${art}`);
+  } else {
+    drawn = (a.colorRoles?.length ? svg("lt lt-sh", art) : "") + svg("lt", art);
+  }
+  const cls = ["name", "lettered"];
+  if (lt.tilt === false) cls.push("flat");
+  return `<header>
+<h1 class="${cls.join(" ")}"><span class="vh">${esc(name)}</span><span class="lettering" aria-hidden="true">${drawn}</span></h1>
+` +
+    (bio ? `<p class="bio">${esc(bio)}</p>
+` : "") + `</header>`;
+}
+
 // ------------------------------------------------------------------ parts
 
 /**
@@ -323,12 +417,17 @@ export function renderParts(scene: SceneDocument, page: PageDocument | undefined
   const listItems: { id: string; href: string; list: string; status: CommissionStatus | null }[] = [];
   const layersOut: string[] = [];
   const hits: string[] = [];
+  const clipId = `${P}bg-clip`;
+  let clipped = false;
   let firstNonBg = -1;
 
   for (const layer of scene.layers || []) {
     const lid = safeId(layer.id);
     if (layer.type === "background") {
-      layersOut.push(partsMarkup(ctx, layer, null));
+      if (isUploadedBackground(scene, layer)) {
+        if (layer.clip) clipped = true;
+        layersOut.push(backgroundMarkup(ctx, layer, clipId));
+      } else layersOut.push(partsMarkup(ctx, layer, null));
       continue;
     }
     if (firstNonBg < 0) firstNonBg = layersOut.length;
@@ -410,9 +509,10 @@ export function renderParts(scene: SceneDocument, page: PageDocument | undefined
   const W = scene.canvas.width, H = scene.canvas.height;
 
   const svg = `<svg viewBox="0 0 ${num(W)} ${num(H)}" role="group" aria-label="${esc(sceneLabel)}">\n` +
-    (filters.length ? `<defs>${filters.join("")}</defs>\n` : "") + body + `\n</svg>`;
+    (filters.length || clipped ? `<defs>${clipped ? matClip(scene, clipId) : ""}${filters.join("")}</defs>\n` : "") + body + `\n</svg>`;
 
-  const header = `<header>\n<h1 class="name">${esc(name)}</h1>\n` + (page?.profile?.bio ? `<p class="bio">${esc(page.profile.bio)}</p>\n` : "") + `</header>`;
+  const header = letteredHeader(ctx, name, page?.profile?.bio || "") ||
+    `<header>\n<h1 class="name">${esc(name)}</h1>\n` + (page?.profile?.bio ? `<p class="bio">${esc(page.profile.bio)}</p>\n` : "") + `</header>`;
 
   const sel = opts.selected ? links[opts.selected] : undefined;
   const panel = `<section class="tag" aria-live="polite">\n` +

@@ -87,8 +87,10 @@ export function dropUnusedAssets(scene: SceneDocument): void {
   const used = new Set<string>();
   for (const l of scene.layers) {
     if (l.asset) used.add(l.asset);
+    if (l.assetDark) used.add(l.assetDark);
     for (const p of l.parts || []) for (const id of partAssets(p)) used.add(id);
   }
+  if (scene.header?.lettering) used.add(scene.header.lettering.asset);
   for (const id of Object.keys(scene.assets)) if (!used.has(id)) delete scene.assets[id];
 }
 

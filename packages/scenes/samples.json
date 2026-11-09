@@ -131,5 +131,68 @@
         "nodeCount": 7
       }
     }
+  },
+  "backgrounds": {
+    "desk-top": {
+      "key": "desk-top",
+      "name": "Drawn desk top",
+      "layer": {
+        "id": "desk-top",
+        "type": "background",
+        "name": "Drawn desk top",
+        "parts": [
+          {
+            "asset": "desk-top-fills",
+            "role": "fills"
+          },
+          {
+            "asset": "desk-top-lines",
+            "role": "lines"
+          }
+        ],
+        "fit": "contain",
+        "clip": true
+      },
+      "assets": {
+        "desk-top-fills": {
+          "id": "desk-top-fills",
+          "kind": "svg-inline",
+          "src": "<rect class=\"role-accent2\" opacity=\"0.16\" x=\"0\" y=\"0\" width=\"400\" height=\"440\" rx=\"18\"/>",
+          "width": 400,
+          "height": 440,
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 400,
+            "h": 440
+          },
+          "bytes": 88,
+          "sha256": "433bf847483a2769548147212988aff552caa2f4dd97adc237493436c15473ce",
+          "colorRoles": [
+            "accent2"
+          ],
+          "nodeCount": 1
+        },
+        "desk-top-lines": {
+          "id": "desk-top-lines",
+          "kind": "svg-inline",
+          "src": "<path class=\"ink\" stroke-width=\"2\" d=\"M-4 72 C 90 69, 170 75, 250 70.5 S 360 75, 404 72\"/><path class=\"ink\" stroke-width=\"2\" d=\"M-4 146 C 90 149, 170 143, 250 147.5 S 360 143, 404 146\"/><path class=\"ink\" stroke-width=\"2\" d=\"M-4 222 C 90 219, 170 225, 250 220.5 S 360 225, 404 222\"/><path class=\"ink\" stroke-width=\"2\" d=\"M-4 296 C 90 299, 170 293, 250 297.5 S 360 293, 404 296\"/><path class=\"ink\" stroke-width=\"2\" d=\"M-4 370 C 90 367, 170 373, 250 368.5 S 360 373, 404 370\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M40 30 q35 -5 70 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M210 40 q30 -5 60 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M120 104 q40 -5 80 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M300 112 q29 -5 58 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M60 182 q32 -5 64 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M250 190 q45 -5 90 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M150 258 q35 -5 70 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M320 262 q25 -5 50 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M30 336 q40 -5 80 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M200 330 q35 -5 70 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M110 404 q30 -5 60 0\"/><path class=\"ink\" stroke-width=\"1.4\" d=\"M290 400 q40 -5 80 0\"/><ellipse class=\"ink\" stroke-width=\"1.6\" cx=\"96\" cy=\"40\" rx=\"9\" ry=\"5\"/><ellipse class=\"ink\" stroke-width=\"1.6\" cx=\"330\" cy=\"186\" rx=\"9\" ry=\"5\"/><ellipse class=\"ink\" stroke-width=\"1.6\" cx=\"70\" cy=\"262\" rx=\"9\" ry=\"5\"/><ellipse class=\"ink\" stroke-width=\"1.6\" cx=\"240\" cy=\"404\" rx=\"9\" ry=\"5\"/>",
+          "width": 400,
+          "height": 440,
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 400,
+            "h": 440
+          },
+          "bytes": 1514,
+          "sha256": "d7537a57854e510a9716c58ca944cf119cd0b0bcd43c75522d63c2dbf489889a",
+          "colorRoles": [
+            "line"
+          ],
+          "nodeCount": 21
+        }
+      }
+    }
   }
 }

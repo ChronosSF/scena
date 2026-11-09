@@ -7,8 +7,9 @@ import { writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import type { Asset, BBox, ObjectLayer, Role, Slot } from "@scena/scene";
+import type { ArtLayer, Asset, BBox, ObjectLayer, Role, Slot } from "@scena/scene";
 import { MUG_FRAMES, mugFills, mugLines } from "./mug-art.ts";
+import { DESK_TOP_BOX, deskTopFills, deskTopLines } from "./board-art.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +50,20 @@ const layer: ObjectLayer = {
   effects: ["boil", "lift", "ring"],
 };
 
-const samples = { mug: { key: "mug", name: "Coffee mug", slot, layer, assets } };
+// A drawn desk top (ADR 0003): a background over the mat, fitted and clipped to it.
+const boardAssets: Record<string, Asset> = {
+  "desk-top-fills": svg("desk-top-fills", deskTopFills("classes"), DESK_TOP_BOX, ["accent2"]),
+  "desk-top-lines": svg("desk-top-lines", deskTopLines("classes"), DESK_TOP_BOX, ["line"]),
+};
+const board: ArtLayer = {
+  id: "desk-top", type: "background", name: "Drawn desk top",
+  parts: [{ asset: "desk-top-fills", role: "fills" }, { asset: "desk-top-lines", role: "lines" }],
+  fit: "contain", clip: true,
+};
+
+const samples = {
+  mug: { key: "mug", name: "Coffee mug", slot, layer, assets },
+  backgrounds: { "desk-top": { key: "desk-top", name: "Drawn desk top", layer: board, assets: boardAssets } },
+};
 writeFileSync(join(here, "..", "samples.json"), JSON.stringify(samples, null, 2) + "\n");
-console.log(`wrote samples.json: mug, ${MUG_FRAMES} frames, ${Object.keys(assets).length} assets`);
+console.log(`wrote samples.json: mug (${MUG_FRAMES} frames, ${Object.keys(assets).length} assets), desk-top background`);

@@ -9,13 +9,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { launch, sleep, type Page } from "./cdp.ts";
+import { fixture, launch, sleep, type Page } from "./cdp.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "tools", "out");
 mkdirSync(out, { recursive: true });
 const target = process.argv[2] || pathToFileURL(join(root, "apps/studio/dist/index.html")).href;
-const fixture = (f: string) => join(root, "fixtures", f);
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail: unknown = "") => {
@@ -27,7 +26,6 @@ const chrome = await launch({ port: 9341, fileAccess: false });
 const page = await chrome.newPage();
 await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "light" }] });
-await page.send("DOM.enable");
 
 const center = (p: Page, selector: string) => p.eval<[number, number] | null>(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: "center" }); const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
 async function clickOn(selector: string) {
@@ -44,11 +42,12 @@ async function keyWith(key: string, code: string, modifiers: number, vk = 0) {
   await sleep(250);
 }
 const ALT = 1, CTRL = 2, SHIFT = 8;
-async function setFiles(selector: string, files: string[]) {
-  const { root: doc } = await page.send("DOM.getDocument", { depth: 0 });
-  const { nodeId } = await page.send("DOM.querySelector", { nodeId: doc.nodeId, selector });
-  await page.send("DOM.setFileInputFiles", { nodeId, files });
-}
+const setFiles = (selector: string, files: string[]) => page.setFiles(selector, files);
+/** Intercepts download links so their files can be read back with `downloads()`. */
+const hookDownloads = () => page.eval(`(() => { window.__dl = {}; const orig = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl[this.download] = fetch(this.href).then((r) => r.text()); else orig.call(this); }; })()`);
+const downloads = () => page.eval<Record<string, string>>(`(async () => { const o = {}; for (const [k, v] of Object.entries(window.__dl)) o[k] = await v; return o; })()`);
+/** A point on the empty workspace, left of the page: pressing it deselects. */
+const emptyWorkspace = () => page.eval<[number, number]>(`(() => { const r = document.querySelector(".workspace").getBoundingClientRect(); return [r.x + 16, r.y + 120]; })()`);
 
 // boot clean
 await page.goto(target, 1200);
@@ -263,7 +262,7 @@ check("the drawn desk top sample goes over the mat; both backgrounds draw clippe
   (boardHtml.match(/<g class="bg" aria-hidden="true" clip-path=/g) || []).length === 2 && !/filter="url\(#ed-b-(paper-texture|desk-top)\)"/.test(boardHtml), board.bgs);
 
 // nothing selected: a press on the empty workspace shows the page settings
-const ws = await page.eval<[number, number]>(`(() => { const r = document.querySelector(".workspace").getBoundingClientRect(); return [r.x + 16, r.y + 120]; })()`);
+const ws = await emptyWorkspace();
 await page.click(ws[0], ws[1]);
 await sleep(250);
 const inspLabel = await page.eval<string>(`document.getElementById("inspector").getAttribute("aria-label")`);
@@ -335,13 +334,13 @@ for (const reduce of [true, false]) {
 writeFileSync(join(out, "studio-preview.png"), await page.screenshot());
 
 // export, then import into a fresh canvas
-await page.eval(`(() => { window.__dl = {}; const orig = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl[this.download] = fetch(this.href).then((r) => r.text()); else orig.call(this); }; })()`);
+await hookDownloads();
 await clickOn('[data-ui="export"]');
 await sleep(400);
 const exportText = await page.eval<string>(`document.querySelector("dialog[open]")?.textContent || ""`);
 for (const b of ["dl-page", "dl-scene", "dl-data"]) await clickOn(`dialog[open] [data-ui="${b}"]`);
 await sleep(300);
-const files = await page.eval<Record<string, string>>(`(async () => { const o = {}; for (const [k, v] of Object.entries(window.__dl)) o[k] = await v; return o; })()`);
+const files = await downloads();
 const names = Object.keys(files);
 const html = files[names.find((n) => n.endsWith(".html"))!] || "";
 check("export dialog offers the three files", names.length === 3 && /no external scripts/i.test(exportText), names);
@@ -367,17 +366,17 @@ await clickOn('[data-ui="menu-desk"]');
 await sleep(300);
 await setFiles("#background-file", [fixture("paper-texture.png")]);
 await sleep(1500);
-const wsAt = await page.eval<[number, number]>(`(() => { const r = document.querySelector(".workspace").getBoundingClientRect(); return [r.x + 16, r.y + 120]; })()`);
+const wsAt = await emptyWorkspace();
 await page.click(wsAt[0], wsAt[1]);
 await sleep(300);
 await setFiles("#lettering-file", [fixture("pia-lettering.svg")]);
 await sleep(1200);
-await page.eval(`(() => { window.__dl = {}; const orig = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl[this.download] = fetch(this.href).then((r) => r.text()); else orig.call(this); }; })()`);
+await hookDownloads();
 await clickOn('[data-ui="export"]');
 await sleep(400);
 await clickOn('dialog[open] [data-ui="dl-page"]');
 await sleep(300);
-const piaHtml = await page.eval<string>(`(async () => { for (const v of Object.values(window.__dl)) return await v; return ""; })()`);
+const piaHtml = Object.values(await downloads())[0] || "";
 await page.eval(`document.querySelector("dialog[open]")?.close()`);
 writeFileSync(join(out, "pia-board-lettering.html"), piaHtml);
 const piaGz = gzipSync(Buffer.from(piaHtml), { level: 9 }).length;

@@ -140,10 +140,10 @@ The page's `profile.displayName` stays the accessible text.
 - **The h1 keeps the typed name**, visually hidden but read by screen readers, and the drawn name
   shows in its place (`aria-hidden`). `<title>`, the panel and the plain list are unchanged.
 - **Vector lettering** painted with the sentinel colours recolours with the palette. It gets the
-  riso shadow: a second copy behind the ink copy, offset by the scene's fill offset in CSS pixels
-  (like the typed name's `text-shadow`). In that copy the role colours (ink, colour 2, text,
-  paper) point at colour 1 through custom properties, so strokes stay strokes. Lettering in its
-  own colours gets no shadow.
+  riso shadow: a `<use>` of the ink copy's art behind it, offset by the scene's fill offset in
+  CSS pixels (like the typed name's `text-shadow`), so the drawing is in the page once. In that
+  copy the role colours (ink, colour 2, text, paper) point at colour 1 through custom
+  properties, so strokes stay strokes. Lettering in its own colours gets no shadow.
 - **Raster lettering** gets no shadow, as asked. It gets the dark-mode paper sticker raster
   drawings already have, so dark ink still reads on a dark page.
 - **Size.** Width is `min(maxWidth%, 7.5rem × aspect ratio)`, so a tall lettering never gets
@@ -154,7 +154,7 @@ The page's `profile.displayName` stays the accessible text.
 ### Lint
 
 - Lettering over 60 KB warns; over 150 KB is an error.
-- A recoloured vector lettering counts twice toward the 400-shape budget (the ink and the shadow).
+- A recoloured vector lettering counts its shadow as one more shape toward the 400-shape budget.
 - The typed name must not be empty while lettering is set. `validatePage` already requires a
   name; `lintPage` also says why ("screen readers and the page title still need it").
 

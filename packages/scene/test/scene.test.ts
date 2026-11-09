@@ -5,6 +5,8 @@ import { contrast, documentKind, lintPage, lintScene, migrate, parseColor, safeH
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const desk = DESK_SCENE, pia = PIA_PAGE;
+/** A 1x1 transparent PNG, for raster fixtures. */
+const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
 describe("validation", () => {
   test("the desk and Pia's page are valid and bound to each other", () => {
@@ -152,8 +154,7 @@ describe("frame-flip animation", () => {
     lines.frames = ["cat-lines-f2", "cat-lines"];
     expect(validateScene(s).some((e) => e.includes("frame 1 must be the part's asset"))).toBe(true);
 
-    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    s.assets.pix = { id: "pix", kind: "raster", url: png, width: 1, height: 1, bytes: 70, sha256: "" };
+    s.assets.pix ={ id: "pix", kind: "raster", url: png, width: 1, height: 1, bytes: 70, sha256: "" };
     lines.frames = ["cat-lines", "pix"];
     lines.fps = 6;
     expect(validateScene(s).some((e) => e.includes("all vector (SVG) or all raster"))).toBe(true);
@@ -202,8 +203,7 @@ describe("frame-flip animation", () => {
 });
 
 describe("board, typeface and lettering (ADR 0003)", () => {
-  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-  const raster = (id: string, bytes = 70) => ({ id, kind: "raster", url: png, width: 600, height: 660, bbox: { x: 0, y: 0, w: 600, h: 660 }, bytes, sha256: "" });
+  const raster =(id: string, bytes = 70) => ({ id, kind: "raster", url: png, width: 600, height: 660, bbox: { x: 0, y: 0, w: 600, h: 660 }, bytes, sha256: "" });
   function boarded() {
     const s = clone(desk) as any;
     s.assets.paper = raster("paper");

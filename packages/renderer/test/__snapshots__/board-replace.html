@@ -21,7 +21,7 @@
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--paper);color:var(--text);font-family:var(--font);font-size:1rem;line-height:1.5}
 .page{max-width:30rem;margin:0 auto;padding:2rem 1.25rem 3rem}
-.name{margin:0;font-size:clamp(2.6rem,12vw,3.5rem);font-weight:800;line-height:1;letter-spacing:-.01em;color:var(--line);text-shadow:3px 3px 0 var(--accent1);transform:rotate(-2deg);transform-origin:left center;overflow-wrap:break-word}
+.name{margin:0;font-size:clamp(3.25rem,15vw,4.38rem);font-weight:700;line-height:1;letter-spacing:-.01em;color:var(--line);text-shadow:3px 3px 0 var(--accent1);transform:rotate(-2deg);transform-origin:left center;overflow-wrap:break-word}
 .bio{margin:.9rem 0 0;max-width:32ch;color:var(--muted);font-size:1.05rem}
 .desk{margin:1.5rem -.5rem 0}
 .desk svg{display:block;width:100%;height:auto;overflow:visible}
@@ -51,12 +51,12 @@ body{margin:0;background:var(--paper);color:var(--text);font-family:var(--font);
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .w-light{display:none}}:root[data-theme="dark"] .w-light{display:none}
 .tag{margin-top:1rem;min-height:10rem;padding:1.1rem 1.2rem 1.2rem;background:var(--card);border:2px solid var(--line);border-radius:255px 18px 225px 18px/18px 225px 18px 255px}
 .hint{margin:0;color:var(--muted);font-size:1.1rem}
-.tag h2{margin:0;font-size:1.45rem;font-weight:800;line-height:1.2;color:var(--line)}
+.tag h2{margin:0;font-size:1.45rem;font-weight:700;line-height:1.2;color:var(--line)}
 .stat{margin:.35rem 0 0;font-weight:600;font-size:.95rem}
 .stat::before{content:"";display:inline-block;width:.8em;height:.8em;margin-right:.45em;border:2px solid var(--line);border-radius:50%;vertical-align:-.08em}
 .stat.s-open::before{background:var(--accent2)}.stat.s-waitlist::before{background:var(--accent1)}
 .tag p.desc{margin:.35rem 0 1rem;max-width:36ch}
-.btn{display:inline-block;padding:.6rem 1.1rem;background:var(--line);color:var(--paper);font-family:var(--font);font-weight:800;font-size:1rem;text-decoration:none;border:0;border-radius:12px 4px 14px 5px;box-shadow:4px 4px 0 var(--accent1);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+.btn{display:inline-block;padding:.6rem 1.1rem;background:var(--line);color:var(--paper);font-family:var(--font);font-weight:700;font-size:1rem;text-decoration:none;border:0;border-radius:12px 4px 14px 5px;box-shadow:4px 4px 0 var(--accent1);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
 .btn:hover{transform:translate(-1px,-1px);box-shadow:5px 5px 0 var(--accent1)}
 .btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--accent1)}
 .btn:focus-visible,.links a:focus-visible,.foot a:focus-visible{outline:3px dashed var(--accent1);outline-offset:4px}
@@ -69,7 +69,7 @@ body{margin:0;background:var(--paper);color:var(--text);font-family:var(--font);
 .toast{position:fixed;left:50%;bottom:calc(1rem + env(safe-area-inset-bottom,0px));transform:translate(-50%,1rem);width:min(26rem,calc(100% - 2rem));padding:.75rem 1rem;background:var(--line);color:var(--paper);border-radius:14px 6px 16px 6px;box-shadow:4px 4px 0 var(--accent1);font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease}.toast.show{opacity:1;transform:translate(-50%,0)}
 @media (prefers-reduced-motion:reduce){.obj .lift,.ring,.btn,.toast{transition:none}}
 :root[data-motion="off"] .lift,:root[data-motion="off"] .ring,:root[data-motion="off"] .btn{transition:none}
-body{font-size-adjust:0.51}.name,.art-text{font-size-adjust:none}.name{font-size:clamp(3.25rem,15vw,4.38rem);font-weight:700}.tag h2,.btn{font-weight:700}.art-text,.stat,.links-h,.links a{font-weight:600}
+body{font-size-adjust:0.51}.name,.art-text{font-size-adjust:none}
 .bg-base{display:none;fill:var(--mat)}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .bg-base{display:inline}}:root[data-theme="dark"] .bg-base{display:inline}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .bgr{mix-blend-mode:multiply;opacity:var(--fill-op)}}:root[data-theme="dark"] .bgr{mix-blend-mode:multiply;opacity:var(--fill-op)}
 .name.lettered{text-shadow:none}.name.flat{transform:none}.vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.lettering{display:grid;width:min(85%,14.85rem)}.lt{grid-area:1/1;display:block;width:100%;height:auto;overflow:visible;position:relative}.lt-sh{transform:translate(3px,3px);--line:var(--accent1);--accent2:var(--accent1);--text:var(--accent1);--paper:var(--accent1);--mat:var(--accent1)}
 </style>
@@ -77,7 +77,7 @@ body{font-size-adjust:0.51}.name,.art-text{font-size-adjust:none}.name{font-size
 <body>
 <main class="page">
 <header>
-<h1 class="name lettered"><span class="vh">Pia Morandi</span><span class="lettering" aria-hidden="true"><svg class="lt lt-sh" viewBox="9 9 202 102" focusable="false"><path class="stroke-accent2" fill="none" stroke-width="7" stroke-linecap="round" d="M14 106 C 70 99, 140 112, 206 101"/><path class="ink" stroke-width="9" d="M24 96 C 25 72, 22 42, 25 14"/><circle class="role-accent1" cx="99" cy="34" r="6.5"/></svg><svg class="lt" viewBox="9 9 202 102" focusable="false"><path class="stroke-accent2" fill="none" stroke-width="7" stroke-linecap="round" d="M14 106 C 70 99, 140 112, 206 101"/><path class="ink" stroke-width="9" d="M24 96 C 25 72, 22 42, 25 14"/><circle class="role-accent1" cx="99" cy="34" r="6.5"/></svg></span></h1>
+<h1 class="name lettered"><span class="vh">Pia Morandi</span><span class="lettering" aria-hidden="true"><svg class="lt lt-sh" viewBox="9 9 202 102" focusable="false"><use href="#lt-art"/></svg><svg class="lt" viewBox="9 9 202 102" focusable="false"><g id="lt-art"><path class="stroke-accent2" fill="none" stroke-width="7" stroke-linecap="round" d="M14 106 C 70 99, 140 112, 206 101"/><path class="ink" stroke-width="9" d="M24 96 C 25 72, 22 42, 25 14"/><circle class="role-accent1" cx="99" cy="34" r="6.5"/></g></svg></span></h1>
 <p class="bio">Illustrator in Turin. Picture books, plants, and one orange cat.</p>
 </header>
 <figure class="desk">

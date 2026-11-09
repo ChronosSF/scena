@@ -5,7 +5,8 @@
 import type {
   ArtLayer, Asset, Hotspot, Layer, LinkContent, ObjectLayer, PageDocument, Part, ProceduralAsset, SceneDocument, Slot, SlotKind, Transform,
 } from "@scena/scene";
-import { isUploadedBackground, layerBBox, translateForCenter, type Point } from "@scena/renderer";
+import { MAT_SHAPE, isUploadedBackground, partAssets } from "@scena/scene";
+import { layerBBox, translateForCenter, type Point } from "@scena/renderer";
 import { DESK_SCENE, MUG_SAMPLE, PIA_PAGE, type SampleDrawing } from "@scena/scenes";
 import { clone } from "./util.ts";
 import { dropUnusedAssets } from "./frames.ts";
@@ -55,8 +56,7 @@ export interface Stash {
   hotspot?: Hotspot;
   /** Opacity to restore when a hidden decoration is shown again. */
   opacity?: number;
-  /** Where a drawing was before it became a background, and the surface a background replaced. */
-  transform?: Transform;
+  /** The generated surface a background replaced, for "Over the mat" and "Use as drawing". */
   surface?: Surface;
 }
 
@@ -135,21 +135,25 @@ export function addDrawing(scene: SceneDocument, o: { id: string; name: string; 
   return layer;
 }
 
+/** Copies the sample assets `ids` into the scene under the new layer id. Returns old id → new id. */
+export function cloneSampleAssets(scene: SceneDocument, assets: Record<string, Asset>, ids: string[], key: string, id: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const src of ids) {
+    if (map[src]) continue;
+    const a = clone(assets[src]!);
+    a.id = `${id}-${src.replace(new RegExp(`^${key}-`), "")}`;
+    map[src] = a.id;
+    scene.assets[a.id] = a;
+  }
+  return map;
+}
+
 /** Insert one of the desk objects; it lands where it sits on Pia's desk (nudged if taken). */
 export function addSample(scene: SceneDocument, key: string): { layer: ArtLayer; sample: Sample } {
   const sample = SAMPLES.find((s) => s.key === key);
   if (!sample) throw new Error(`No sample "${key}"`);
   const id = freshId(scene, key);
-  const map: Record<string, string> = {};
-  for (const p of sample.layer.parts) {
-    for (const src of [p.asset, ...(p.frames || [])]) {
-      if (map[src]) continue;
-      const a = clone(sample.assets[src]!);
-      a.id = `${id}-${src.replace(new RegExp(`^${key}-`), "")}`;
-      map[src] = a.id;
-      scene.assets[a.id] = a;
-    }
-  }
+  const map = cloneSampleAssets(scene, sample.assets, sample.layer.parts.flatMap(partAssets), key, id);
   const occupied = scene.layers.some((l) => l.transform && Math.abs(l.transform.x - sample.layer.transform.x) < 8 && Math.abs(l.transform.y - sample.layer.transform.y) < 8);
   const t = clone(sample.layer.transform);
   if (occupied) { t.x += 18; t.y += 18; }
@@ -306,9 +310,9 @@ export function setSurface(scene: SceneDocument, surface: Surface): void {
     scene.assets[id] = { id, kind: "procedural", generator, params, width: scene.canvas.width, height: scene.canvas.height, bytes: 0, sha256: "" };
     add.push({ id: `bg-${id}`, type: "background", asset: id });
   };
-  if (surface !== "paper") proc("mat", "mat", { inset: 6, rx: 18 });
-  if (surface === "grid") proc("grid-24", "grid", { inset: 6, step: 24, start: 30 });
-  if (surface === "dots") proc("dots-18", "dots", { inset: 6, step: 18, r: 1.6, rx: 18 });
+  if (surface !== "paper") proc("mat", "mat", { ...MAT_SHAPE });
+  if (surface === "grid") proc("grid-24", "grid", { inset: MAT_SHAPE.inset, step: 24, start: 30 });
+  if (surface === "dots") proc("dots-18", "dots", { inset: MAT_SHAPE.inset, step: 18, r: 1.6, rx: MAT_SHAPE.rx });
   scene.layers.unshift(...add);
 }
 

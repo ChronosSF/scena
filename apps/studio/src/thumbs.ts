@@ -5,6 +5,9 @@ import type { ArtLayer, Layer, PageDocument, Part, SceneDocument } from "@scena/
 import { layerBBox, renderParts } from "@scena/renderer";
 import { assetHref } from "./assets.ts";
 
+/** The data-theme a thumbnail's scope takes from the page: light or dark when forced, else the OS's. */
+export const thumbTheme = (page: PageDocument): "light" | "dark" | undefined => (page.theme.mode === "auto" ? undefined : page.theme.mode);
+
 /** A still of the drawing: frame 1, or frame `frame` (0-based) of a frame-animated drawing. */
 export function drawingThumb(scene: SceneDocument, page: PageDocument, layer: Layer, prefix: string, frame = 0): string {
   const all = Array.isArray(layer.parts) ? layer.parts : layer.asset ? [{ asset: layer.asset, role: "lines" as const }] : [];

@@ -1,50 +1,27 @@
 // The board and the header in the inspector (ADR 0003): a background's settings, the
 // typeface (Page), and the hand-lettered name (Page).
 
-import { useMemo, useRef, useState, type DragEvent } from "react";
-import { ImageUp, PenLine, Trash2, Undo2 } from "lucide-react";
-import { DEFAULT_TYPEFACE, TYPEFACES, type BackgroundFit, type Layer } from "@scena/scene";
+import { useMemo } from "react";
+import { PenLine, Trash2, Undo2 } from "lucide-react";
+import { DEFAULT_TYPEFACE, LETTERING, TYPEFACES, layerAssets, type BackgroundFit, type Layer } from "@scena/scene";
 import { useStudio } from "../store.ts";
 import * as actions from "../actions.ts";
 import { placementOf, type Placement } from "../board.ts";
-import { drawingThumb } from "../thumbs.ts";
+import { assetSummary } from "../describe.ts";
+import { drawingThumb, thumbTheme } from "../thumbs.ts";
 import { kb } from "../util.ts";
-import { Button, IconButton, Section, Segmented, Switch } from "./ui.tsx";
-
-const ACCEPT = ".svg,.png,.webp,image/svg+xml,image/png,image/webp";
-const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types?.includes("Files");
-
-/** A drop target that is also a button; files go to `onFiles`. */
-function DropButton({ label, onFiles, ui, id, multiple = false }: { label: string; onFiles: (fs: File[]) => void; ui: string; id: string; multiple?: boolean }) {
-  const input = useRef<HTMLInputElement>(null);
-  const [over, setOver] = useState(false);
-  return (
-    <>
-      <button type="button" className={`drop${over ? " over" : ""}`} data-ui={ui} onClick={() => input.current?.click()}
-        onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); setOver(true); } }}
-        onDragLeave={() => setOver(false)}
-        onDrop={(e) => { if (!hasFiles(e)) return; e.preventDefault(); setOver(false); onFiles([...e.dataTransfer.files]); }}>
-        <ImageUp aria-hidden="true" strokeWidth={1.75} /> {label}
-      </button>
-      <input ref={input} type="file" id={id} accept={ACCEPT} multiple={multiple} hidden
-        onChange={(e) => { const fs = [...(e.target.files || [])]; e.target.value = ""; if (fs.length) onFiles(fs); }} />
-    </>
-  );
-}
+import { Button, DropButton, IconButton, Section, Segmented, Switch } from "./ui.tsx";
 
 // ------------------------------------------------------------------ a background
 
 export function BackgroundInspector({ layer }: { layer: Layer }) {
   const { scene, page, rev } = useStudio();
-  const theme = page.theme.mode === "auto" ? undefined : page.theme.mode;
+  const theme = thumbTheme(page);
   const thumb = useMemo(() => drawingThumb(scene, page, layer, `bgi-${layer.id}`), [rev, layer.id]); // documents mutate in place
-  const asset = layer.asset ? scene.assets[layer.asset] : undefined;
-  const ids = layer.parts ? layer.parts.map((p) => p.asset) : layer.asset ? [layer.asset] : [];
-  const bytes = [...ids, ...(layer.assetDark ? [layer.assetDark] : [])].reduce((s, id) => s + (scene.assets[id]?.bytes || 0), 0);
-  const raster = ids.some((id) => scene.assets[id]?.kind === "raster");
+  const raster = layerAssets(layer).some((id) => scene.assets[id]?.kind === "raster");
   const dark = layer.assetDark ? scene.assets[layer.assetDark] : undefined;
   const placement = placementOf(scene);
-  const meta = asset?.kind === "raster" ? `${asset.url.startsWith("data:image/webp") ? "WebP" : "PNG"} · ${asset.width}×${asset.height} · ${kb(bytes)}` : `SVG · ${kb(bytes)}`;
+  const meta = assetSummary(scene, layer);
 
   return (
     <div>
@@ -128,7 +105,7 @@ export function LetteringSection() {
   const { scene, page, rev } = useStudio();
   const lt = scene.header?.lettering;
   const asset = lt ? scene.assets[lt.asset] : undefined;
-  const theme = page.theme.mode === "auto" ? undefined : page.theme.mode;
+  const theme = thumbTheme(page);
   const preview = useMemo(() => (asset ? drawingThumb(scene, page, { id: "lettering", type: "decor", asset: asset.id }, "ltp") : ""), [rev, asset?.id]); // documents mutate in place
   return (
     <Section title="Name lettering">
@@ -140,9 +117,9 @@ export function LetteringSection() {
             <IconButton size="sm" icon={Trash2} label="Remove the lettering" className="danger" onClick={actions.removeLettering} data-ui="remove-lettering" />
           </div>
           <div className="field">
-            <label className="field-label" htmlFor="lettering-width"><span>Width</span><output className="field-value num" htmlFor="lettering-width">{lt.maxWidth ?? 85}%</output></label>
+            <label className="field-label" htmlFor="lettering-width"><span>Width</span><output className="field-value num" htmlFor="lettering-width">{lt.maxWidth ?? LETTERING.width}%</output></label>
             <div className="range-row">
-              <input id="lettering-width" type="range" min={20} max={100} step={5} value={lt.maxWidth ?? 85} onChange={(e) => actions.setLetteringOptions({ maxWidth: Number(e.target.value) })} />
+              <input id="lettering-width" type="range" min={LETTERING.minWidth} max={LETTERING.maxWidth} step={5} value={lt.maxWidth ?? LETTERING.width} onChange={(e) => actions.setLetteringOptions({ maxWidth: Number(e.target.value) })} />
             </div>
           </div>
           <div className="switch-row">

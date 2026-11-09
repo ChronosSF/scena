@@ -1,8 +1,31 @@
 // Scene lint: the performance and accessibility budget from docs/development-plan.md section 8.1.
 
-import { FRAMES, LIMITS } from "./constants.ts";
+import { FRAMES, LIMITS, MAT_SHAPE } from "./constants.ts";
 import { contrast } from "./color.ts";
 import type { Asset, Layer, LintCheck, LintLevel, LintReport, PageDocument, Part, SceneDocument } from "./types.ts";
+
+/** The assets a part draws: its frames when it is animated, otherwise its one asset. */
+export function partAssets(p: Part): string[] {
+  return Array.isArray(p.frames) && p.frames.length ? p.frames : [p.asset];
+}
+
+/** Every asset a layer draws, once per use: its parts (all frames) or its one asset, plus a dark variant. */
+export function layerAssets(l: Layer): string[] {
+  const art = Array.isArray(l.parts) ? l.parts.flatMap(partAssets) : l.asset ? [l.asset] : [];
+  return l.assetDark ? [...art, l.assetDark] : art;
+}
+
+/** Every asset id a scene references: its layers and the lettered name. */
+export function sceneAssetIds(scene: SceneDocument): Set<string> {
+  const ids = new Set((scene.layers || []).flatMap(layerAssets));
+  if (scene.header?.lettering) ids.add(scene.header.lettering.asset);
+  return ids;
+}
+
+/** An uploaded background: a background layer whose art is not generated (mat, grid, dots). */
+export function isUploadedBackground(scene: SceneDocument, l: Layer): boolean {
+  return l.type === "background" && (Array.isArray(l.parts) || (!!l.asset && scene.assets?.[l.asset]?.kind !== "procedural"));
+}
 
 const SHAPE_TAGS = /<(path|rect|circle|ellipse|line|polyline|polygon|text|use)\b/g;
 
@@ -13,7 +36,7 @@ export function assetNodeCount(asset: Asset | undefined, canvas?: { width: numbe
   if (asset.kind === "procedural") {
     const p = asset.params || {};
     const W = canvas?.width || 400, H = canvas?.height || 440;
-    const inset = p.inset ?? 6, step = p.step || 24, start = p.start ?? 30;
+    const inset = p.inset ?? MAT_SHAPE.inset, step = p.step || 24, start = p.start ?? 30;
     if (asset.generator === "grid") {
       let n = 0;
       for (let x = start; x < W - inset; x += step) n++;
@@ -41,14 +64,10 @@ export function lintScene(scene: SceneDocument): LintReport {
 
   // 1. node count, counting each asset once per use; every frame is in the page, so every frame counts
   let nodes = 0;
-  for (const l of layers) {
-    if (Array.isArray(l.parts)) for (const p of l.parts) for (const id of partAssets(p)) nodes += assetNodeCount(assets[id], scene.canvas);
-    else if (l.asset) nodes += assetNodeCount(assets[l.asset], scene.canvas);
-    if (l.assetDark) nodes += assetNodeCount(assets[l.assetDark], scene.canvas);
-  }
-  // a recoloured vector lettering is drawn twice: the ink and its riso shadow
+  for (const l of layers) for (const id of layerAssets(l)) nodes += assetNodeCount(assets[id], scene.canvas);
+  // a recoloured vector lettering also has its riso shadow: one <use> of the same art
   const lt = scene.header?.lettering, lta = lt ? assets[lt.asset] : undefined;
-  if (lta) nodes += assetNodeCount(lta) * (lta.kind === "svg-inline" && lta.colorRoles?.length ? 2 : 1);
+  if (lta) nodes += assetNodeCount(lta) + (lta.kind === "svg-inline" && lta.colorRoles?.length ? 1 : 0);
   checks.push({ id: "nodes", level: level(nodes, LIMITS.nodes), label: "Drawing complexity",
     detail: `${nodes} of ${LIMITS.nodes} shapes${nodes > LIMITS.nodes ? ". Simplify paths or merge shapes before export." : ""}` });
 
@@ -122,11 +141,6 @@ export function lintScene(scene: SceneDocument): LintReport {
   return { ok: errors === 0, errors, warnings, checks };
 }
 
-/** The assets a part draws: its frames when it is animated, otherwise its one asset. */
-export function partAssets(p: Part): string[] {
-  return Array.isArray(p.frames) && p.frames.length ? p.frames : [p.asset];
-}
-
 const animatedParts = (l: Layer): Part[] => (Array.isArray(l.parts) ? l.parts.filter((p) => Array.isArray(p.frames) && p.frames.length > 1) : []);
 
 function sameBox(a: Asset | undefined, b: Asset | undefined): boolean {
@@ -168,18 +182,17 @@ function lintFrames(scene: SceneDocument): LintCheck | null {
   return { id: "frames", level: errors.length ? "error" : warns.length ? "warn" : "ok", label: "Frame animation", detail };
 }
 
-const isUploadedBackground = (scene: SceneDocument, l: Layer) =>
-  l.type === "background" && (Array.isArray(l.parts) || (!!l.asset && scene.assets?.[l.asset]?.kind !== "procedural"));
-
 /** Byte budget per uploaded background (its art and its dark variant). */
 function lintBackgrounds(scene: SceneDocument): LintCheck | null {
   const assets = scene.assets || {};
   const layers = (scene.layers || []).filter((l) => isUploadedBackground(scene, l));
   if (!layers.length) return null;
   const errors: string[] = [], warns: string[] = [];
+  const { width: W, height: H } = scene.canvas;
+  const maxPx = Math.max(W, H) * LIMITS.pxPerUnit;
   let total = 0;
   for (const l of layers) {
-    const ids = [...new Set([...(Array.isArray(l.parts) ? l.parts.flatMap(partAssets) : l.asset ? [l.asset] : []), ...(l.assetDark ? [l.assetDark] : [])])];
+    const ids = [...new Set(layerAssets(l))];
     const bytes = ids.reduce((s, id) => s + (assets[id]?.bytes || 0), 0);
     total += bytes;
     const name = l.name || l.id;
@@ -187,7 +200,7 @@ function lintBackgrounds(scene: SceneDocument): LintCheck | null {
     else if (bytes > LIMITS.backgroundBytesSoft) warns.push(`${name}: ${kb(bytes)}; under ${kb(LIMITS.backgroundBytesSoft)} keeps the page quick`);
     for (const id of ids) {
       const a = assets[id];
-      if (a?.kind === "raster" && Math.max(a.width, a.height) > LIMITS.backgroundPx * 1.5) warns.push(`${name}: ${a.width}×${a.height} px is more than a 400-unit board needs at 3x`);
+      if (a?.kind === "raster" && Math.max(a.width, a.height) > maxPx * 1.5) warns.push(`${name}: ${a.width}×${a.height} px is more than a ${W}×${H} board needs at ${LIMITS.pxPerUnit}x`);
     }
   }
   return { id: "backgrounds", level: errors.length ? "error" : warns.length ? "warn" : "ok", label: "Background",

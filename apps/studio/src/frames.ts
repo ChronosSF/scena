@@ -5,7 +5,7 @@
 // part whose column never changes stays still (the mug's colour layer); the others get
 // `frames`, and all of them share one frame count, fps and play mode, so they flip together.
 
-import { FRAMES, partAssets, type Asset, type FramePlay, type Layer, type Part, type SceneDocument } from "@scena/scene";
+import { FRAMES, partAssets, sceneAssetIds, type Asset, type FramePlay, type Layer, type Part, type SceneDocument } from "@scena/scene";
 
 export interface Timing {
   fps: number;
@@ -84,13 +84,7 @@ export function removeFrame(scene: SceneDocument, layer: Layer, k: number): bool
 
 /** Removes assets no layer draws any more (in any frame). */
 export function dropUnusedAssets(scene: SceneDocument): void {
-  const used = new Set<string>();
-  for (const l of scene.layers) {
-    if (l.asset) used.add(l.asset);
-    if (l.assetDark) used.add(l.assetDark);
-    for (const p of l.parts || []) for (const id of partAssets(p)) used.add(id);
-  }
-  if (scene.header?.lettering) used.add(scene.header.lettering.asset);
+  const used = sceneAssetIds(scene);
   for (const id of Object.keys(scene.assets)) if (!used.has(id)) delete scene.assets[id];
 }
 

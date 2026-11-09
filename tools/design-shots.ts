@@ -8,7 +8,7 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { launch, sleep } from "./cdp.ts";
+import { fixture, launch, sleep } from "./cdp.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "docs", "design");
@@ -27,18 +27,11 @@ await page.eval(`localStorage.clear()`);
 await page.goto(target, 1500);
 await page.eval(`document.querySelector('[data-ui="open-desk"]').click()`);
 await sleep(400);
-const fixture = (f: string) => join(root, "fixtures", f);
-async function setFiles(selector: string, files: string[]) {
-  const { root: doc } = await page.send("DOM.getDocument", { depth: 0 });
-  const { nodeId } = await page.send("DOM.querySelector", { nodeId: doc.nodeId, selector });
-  await page.send("DOM.setFileInputFiles", { nodeId, files });
-}
-await page.send("DOM.enable");
-await setFiles("#background-file", [fixture("paper-texture.png")]);
+await page.setFiles("#background-file", [fixture("paper-texture.png")]);
 await sleep(1500);
 await page.eval(`sceneStudio.store.select(null)`);
 await sleep(300);
-await setFiles("#lettering-file", [fixture("pia-lettering.svg")]);
+await page.setFiles("#lettering-file", [fixture("pia-lettering.svg")]);
 await sleep(1200);
 await page.eval(`document.querySelector('[data-layer-button="envelope"]').click()`);
 await page.eval(`document.activeElement?.blur()`);

@@ -4,13 +4,12 @@
 // The mug is redrawn in every frame, with the small wobble of a hand redraw; the colour
 // layer is printed once (a still fills part under animated lines).
 
-export type MugMode = "classes" | "sentinel";
+import { fillAttr, inkAttr, type ArtMode } from "./art.ts";
+
+export type MugMode = ArtMode;
 export const MUG_FRAMES = 3;
 /** Shared artboard of the frame files, in art units. */
 export const MUG_VIEWBOX = { w: 84, h: 108 };
-
-const inkAttr = (m: MugMode) => (m === "classes" ? 'class="ink"' : 'fill="none" stroke="#FF00FF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"');
-const fillAttr = (m: MugMode, role: "accent1" | "accent2") => (m === "classes" ? `class="role-${role}"` : `fill="${role === "accent1" ? "#00FFFF" : "#FFFF00"}"`);
 
 /** The colour layer: the mug body and a heart. Still in every frame. */
 export function mugFills(m: MugMode): string {

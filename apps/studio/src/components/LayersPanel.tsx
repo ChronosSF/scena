@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { ArrowDown, ArrowRight, ArrowUp, ChevronRight, Ellipsis, Eye, EyeOff, Film, ImageUp, Link, PenLine, Shapes, SquareDashed, Trash2, Undo2, Upload } from "lucide-react";
 import { resolvePalette } from "@scena/renderer";
 import { BACKGROUND_SAMPLES, DESK_SCENE, PIA_PAGE } from "@scena/scenes";
@@ -6,13 +6,13 @@ import type { Layer } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
 import { SAMPLES, drawings, isHidden } from "../model.ts";
 import { SENTINELS } from "../ingest/svg.ts";
-import { drawingThumb } from "../thumbs.ts";
+import { drawingThumb, thumbTheme } from "../thumbs.ts";
 import * as actions from "../actions.ts";
 import { usePrefersDark } from "../hooks.ts";
 import { announce } from "../ui.ts";
 import { frameCount } from "../frames.ts";
 import { backgrounds, placementOf } from "../board.ts";
-import { Button, IconButton, Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Popover, PopoverContent, PopoverTrigger, Tip } from "./ui.tsx";
+import { Button, IMAGE_ACCEPT, IconButton, Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Popover, PopoverContent, PopoverTrigger, Tip, useFileDrop } from "./ui.tsx";
 
 export const openFilePicker = () => document.getElementById("file")?.click();
 
@@ -89,7 +89,7 @@ function LayerRow(props: { layer: Layer; index: number; count: number; dragging:
   const name = layer.name || layer.id;
   const isSel = layer.id === sel;
   const hidden = isHidden(page, layer);
-  const theme = page.theme.mode === "auto" ? undefined : page.theme.mode;
+  const theme = thumbTheme(page);
   const thumb = useMemo(() => drawingThumb(scene, page, layer, `th-${layer.id}`), [rev, layer.id]); // documents mutate in place
 
   function onKey(e: KeyboardEvent<HTMLButtonElement>) {
@@ -148,17 +148,12 @@ function LayerRow(props: { layer: Layer; index: number; count: number; dragging:
 function BackgroundGroup() {
   const { scene, page, sel, rev } = useStudio();
   const list = backgrounds(scene);
-  const input = useRef<HTMLInputElement>(null);
-  const [over, setOver] = useState(false);
-  const theme = page.theme.mode === "auto" ? undefined : page.theme.mode;
+  const drop = useFileDrop((fs) => void actions.addBackgrounds(fs));
+  const theme = thumbTheme(page);
   const thumbs = useMemo(() => list.map((l) => drawingThumb(scene, page, l, `bg-${l.id}`)), [rev]); // documents mutate in place
   const placement = placementOf(scene);
-  const files = (e: DragEvent) => !!e.dataTransfer?.types?.includes("Files");
   return (
-    <div className={`bg-group${over ? " over" : ""}`} data-ui="background-group"
-      onDragOver={(e) => { if (files(e)) { e.preventDefault(); setOver(true); } }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => { if (!files(e)) return; e.preventDefault(); setOver(false); void actions.addBackgrounds([...e.dataTransfer.files]); }}>
+    <div className={`bg-group${drop.over ? " over" : ""}`} data-ui="background-group" {...drop.dropProps}>
       <div className="layers-head">
         <span className="section-title" id="bg-title">Background</span>
         <span className="count-badge">{list.length || ""}</span>
@@ -195,11 +190,10 @@ function BackgroundGroup() {
         </ul>
       ) : null}
       <div className="bg-add">
-        <button type="button" className={`drop bg-drop${over ? " over" : ""}`} onClick={() => input.current?.click()} data-ui="add-background">
+        <button type="button" className={`drop bg-drop${drop.over ? " over" : ""}`} onClick={drop.pick} data-ui="add-background">
           <ImageUp aria-hidden="true" strokeWidth={1.75} /> {list.length ? "Add another background" : "Add a background: paper, a scan, a drawn desk"}
         </button>
-        <input ref={input} type="file" id="background-file" accept=".svg,.png,.webp,image/svg+xml,image/png,image/webp" hidden
-          onChange={(e) => { const fs = [...(e.target.files || [])]; e.target.value = ""; if (fs.length) void actions.addBackgrounds(fs); }} />
+        <input id="background-file" {...drop.inputProps} />
       </div>
     </div>
   );
@@ -285,7 +279,7 @@ export function LayersPanel(props: { hidden?: boolean; tabbed?: boolean }) {
           <Upload aria-hidden="true" strokeWidth={1.75} /> Drop SVG or PNG files here
         </button>
         <ColourHelp />
-        <input type="file" id="file" accept=".svg,.png,.webp,image/svg+xml,image/png,image/webp" multiple hidden
+        <input type="file" id="file" accept={IMAGE_ACCEPT} multiple hidden
           onChange={(e) => { const fs = [...(e.target.files || [])]; e.target.value = ""; if (fs.length) void actions.addFiles(fs); }} />
       </div>
       <div className="layers-head">

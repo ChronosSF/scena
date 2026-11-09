@@ -2,11 +2,11 @@
 // positioning for tooltips, menus and popovers; everything is styled with the --ui-*
 // tokens in studio.css (docs/design/studio-ui.md).
 
-import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ChangeEvent, type ComponentProps, type DragEvent, type ReactNode } from "react";
 import * as RTooltip from "@radix-ui/react-tooltip";
 import * as RMenu from "@radix-ui/react-dropdown-menu";
 import * as RPopover from "@radix-ui/react-popover";
-import { ChevronDown, CircleAlert, TriangleAlert, type LucideIcon } from "lucide-react";
+import { ChevronDown, CircleAlert, ImageUp, TriangleAlert, type LucideIcon } from "lucide-react";
 
 export const TooltipProvider = RTooltip.Provider;
 
@@ -204,5 +204,47 @@ export function PopoverContent({ children, align = "end", label }: { children: R
     <RPopover.Portal>
       <RPopover.Content className="popover" align={align} sideOffset={8} collisionPadding={8} aria-label={label}>{children}</RPopover.Content>
     </RPopover.Portal>
+  );
+}
+
+// ------------------------------------------------------------------ files
+
+/** The drawings the studio accepts, for every file input. */
+export const IMAGE_ACCEPT = ".svg,.png,.webp,image/svg+xml,image/png,image/webp";
+
+/** Whether a drag carries files (React or native event). */
+export const hasFiles = (e: { dataTransfer: DataTransfer | null }): boolean => !!e.dataTransfer?.types?.includes("Files");
+
+/**
+ * One file-drop behaviour for every drop target: spread `dropProps` on the element that takes
+ * the drop, render `<input {...inputProps} />` once, and call `pick()` to open the chooser.
+ * `over` is true while files are dragged across the target.
+ */
+export function useFileDrop(onFiles: (files: File[]) => void) {
+  const input = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
+  const dropProps = {
+    onDragOver: (e: DragEvent) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setOver(true); } },
+    onDragLeave: () => setOver(false),
+    onDrop: (e: DragEvent) => { if (!hasFiles(e)) return; e.preventDefault(); setOver(false); onFiles([...e.dataTransfer.files]); },
+  };
+  const inputProps = {
+    ref: input, type: "file" as const, accept: IMAGE_ACCEPT, hidden: true,
+    onChange: (e: ChangeEvent<HTMLInputElement>) => { const fs = [...(e.target.files || [])]; e.target.value = ""; if (fs.length) onFiles(fs); },
+  };
+  return { over, pick: () => input.current?.click(), dropProps, inputProps };
+}
+
+/** A button that opens the file chooser and is also a drop target. */
+export function DropButton({ label, onFiles, ui, id, multiple = false, icon: Icon = ImageUp, className = "" }:
+  { label: ReactNode; onFiles: (fs: File[]) => void; ui: string; id: string; multiple?: boolean; icon?: LucideIcon; className?: string }) {
+  const d = useFileDrop(onFiles);
+  return (
+    <>
+      <button type="button" className={`drop${className ? ` ${className}` : ""}${d.over ? " over" : ""}`} data-ui={ui} onClick={d.pick} {...d.dropProps}>
+        <Icon aria-hidden="true" strokeWidth={1.75} /> {label}
+      </button>
+      <input id={id} multiple={multiple} {...d.inputProps} />
+    </>
   );
 }

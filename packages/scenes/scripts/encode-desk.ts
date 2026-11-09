@@ -11,7 +11,7 @@ import { writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import type { Asset, Effect, PageDocument, Palette, ProceduralAsset, Role, SceneDocument } from "@scena/scene";
+import { MAT_SHAPE, type Asset, type Effect, type PageDocument, type Palette, type ProceduralAsset, type Role, type SceneDocument } from "@scena/scene";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = (f: string) => join(here, "..", f);
@@ -45,8 +45,8 @@ function procedural(id: string, generator: ProceduralAsset["generator"], params:
   assets[id] = { id, kind: "procedural", generator, params, width: 400, height: 440, bytes: 0, sha256: "" };
 }
 
-procedural("mat", "mat", { inset: 6, rx: 18 });
-procedural("grid-24", "grid", { inset: 6, step: 24, start: 30 });
+procedural("mat", "mat", { ...MAT_SHAPE });
+procedural("grid-24", "grid", { inset: MAT_SHAPE.inset, step: 24, start: 30 });
 svg("clutter", `
 <g fill="none" class="stroke-line" stroke-width="2" stroke-linecap="round">
 <circle cx="190" cy="80" r="30" stroke-dasharray="150 38"/>

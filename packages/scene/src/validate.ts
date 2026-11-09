@@ -2,7 +2,7 @@
 // Both validators return a list of readable error strings; an empty list means valid.
 // They take `unknown` because their whole job is to check untrusted JSON.
 
-import { SCHEMA_VERSION, ROLES, KINDS, PART_ROLES, WHENS, STATUSES, LAYER_TYPES, ASSET_KINDS, EFFECTS, LIMITS, FRAMES, FRAME_PLAYS, BACKGROUND_FITS, TYPEFACES, typeface } from "./constants.ts";
+import { SCHEMA_VERSION, ROLES, KINDS, PART_ROLES, WHENS, STATUSES, LAYER_TYPES, ASSET_KINDS, EFFECTS, LIMITS, FRAMES, FRAME_PLAYS, BACKGROUND_FITS, LETTERING, TYPEFACES, typeface } from "./constants.ts";
 import { isColor } from "./color.ts";
 import { fragmentProblem, isSafeRasterUrl } from "./safety.ts";
 import type { DocumentKind, PageDocument, SceneDocument } from "./types.ts";
@@ -260,7 +260,7 @@ export function validateScene(doc: unknown): string[] {
       const a = isObj(doc.assets) ? doc.assets[lt.asset] : undefined;
       if (v.need(isObj(a), "header.lettering.asset", `no asset "${lt.asset}"`)) v.need(a.kind === "svg-inline" || a.kind === "raster", "header.lettering.asset", "lettering is an SVG or a PNG/WebP");
     }
-    if (lt.maxWidth !== undefined) v.num(lt.maxWidth, "header.lettering.maxWidth", { min: 20, max: 100 });
+    if (lt.maxWidth !== undefined) v.num(lt.maxWidth, "header.lettering.maxWidth", { min: LETTERING.minWidth, max: LETTERING.maxWidth });
     if (lt.tilt !== undefined) v.need(isBool(lt.tilt), "header.lettering.tilt", "expected true or false");
   }
   return errors;

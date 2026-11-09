@@ -2,12 +2,9 @@
 // the scene sample (art classes, scripts/encode-samples.ts) and the fixture files an
 // illustrator would upload (sentinel colours, tools/make-fixtures.ts). See ADR 0003.
 
-export type ArtMode = "classes" | "sentinel";
+import { fillAttr as fill, inkAttr as ink, strokeAttr as strokeIn, type ArtMode } from "./art.ts";
 
-const ink = (m: ArtMode, w = 2.4) => (m === "classes" ? `class="ink"${w !== 2.4 ? ` stroke-width="${w}"` : ""}` : `fill="none" stroke="#FF00FF" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`);
-const fill = (m: ArtMode, role: "accent1" | "accent2") => (m === "classes" ? `class="role-${role}"` : `fill="${role === "accent1" ? "#00FFFF" : "#FFFF00"}"`);
-const strokeIn = (m: ArtMode, role: "accent1" | "accent2", w: number) =>
-  m === "classes" ? `class="stroke-${role}" fill="none" stroke-width="${w}" stroke-linecap="round"` : `fill="none" stroke="${role === "accent1" ? "#00FFFF" : "#FFFF00"}" stroke-width="${w}" stroke-linecap="round"`;
+export type { ArtMode };
 
 /** The desk top's board, in art units: the same as the desk's canvas. */
 export const DESK_TOP_BOX = { x: 0, y: 0, w: 400, h: 440 };

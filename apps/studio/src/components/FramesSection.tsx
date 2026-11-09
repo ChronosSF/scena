@@ -10,10 +10,7 @@ import { store, useStudio } from "../store.ts";
 import * as actions from "../actions.ts";
 import { PLAY_LABELS, fpsWords, frameRows, frameTiming } from "../frames.ts";
 import { drawingThumb } from "../thumbs.ts";
-import { IconButton, SelectField, Switch } from "./ui.tsx";
-
-const ACCEPT = ".svg,.png,.webp,image/svg+xml,image/png,image/webp";
-const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types?.includes("Files");
+import { IMAGE_ACCEPT as ACCEPT, IconButton, SelectField, Switch, hasFiles } from "./ui.tsx";
 
 export function FramesSection({ layer }: { layer: Layer }) {
   const { scene, page, rev, playFrames, frameAt, framesOpen } = useStudio();

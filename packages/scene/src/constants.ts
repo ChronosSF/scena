@@ -15,6 +15,9 @@ export const BACKGROUND_FITS: readonly BackgroundFit[] = ["cover", "contain"];
 /** The mat's shape: backgrounds clip to it ("Replace the mat"), and fit into it when clipped. */
 export const MAT_SHAPE = { inset: 6, rx: 18 } as const;
 
+/** A hand-lettered name's width, as a percentage of the header. */
+export const LETTERING = { minWidth: 20, maxWidth: 100, width: 85 } as const;
+
 /**
  * The curated typefaces (ADR 0003). The renderer builds a Google Fonts URL from the family,
  * so a scene may only name one of these. `display` and `strong` are the weights the page
@@ -74,8 +77,8 @@ export const LIMITS = {
   /** an uploaded background (asset and dark variant): warn above, error above */
   backgroundBytesSoft: 150 * 1024,
   backgroundBytes: 300 * 1024,
-  /** long side of a raster background: a 400-unit canvas at 3x */
-  backgroundPx: 1200,
+  /** raster backgrounds are stored at this many pixels per canvas unit (a 400-unit board at 3x) */
+  pxPerUnit: 3,
   /** a hand-lettered name: warn above, error above */
   letteringBytesSoft: 60 * 1024,
   letteringBytes: 150 * 1024,

@@ -9,7 +9,7 @@ import { Workspace } from "./Workspace.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { ExportDialog, FramesChoiceDialog, ImportErrorsDialog, ResetDialog } from "./Dialogs.tsx";
 import { Feedback } from "./Feedback.tsx";
-import { TooltipProvider } from "./ui.tsx";
+import { TooltipProvider, hasFiles } from "./ui.tsx";
 
 const inField = (t: EventTarget | null) => !!(t as Element | null)?.closest?.("input, textarea, select, [contenteditable]");
 
@@ -58,7 +58,6 @@ export function App() {
   // Drop files anywhere; over the canvas they land where they were dropped.
   useEffect(() => {
     let depth = 0;
-    const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types?.includes("Files");
     const enter = (e: DragEvent) => { if (hasFiles(e)) { depth++; setDropping(true); } };
     const leave = () => { depth = Math.max(0, depth - 1); if (!depth) setDropping(false); };
     const over = (e: DragEvent) => { if (hasFiles(e)) e.preventDefault(); };

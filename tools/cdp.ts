@@ -4,7 +4,12 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** A test drawing in fixtures/, by file name. */
+export const fixture = (f: string) => join(repoRoot, "fixtures", f);
 
 const CANDIDATES = [
   process.env.CHROME_PATH,
@@ -32,6 +37,8 @@ export interface Page {
   click: (x: number, y: number) => Promise<void>;
   drag: (from: [number, number], to: [number, number], steps?: number) => Promise<void>;
   key: (key: string, code?: string) => Promise<void>;
+  /** Put files into a file input, as the file chooser would. */
+  setFiles: (selector: string, files: string[]) => Promise<void>;
   logs: string[];
   close: () => Promise<void>;
 }
@@ -149,6 +156,13 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
       async key(key, code) {
         await s("Input.dispatchKeyEvent", { type: "keyDown", key, code: code || key });
         await s("Input.dispatchKeyEvent", { type: "keyUp", key, code: code || key });
+      },
+      async setFiles(selector, files) {
+        await s("DOM.enable");
+        const { root: doc } = await s("DOM.getDocument", { depth: 0 });
+        const { nodeId } = await s("DOM.querySelector", { nodeId: doc.nodeId, selector });
+        if (!nodeId) throw new Error(`Nothing matches ${selector}`);
+        await s("DOM.setFileInputFiles", { nodeId, files });
       },
       async screenshot() { return Buffer.from((await s("Page.captureScreenshot", { format: "png" })).data, "base64"); },
       close: () => send("Target.closeTarget", { targetId }),

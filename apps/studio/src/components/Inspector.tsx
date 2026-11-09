@@ -1,43 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Maximize2, RotateCw, Shapes, Trash2 } from "lucide-react";
-import { LIMITS, partAssets, safeHref, type CommissionStatus, type Layer, type Motion, type SceneDocument, type SlotKind } from "@scena/scene";
+import { LIMITS, safeHref, type CommissionStatus, type Layer, type Motion, type SlotKind } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
 import { CANVASES, KIND_LABELS, SURFACES, currentSurface, getLayer, slotOf, type Surface } from "../model.ts";
-import { drawingThumb } from "../thumbs.ts";
+import { drawingThumb, thumbTheme } from "../thumbs.ts";
+import { assetSummary } from "../describe.ts";
 import * as actions from "../actions.ts";
-import { kb } from "../util.ts";
 import { APPEARANCE, SceneNameInput, setAppearance } from "./TopBar.tsx";
 import { IconButton, NumberField, Section, Segmented, SelectField, Switch, TextField } from "./ui.tsx";
 import { FramesSection } from "./FramesSection.tsx";
 import { BackgroundInspector, LetteringSection, TypefaceSection, UseAsSection } from "./BoardSections.tsx";
 import { isBackground } from "../board.ts";
-import { frameCount, frameTiming } from "../frames.ts";
 
-const ROLE_WORD: Record<string, string> = { line: "ink", accent1: "colour 1", accent2: "colour 2" };
 const HANDLE = /^[a-z0-9][a-z0-9_-]{1,29}$/;
 const MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
-
-function assetSummary(scene: SceneDocument, layer: Layer): string {
-  const parts = Array.isArray(layer.parts) ? layer.parts : layer.asset ? [{ asset: layer.asset, role: "lines" as const }] : [];
-  const assets = [...new Set(parts.flatMap(partAssets))].map((id) => scene.assets[id]).filter((a) => a !== undefined);
-  if (!assets.length) return "";
-  const bytes = assets.reduce((s, a) => s + (a.bytes || 0), 0);
-  const n = frameCount(layer);
-  // frames report the one box they were padded to, so the author knows they register
-  const frames = n > 1 ? `${n} frames at ${frameTiming(layer).fps} fps in one ${boxOf(scene, layer)} box · ` : "";
-  const raster = assets.find((a) => a.kind === "raster");
-  if (raster) return `PNG · ${frames || `${raster.width}×${raster.height} · `}${kb(bytes)} · own colours`;
-  const roles = new Set(assets.flatMap((a) => a.colorRoles || []));
-  const nodes = assets.reduce((s, a) => s + (a.nodeCount || 0), 0);
-  return `SVG · ${frames}${nodes} shapes · ${kb(bytes)} · ${roles.size ? `recoloured (${[...roles].map((r) => ROLE_WORD[r] || r).join(", ")})` : "own colours"}`;
-}
-
-function boxOf(scene: SceneDocument, layer: Layer): string {
-  const main = (layer.parts || []).filter((p) => !p.when);
-  const a = scene.assets[main[main.length - 1]?.asset || ""];
-  const b = a?.bbox || (a ? { w: a.width, h: a.height } : null);
-  return b ? `${Math.round(b.w)}×${Math.round(b.h)}` : "shared";
-}
 
 export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
   const { scene, sel } = useStudio();
@@ -59,7 +35,7 @@ function LayerInspector({ layer }: { layer: Layer }) {
   const clickable = layer.type === "object";
   const name = layer.name || layer.id;
   const t = layer.transform || { x: 0, y: 0 };
-  const theme = page.theme.mode === "auto" ? undefined : page.theme.mode;
+  const theme = thumbTheme(page);
   const thumb = useMemo(() => drawingThumb(scene, page, layer, `insp-${layer.id}`), [rev, layer.id]); // documents mutate in place
   const order = scene.layers.filter((l) => l.type !== "background");
   const front = order[order.length - 1]?.id === layer.id, back = order[0]?.id === layer.id;

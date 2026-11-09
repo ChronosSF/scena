@@ -17,6 +17,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..", "..", "..");
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const desk = DESK_SCENE, pia = PIA_PAGE, PIA = PIA_PAGE;
+/** A 1x1 transparent PNG, for raster fixtures. */
+const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 const { html } = renderPage(desk, pia, { demo: true });
 const count = (re: RegExp) => (html.match(re) || []).length;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
@@ -179,8 +181,7 @@ describe("self-contained and secure", () => {
 describe("rendering features", () => {
   test("raster parts render as <image> inside the object, boiled and multiplied", () => {
     const s = clone(desk) as SceneDocument;
-    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    s.assets.plant = { id: "plant", kind: "raster", url: png, width: 300, height: 400, bbox: { x: 0, y: 0, w: 300, h: 400 }, bytes: 70, sha256: "" };
+    s.assets.plant ={ id: "plant", kind: "raster", url: png, width: 300, height: 400, bbox: { x: 0, y: 0, w: 300, h: 400 }, bytes: 70, sha256: "" };
     s.slots.push({ id: "plants", label: "Plant", objectId: "plant-layer", kind: "shop", defaults: { title: "Plants", description: "", cta: "Shop" }, a11yLabel: "{label}: {list}", optional: true });
     s.layers.push({ id: "plant-layer", type: "object", name: "Plant", slotId: "plants", transform: { x: 150, y: 100, rotate: 8, scale: 0.4 },
       parts: [{ asset: "plant", role: "lines" }], hotspot: { shape: "auto", pad: 12 }, effects: ["boil", "lift", "ring"] });
@@ -323,7 +324,6 @@ describe("frame-flip animation", () => {
 
   test("raster frames work like vector frames", () => {
     const s = clone(desk) as SceneDocument;
-    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
     for (const id of ["leaf-1", "leaf-2"]) s.assets[id] = { id, kind: "raster", url: png, width: 40, height: 60, bbox: { x: 0, y: 0, w: 40, h: 60 }, bytes: 70, sha256: "" };
     s.layers.push({ id: "leaf", type: "decor", parts: [{ asset: "leaf-1", role: "lines", frames: ["leaf-1", "leaf-2"], fps: 2 }], transform: { x: 10, y: 10 }, effects: ["boil"] });
     expect(validateScene(s)).toEqual([]);
@@ -339,9 +339,7 @@ describe("frame-flip animation", () => {
 });
 
 describe("board, typeface and lettering (ADR 0003)", () => {
-  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
   const raster = (id: string, w = 600, h = 660) => ({ id, kind: "raster" as const, url: png, width: w, height: h, bbox: { x: 0, y: 0, w, h }, bytes: 70, sha256: "" });
-  const pia = PIA;
   const letteringSrc = '<path class="stroke-accent2" fill="none" stroke-width="7" stroke-linecap="round" d="M14 106 C 70 99, 140 112, 206 101"/><path class="ink" stroke-width="9" d="M24 96 C 25 72, 22 42, 25 14"/><circle class="role-accent1" cx="99" cy="34" r="6.5"/>';
 
   /** Replace the mat: the generated mat and grid go, a paper texture fills the mat's shape; vector lettering; Caveat. */
@@ -401,6 +399,9 @@ describe("board, typeface and lettering (ADR 0003)", () => {
   test("vector lettering replaces the visible name, with a riso shadow; the name stays for screen readers", () => {
     expect(A).toContain('<h1 class="name lettered"><span class="vh">Pia Morandi</span><span class="lettering" aria-hidden="true"><svg class="lt lt-sh" viewBox="9 9 202 102" focusable="false">');
     expect((A.match(/<svg class="lt/g) || []).length).toBe(2);
+    // the shadow reuses the ink copy's art, so the drawing is in the page once
+    expect(A).toContain('<svg class="lt lt-sh" viewBox="9 9 202 102" focusable="false"><use href="#lt-art"/></svg><svg class="lt" viewBox="9 9 202 102" focusable="false"><g id="lt-art">');
+    expect((A.match(/d="M14 106 C 70 99, 140 112, 206 101"/g) || []).length).toBe(1);
     expect(A).toContain("<title>Pia Morandi, illustrator</title>"); // the typed name and SEO title are untouched
     expect(A).toContain(".lt-sh{transform:translate(3px,3px);--line:var(--accent1);--accent2:var(--accent1)");
     expect(A).toContain(".lettering{display:grid;width:min(85%,14.85rem)}");
@@ -419,7 +420,12 @@ describe("board, typeface and lettering (ADR 0003)", () => {
   test("a curated typeface: its font link, weights and the name's size factor; Shantell needs nothing", () => {
     expect(A).toContain('<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&amp;display=swap" rel="stylesheet">');
     expect(A).toContain('--font:"Caveat", "Segoe Print", "Bradley Hand", cursive');
-    expect(A).toContain("body{font-size-adjust:0.51}.name,.art-text{font-size-adjust:none}.name{font-size:clamp(3.25rem,15vw,4.38rem);font-weight:700}.tag h2,.btn{font-weight:700}.art-text,.stat,.links-h,.links a{font-weight:600}");
+    // the base rules are written from the face: Caveat's size factor and weights replace Shantell's
+    expect(A).toContain("body{font-size-adjust:0.51}.name,.art-text{font-size-adjust:none}");
+    expect(A).toContain(".name{margin:0;font-size:clamp(3.25rem,15vw,4.38rem);font-weight:700;");
+    expect(A).toContain(".tag h2{margin:0;font-size:1.45rem;font-weight:700;");
+    expect(A).toContain(".links a{display:block;padding:.75rem .1rem;border-bottom:2px dashed var(--grid);color:var(--text);font-weight:600;");
+    expect(A).not.toContain("font-weight:800");
     expect(B).not.toContain("font-size-adjust");
     expect(html).not.toMatch(/font-size-adjust|\.bg-base|\.lettering|bg-clip/);
   });

@@ -3,7 +3,7 @@
 // ":root") and the studio canvas (root ".stage"), which is why every class rule
 // carries the scope prefix S.
 
-import { DEFAULT_TYPEFACE, FRAMES, TEXT_X_HEIGHT, parseColor, typeface, type FontSpec, type FramePlay, type Palette, type PaletteMode, type Role, type SceneDocument } from "@scena/scene";
+import { DEFAULT_TYPEFACE, FRAMES, LETTERING, TEXT_X_HEIGHT, isUploadedBackground, parseColor, typeface, type FontSpec, type FramePlay, type Palette, type PaletteMode, type Role, type SceneDocument, type Typeface } from "@scena/scene";
 import { num } from "./escape.ts";
 
 export interface CssOptions {
@@ -56,6 +56,8 @@ export function pageCss(scene: SceneDocument, palette: Palette, o: CssOptions = 
   const ring = scene.effects?.ring || { strokeWidth: 3.5, drawMs: 550 };
   const L = palette.light, D = palette.dark;
   const dark = (sel: string) => `@media (prefers-color-scheme:dark){${R}:not([data-theme="light"]) ${sel}}${R}[data-theme="dark"] ${sel}`;
+  // the curated face sets the name's size and the display and emphasis weights (ADR 0003)
+  const face = typeface(scene.theme?.font?.family) ?? DEFAULT_TYPEFACE;
 
   return [
     `${R}{color-scheme:light;${vars(L)};--sticker:${col(L.card, "#fff")};--font:${fontStack(scene.theme?.font)};box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}`,
@@ -66,7 +68,7 @@ export function pageCss(scene: SceneDocument, palette: Palette, o: CssOptions = 
     `${B}{margin:0;background:var(--paper);color:var(--text);font-family:var(--font);font-size:1rem;line-height:1.5}`,
     `${S}.page{max-width:30rem;margin:0 auto;padding:2rem 1.25rem 3rem}`,
     // header
-    `${S}.name{margin:0;font-size:clamp(2.6rem,12vw,3.5rem);font-weight:800;line-height:1;letter-spacing:-.01em;color:var(--line);text-shadow:3px 3px 0 var(--accent1);transform:rotate(-2deg);transform-origin:left center;overflow-wrap:break-word}`,
+    `${S}.name{margin:0;font-size:clamp(${num(2.6 * face.size)}rem,${num(12 * face.size)}vw,${num(3.5 * face.size)}rem);font-weight:${face.display};line-height:1;letter-spacing:-.01em;color:var(--line);text-shadow:3px 3px 0 var(--accent1);transform:rotate(-2deg);transform-origin:left center;overflow-wrap:break-word}`,
     `${S}.bio{margin:.9rem 0 0;max-width:32ch;color:var(--muted);font-size:1.05rem}`,
     // scene
     `${S}.desk{margin:1.5rem -.5rem 0}`,
@@ -77,7 +79,7 @@ export function pageCss(scene: SceneDocument, palette: Palette, o: CssOptions = 
     `${S}.ink{fill:none;stroke:var(--line);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}`,
     ["line", "accent1", "accent2", "paper", "mat", "text"].map((r) => `${S}.role-${r}{fill:var(--${r})}${S}.stroke-${r}{stroke:var(--${r})}`).join(""),
     `${S}.fills{mix-blend-mode:var(--blend);opacity:var(--fill-op)}`,
-    `${S}.art-text{font-family:var(--font);font-weight:600;fill:var(--line);font-size:15px}${S}.art-text.sm{font-size:12.5px}`,
+    `${S}.art-text{font-family:var(--font);font-weight:${face.strong};fill:var(--line);font-size:15px}${S}.art-text.sm{font-size:12.5px}`,
     `${S}.raster>.lift,${S}.raster>.art{mix-blend-mode:var(--blend)}`,
     `${S}.sticker{display:none;fill:var(--sticker)}`,
     dark(`.sticker{display:inline}`), dark(`.art-text.on-accent{fill:var(--paper)}`),
@@ -98,19 +100,19 @@ export function pageCss(scene: SceneDocument, palette: Palette, o: CssOptions = 
     // tag panel
     `${S}.tag{margin-top:1rem;min-height:10rem;padding:1.1rem 1.2rem 1.2rem;background:var(--card);border:2px solid var(--line);border-radius:255px 18px 225px 18px/18px 225px 18px 255px}`,
     `${S}.hint{margin:0;color:var(--muted);font-size:1.1rem}`,
-    `${S}.tag h2{margin:0;font-size:1.45rem;font-weight:800;line-height:1.2;color:var(--line)}`,
-    `${S}.stat{margin:.35rem 0 0;font-weight:600;font-size:.95rem}`,
+    `${S}.tag h2{margin:0;font-size:1.45rem;font-weight:${face.display};line-height:1.2;color:var(--line)}`,
+    `${S}.stat{margin:.35rem 0 0;font-weight:${face.strong};font-size:.95rem}`,
     `${S}.stat::before{content:"";display:inline-block;width:.8em;height:.8em;margin-right:.45em;border:2px solid var(--line);border-radius:50%;vertical-align:-.08em}`,
     `${S}.stat.s-open::before{background:var(--accent2)}${S}.stat.s-waitlist::before{background:var(--accent1)}`,
     `${S}.tag p.desc{margin:.35rem 0 1rem;max-width:36ch}`,
-    `${S}.btn{display:inline-block;padding:.6rem 1.1rem;background:var(--line);color:var(--paper);font-family:var(--font);font-weight:800;font-size:1rem;text-decoration:none;border:0;border-radius:12px 4px 14px 5px;box-shadow:4px 4px 0 var(--accent1);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}`,
+    `${S}.btn{display:inline-block;padding:.6rem 1.1rem;background:var(--line);color:var(--paper);font-family:var(--font);font-weight:${face.display};font-size:1rem;text-decoration:none;border:0;border-radius:12px 4px 14px 5px;box-shadow:4px 4px 0 var(--accent1);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}`,
     `${S}.btn:hover{transform:translate(-1px,-1px);box-shadow:5px 5px 0 var(--accent1)}`,
     `${S}.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--accent1)}`,
     `${S}.btn:focus-visible,${S}.links a:focus-visible,${S}.foot a:focus-visible{outline:3px dashed var(--accent1);outline-offset:4px}`,
     // plain list
-    `${S}.links-h{margin:2.25rem 0 .25rem;font-size:1.1rem;font-weight:600;color:var(--muted)}`,
+    `${S}.links-h{margin:2.25rem 0 .25rem;font-size:1.1rem;font-weight:${face.strong};color:var(--muted)}`,
     `${S}.links ul{list-style:none;margin:0;padding:0}`,
-    `${S}.links a{display:block;padding:.75rem .1rem;border-bottom:2px dashed var(--grid);color:var(--text);font-weight:600;font-size:1.1rem;text-decoration:none}`,
+    `${S}.links a{display:block;padding:.75rem .1rem;border-bottom:2px dashed var(--grid);color:var(--text);font-weight:${face.strong};font-size:1.1rem;text-decoration:none}`,
     `${S}.links a:hover{color:var(--line);text-decoration:underline;text-decoration-color:var(--accent1);text-decoration-thickness:3px;text-underline-offset:4px}`,
     `${S}.links .ls{font-weight:400;color:var(--muted);font-size:.95rem}`,
     `${S}.foot{margin:2rem 0 0;color:var(--muted);font-size:.9rem}${S}.foot a{color:inherit}`,
@@ -118,33 +120,25 @@ export function pageCss(scene: SceneDocument, palette: Palette, o: CssOptions = 
     o.forceMotion ? "" : `@media (prefers-reduced-motion:reduce){${S}.obj .lift,${S}.ring,${S}.btn${page ? ",.toast" : ""}{transition:none}}`,
     `${R}[data-motion="off"] .lift,${R}[data-motion="off"] .ring,${R}[data-motion="off"] .btn{transition:none}`,
     frameCss(scene, R, S, !!o.forceMotion),
-    typefaceCss(scene, B, S),
+    typefaceCss(face, B, S),
     boardCss(scene, S, dark),
     letteringCss(scene, S),
   ].filter(Boolean).join("\n");
 }
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
-
 /**
- * The curated face's weights and the name's size (ADR 0003). Shantell Sans needs nothing:
- * the rules above are written for it, so the desk's CSS does not change.
+ * Running text in a curated face other than Shantell Sans keeps Shantell's x-height, so a
+ * small-eyed face like Caveat stays readable; the name has its own size factor, and lettering
+ * inside drawings keeps the size it was drawn at (ADR 0003). Shantell needs nothing.
  */
-function typefaceCss(scene: SceneDocument, B: string, S: string): string {
-  const face = typeface(scene.theme?.font?.family);
-  if (!face || face.family === DEFAULT_TYPEFACE.family) return "";
-  const f = face.size;
-  // running text keeps Shantell's x-height, so a small-eyed face like Caveat stays readable;
-  // the name has its own size factor, and lettering inside drawings keeps the size it was drawn at
-  return `${B}{font-size-adjust:${TEXT_X_HEIGHT}}${S}.name,${S}.art-text{font-size-adjust:none}` +
-    `${S}.name{font-size:clamp(${r2(2.6 * f)}rem,${r2(12 * f)}vw,${r2(3.5 * f)}rem);font-weight:${face.display}}` +
-    `${S}.tag h2,${S}.btn{font-weight:${face.display}}${S}.art-text,${S}.stat,${S}.links-h,${S}.links a{font-weight:${face.strong}}`;
+function typefaceCss(face: Typeface, B: string, S: string): string {
+  if (face.family === DEFAULT_TYPEFACE.family) return "";
+  return `${B}{font-size-adjust:${TEXT_X_HEIGHT}}${S}.name,${S}.art-text{font-size-adjust:none}`;
 }
 
 /** Uploaded backgrounds: a raster without a dark variant is multiplied onto the dark mat. */
 function boardCss(scene: SceneDocument, S: string, dark: (sel: string) => string): string {
-  const uploaded = (scene.layers || []).some((l) => l.type === "background" && (Array.isArray(l.parts) || (l.asset && scene.assets?.[l.asset]?.kind !== "procedural")));
-  if (!uploaded) return "";
+  if (!(scene.layers || []).some((l) => isUploadedBackground(scene, l))) return "";
   return `${S}.bg-base{display:none;fill:var(--mat)}` + dark(`.bg-base{display:inline}`) + dark(`.bgr{mix-blend-mode:multiply;opacity:var(--fill-op)}`);
 }
 
@@ -156,11 +150,11 @@ function letteringCss(scene: SceneDocument, S: string): string {
   const b = a.bbox || { w: a.width, h: a.height };
   const ratio = (b.w || 1) / (b.h || 1);
   const off = scene.effects?.fillOffset || { x: 3, y: 3 };
-  const width = Math.min(100, Math.max(20, lt.maxWidth ?? 85));
+  const width = Math.min(LETTERING.maxWidth, Math.max(LETTERING.minWidth, lt.maxWidth ?? LETTERING.width));
   return `${S}.name.lettered{text-shadow:none}${S}.name.flat{transform:none}` +
     `${S}.vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}` +
     // as wide as asked, but never taller than 7.5rem
-    `${S}.lettering{display:grid;width:min(${num(width)}%,${r2(7.5 * ratio)}rem)}` +
+    `${S}.lettering{display:grid;width:min(${num(width)}%,${num(7.5 * ratio)}rem)}` +
     // the ink copy is positioned so it paints over the transformed shadow
     `${S}.lt{grid-area:1/1;display:block;width:100%;height:auto;overflow:visible;position:relative}` +
     `${S}.lt-sh{transform:translate(${num(off.x)}px,${num(off.y)}px);--line:var(--accent1);--accent2:var(--accent1);--text:var(--accent1);--paper:var(--accent1);--mat:var(--accent1)}`;

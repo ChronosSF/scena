@@ -6,7 +6,7 @@
 // built-in scenes and uploads alike.
 
 import {
-  FRAMES, MAT_SHAPE, STATUS_TEXT, STATUS_WORD, fragmentProblem, isSafeRasterUrl, safeHref, safeId,
+  FRAMES, MAT_SHAPE, STATUS_TEXT, STATUS_WORD, fragmentProblem, isSafeRasterUrl, isUploadedBackground, safeHref, safeId,
   type Asset, type CommissionStatus, type FramePlay, type Layer, type LinkContent, type Palette, type PageDocument, type Part,
   type ProceduralAsset, type SceneDocument, type Slot, type When,
 } from "@scena/scene";
@@ -130,9 +130,9 @@ function demoMessage(href: string): string {
 function procedural(scene: SceneDocument, asset: ProceduralAsset, P: string): string {
   const W = scene.canvas.width, H = scene.canvas.height;
   const p = asset.params || {};
-  const inset = p.inset ?? 6;
+  const inset = p.inset ?? MAT_SHAPE.inset, rx = p.rx ?? MAT_SHAPE.rx;
   if (asset.generator === "mat") {
-    return `<rect class="mat" x="${num(inset)}" y="${num(inset)}" width="${num(W - inset * 2)}" height="${num(H - inset * 2)}" rx="${num(p.rx ?? 18)}"/>`;
+    return `<rect class="mat" x="${num(inset)}" y="${num(inset)}" width="${num(W - inset * 2)}" height="${num(H - inset * 2)}" rx="${num(rx)}"/>`;
   }
   if (asset.generator === "grid") {
     const step = p.step || 24, start = p.start ?? 30;
@@ -144,7 +144,7 @@ function procedural(scene: SceneDocument, asset: ProceduralAsset, P: string): st
   if (asset.generator === "dots") {
     const step = p.step || 18, id = `${P}dots-${safeId(asset.id)}`;
     return `<pattern id="${id}" width="${num(step)}" height="${num(step)}" patternUnits="userSpaceOnUse"><circle class="dot" cx="${num(step / 2)}" cy="${num(step / 2)}" r="${num(p.r || 1.6)}"/></pattern>` +
-      `<rect x="${num(inset)}" y="${num(inset)}" width="${num(W - inset * 2)}" height="${num(H - inset * 2)}" rx="${num(p.rx ?? 18)}" fill="url(#${id})"/>`;
+      `<rect x="${num(inset)}" y="${num(inset)}" width="${num(W - inset * 2)}" height="${num(H - inset * 2)}" rx="${num(rx)}" fill="url(#${id})"/>`;
   }
   return "";
 }
@@ -299,12 +299,6 @@ function ringMarkup(g: HotspotGeometry | null, cls: "ring" | "hit", extra = ""):
 
 // ------------------------------------------------------------------ backgrounds and lettering (ADR 0003)
 
-/** An uploaded background: any background layer whose art is not generated (mat, grid, dots). */
-export function isUploadedBackground(scene: SceneDocument, layer: Layer): boolean {
-  if (layer.type !== "background") return false;
-  return Array.isArray(layer.parts) || (!!layer.asset && scene.assets?.[layer.asset]?.kind !== "procedural");
-}
-
 /** The board a fitted background fills: the mat's box when clipped to it, else the canvas. */
 function board(scene: SceneDocument, clip: boolean) {
   const W = scene.canvas.width, H = scene.canvas.height, i = clip ? MAT_SHAPE.inset : 0;
@@ -361,12 +355,13 @@ function matClip(scene: SceneDocument, id: string): string {
 }
 
 /**
- * The header with a hand-lettered name: the drawing shows, the typed name stays in the h1 for
+ * The h1 with a hand-lettered name: the drawing shows, the typed name stays in the h1 for
  * screen readers (visually hidden) and in <title>. Vector lettering painted with the sentinel
- * colours recolours with the palette and gets the riso shadow: a second copy in accent1, offset
- * like the typed name's text-shadow. Raster lettering gets the dark-mode paper sticker instead.
+ * colours recolours with the palette and gets the riso shadow: a <use> of the same art in
+ * accent1, offset like the typed name's text-shadow, so the drawing is in the page once.
+ * Raster lettering gets the dark-mode paper sticker instead.
  */
-function letteredHeader(ctx: Ctx, name: string, bio: string): string | null {
+function letteredName(ctx: Ctx, name: string): string | null {
   const lt = ctx.scene.header?.lettering;
   const a = lt ? ctx.scene.assets?.[lt.asset] : undefined;
   if (!lt || !a || (a.kind !== "svg-inline" && a.kind !== "raster")) return null;
@@ -380,15 +375,12 @@ function letteredHeader(ctx: Ctx, name: string, bio: string): string | null {
     const pad = Math.max(b.w, b.h) * 0.03;
     drawn = svg("lt", `<rect class="sticker" x="${num(b.x - pad)}" y="${num(b.y - pad)}" width="${num(b.w + pad * 2)}" height="${num(b.h + pad * 2)}" rx="${num(pad * 2)}"/>${art}`);
   } else {
-    drawn = (a.colorRoles?.length ? svg("lt lt-sh", art) : "") + svg("lt", art);
+    const artId = `${ctx.P}lt-art`;
+    drawn = (a.colorRoles?.length ? svg("lt lt-sh", `<use href="#${artId}"/>`) : "") + svg("lt", `<g id="${artId}">${art}</g>`);
   }
   const cls = ["name", "lettered"];
   if (lt.tilt === false) cls.push("flat");
-  return `<header>
-<h1 class="${cls.join(" ")}"><span class="vh">${esc(name)}</span><span class="lettering" aria-hidden="true">${drawn}</span></h1>
-` +
-    (bio ? `<p class="bio">${esc(bio)}</p>
-` : "") + `</header>`;
+  return `<h1 class="${cls.join(" ")}"><span class="vh">${esc(name)}</span><span class="lettering" aria-hidden="true">${drawn}</span></h1>`;
 }
 
 // ------------------------------------------------------------------ parts
@@ -511,8 +503,8 @@ export function renderParts(scene: SceneDocument, page: PageDocument | undefined
   const svg = `<svg viewBox="0 0 ${num(W)} ${num(H)}" role="group" aria-label="${esc(sceneLabel)}">\n` +
     (filters.length || clipped ? `<defs>${clipped ? matClip(scene, clipId) : ""}${filters.join("")}</defs>\n` : "") + body + `\n</svg>`;
 
-  const header = letteredHeader(ctx, name, page?.profile?.bio || "") ||
-    `<header>\n<h1 class="name">${esc(name)}</h1>\n` + (page?.profile?.bio ? `<p class="bio">${esc(page.profile.bio)}</p>\n` : "") + `</header>`;
+  const h1 = letteredName(ctx, name) || `<h1 class="name">${esc(name)}</h1>`;
+  const header = `<header>\n${h1}\n` + (page?.profile?.bio ? `<p class="bio">${esc(page.profile.bio)}</p>\n` : "") + `</header>`;
 
   const sel = opts.selected ? links[opts.selected] : undefined;
   const panel = `<section class="tag" aria-live="polite">\n` +

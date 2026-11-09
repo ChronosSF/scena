@@ -1,0 +1,135 @@
+{
+  "mug": {
+    "key": "mug",
+    "name": "Coffee mug",
+    "slot": {
+      "id": "coffee",
+      "label": "Coffee mug",
+      "objectId": "mug",
+      "kind": "custom",
+      "defaults": {
+        "title": "Buy me a coffee",
+        "description": "Tips keep the sketchbook full.",
+        "cta": "Buy me a coffee"
+      },
+      "a11yLabel": "Coffee mug: {list}",
+      "optional": true
+    },
+    "layer": {
+      "id": "mug",
+      "type": "object",
+      "name": "Coffee mug",
+      "slotId": "coffee",
+      "transform": {
+        "x": 162,
+        "y": 12,
+        "scale": 0.85
+      },
+      "parts": [
+        {
+          "asset": "mug-fills",
+          "role": "fills"
+        },
+        {
+          "asset": "mug-lines-1",
+          "role": "lines",
+          "frames": [
+            "mug-lines-1",
+            "mug-lines-2",
+            "mug-lines-3"
+          ],
+          "fps": 6,
+          "play": "always"
+        }
+      ],
+      "hotspot": {
+        "shape": "auto",
+        "pad": 12
+      },
+      "effects": [
+        "boil",
+        "lift",
+        "ring"
+      ]
+    },
+    "assets": {
+      "mug-fills": {
+        "id": "mug-fills",
+        "kind": "svg-inline",
+        "src": "<path class=\"role-accent1\" d=\"M8 50 Q9 92 16 98 Q34 106 52 98 Q59 92 60 50 Q34 58 8 50 Z\"/><path class=\"role-accent2\" d=\"M34 86 C23 77 25 68 31 70 Q34 71 34 74 Q34 71 37 70 C43 68 45 77 34 86 Z\"/>",
+        "width": 52,
+        "height": 52,
+        "bbox": {
+          "x": 8,
+          "y": 50,
+          "w": 52,
+          "h": 52
+        },
+        "bytes": 196,
+        "sha256": "d7402bd5ba0d04b92e91db442abdd918368aa05940567f42e466e18f1da03a92",
+        "colorRoles": [
+          "accent1",
+          "accent2"
+        ],
+        "nodeCount": 2
+      },
+      "mug-lines-1": {
+        "id": "mug-lines-1",
+        "kind": "svg-inline",
+        "src": "<ellipse class=\"ink\" cx=\"34\" cy=\"50\" rx=\"26\" ry=\"6\"/><path class=\"ink\" d=\"M8 50 Q9 92 16 98 Q34 106 52 98 Q59 92 60 50\"/><path class=\"ink\" d=\"M59 60 Q78 57 76 74 Q74 90 57 88\"/><path class=\"ink\" d=\"M34 86 C23 77 25 68 31 70 Q34 71 34 74 Q34 71 37 70 C43 68 45 77 34 86 Z\"/><path class=\"ink\" d=\"M22 42 q3.5 -6 0 -12 t0 -12\"/><path class=\"ink\" d=\"M34 38 q-3.5 -6 0 -12 t0 -12 t0 -12\"/><path class=\"ink\" d=\"M46 42 q3.5 -6 0 -12 t0 -12\"/>",
+        "width": 71.28,
+        "height": 102.65,
+        "bbox": {
+          "x": 6.2,
+          "y": 0.8,
+          "w": 71.28,
+          "h": 102.65
+        },
+        "bytes": 434,
+        "sha256": "f98408ce959afc8bf25bbc115d94494e703f446cde68d35edc43011e17d6bcab",
+        "colorRoles": [
+          "line"
+        ],
+        "nodeCount": 7
+      },
+      "mug-lines-2": {
+        "id": "mug-lines-2",
+        "kind": "svg-inline",
+        "src": "<ellipse class=\"ink\" cx=\"34.4\" cy=\"50\" rx=\"25.8\" ry=\"6\"/><path class=\"ink\" d=\"M8 50 Q9.7 92 16 98 Q34 105.5 52 98 Q58.3 92 60 50\"/><path class=\"ink\" d=\"M59 60 Q77.5 57.7 76 74 Q73.3 90 57 88\"/><path class=\"ink\" d=\"M34 86 C23 77 25 68 31 70 Q34 71 34 74 Q34 71 37 70 C43 68 45 77 34 86 Z\"/><path class=\"ink\" d=\"M22 40 q-3.5 -6 0 -12 t0 -12\"/><path class=\"ink\" d=\"M34 41 q3.5 -6 0 -12 t0 -12\"/><path class=\"ink\" d=\"M46 38 q-3.5 -6 0 -12 t0 -12 t0 -12\"/>",
+        "width": 71.28,
+        "height": 102.65,
+        "bbox": {
+          "x": 6.2,
+          "y": 0.8,
+          "w": 71.28,
+          "h": 102.65
+        },
+        "bytes": 451,
+        "sha256": "36eb902d710a0cec6777d8ad85624ed83a10d5ba2caa0afc846e8841648cef7f",
+        "colorRoles": [
+          "line"
+        ],
+        "nodeCount": 7
+      },
+      "mug-lines-3": {
+        "id": "mug-lines-3",
+        "kind": "svg-inline",
+        "src": "<ellipse class=\"ink\" cx=\"33.7\" cy=\"50\" rx=\"26.3\" ry=\"6\"/><path class=\"ink\" d=\"M8 50 Q8.4 92 16 98 Q34 106.5 52 98 Q59.6 92 60 50\"/><path class=\"ink\" d=\"M59 60 Q78.5 56.4 76 74 Q74.6 90 57 88\"/><path class=\"ink\" d=\"M34 86 C23 77 25 68 31 70 Q34 71 34 74 Q34 71 37 70 C43 68 45 77 34 86 Z\"/><path class=\"ink\" d=\"M22 38 q3.5 -6 0 -12 t0 -12 t0 -12\"/><path class=\"ink\" d=\"M34 42 q-3.5 -6 0 -12 t0 -12\"/><path class=\"ink\" d=\"M46 40 q3.5 -6 0 -12 t0 -12\"/>",
+        "width": 71.28,
+        "height": 102.65,
+        "bbox": {
+          "x": 6.2,
+          "y": 0.8,
+          "w": 71.28,
+          "h": 102.65
+        },
+        "bytes": 450,
+        "sha256": "7bd687fce42f98dd0adbd4b53ad7a7969be95e18ac3a1cd95a25eac390a7f61d",
+        "colorRoles": [
+          "line"
+        ],
+        "nodeCount": 7
+      }
+    }
+  }
+}

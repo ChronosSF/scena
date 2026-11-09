@@ -1,0 +1,7 @@
+packages:
+  - packages/*
+  - apps/*
+
+# esbuild ships its binary as an optional dependency; its install script only verifies it.
+onlyBuiltDependencies:
+  - esbuild

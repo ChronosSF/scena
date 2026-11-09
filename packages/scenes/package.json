@@ -1,0 +1,19 @@
+{
+  "name": "@scena/scenes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Built-in scenes (the illustrator's desk), sample pages (Pia Morandi) and sample drawings (the steaming mug).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./desk.scene.json": "./desk.scene.json",
+    "./pia.page.json": "./pia.page.json",
+    "./samples.json": "./samples.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@scena/scene": "workspace:*"
+  }
+}

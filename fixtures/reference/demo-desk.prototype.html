@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-WWk96wcbuWnwrtP9XSLpYtQLVir1BAAtCOpanYA4SMI='; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; base-uri 'none'; form-action 'none'">
+<title>Pia Morandi, illustrator</title>
+<meta name="description" content="Illustrator in Turin. Picture books, plants, and one orange cat.">
+<meta property="og:title" content="Pia Morandi, illustrator">
+<meta property="og:description" content="Illustrator in Turin. Picture books, plants, and one orange cat.">
+<meta name="theme-color" content="#F1F3F0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#191C2E" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shantell+Sans:wght@400;600;800&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:light;--paper:#F1F3F0;--mat:#E3EAE5;--card:#FBFCFA;--grid:rgba(43,63,134,0.13);--line:#2B3F86;--accent1:#FF5DAE;--accent2:#FFD93D;--text:#22306A;--muted:#4E5B8E;--blend:multiply;--fill-op:1;--sticker:#FBFCFA;--font:"Shantell Sans", "Chalkboard SE", "Comic Neue", "Segoe Print", "Trebuchet MS", sans-serif;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--paper:#191C2E;--mat:#20253B;--card:#23283F;--grid:rgba(180,195,245,0.11);--line:#B4C3F5;--accent1:#EE5FA6;--accent2:#E6C23A;--text:#E6EAF8;--muted:#A9B2D6;--blend:normal;--fill-op:0.85}}
+:root[data-theme="dark"]{color-scheme:dark;--paper:#191C2E;--mat:#20253B;--card:#23283F;--grid:rgba(180,195,245,0.11);--line:#B4C3F5;--accent1:#EE5FA6;--accent2:#E6C23A;--text:#E6EAF8;--muted:#A9B2D6;--blend:normal;--fill-op:0.85}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--paper);color:var(--text);font-family:var(--font);font-size:1rem;line-height:1.5}
+.page{max-width:30rem;margin:0 auto;padding:2rem 1.25rem 3rem}
+.name{margin:0;font-size:clamp(2.6rem,12vw,3.5rem);font-weight:800;line-height:1;letter-spacing:-.01em;color:var(--line);text-shadow:3px 3px 0 var(--accent1);transform:rotate(-2deg);transform-origin:left center;overflow-wrap:break-word}
+.bio{margin:.9rem 0 0;max-width:32ch;color:var(--muted);font-size:1.05rem}
+.desk{margin:1.5rem -.5rem 0}
+.desk svg{display:block;width:100%;height:auto;overflow:visible}
+.mat{fill:var(--mat)}
+.grid line{stroke:var(--grid);stroke-width:1}
+.dot{fill:var(--grid)}
+.ink{fill:none;stroke:var(--line);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.role-line{fill:var(--line)}.stroke-line{stroke:var(--line)}.role-accent1{fill:var(--accent1)}.stroke-accent1{stroke:var(--accent1)}.role-accent2{fill:var(--accent2)}.stroke-accent2{stroke:var(--accent2)}.role-paper{fill:var(--paper)}.stroke-paper{stroke:var(--paper)}.role-mat{fill:var(--mat)}.stroke-mat{stroke:var(--mat)}.role-text{fill:var(--text)}.stroke-text{stroke:var(--text)}
+.fills{mix-blend-mode:var(--blend);opacity:var(--fill-op)}
+.art-text{font-family:var(--font);font-weight:600;fill:var(--line);font-size:15px}.art-text.sm{font-size:12.5px}
+.raster>.lift,.raster>.art{mix-blend-mode:var(--blend)}
+.sticker{display:none;fill:var(--sticker)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sticker{display:inline}}:root[data-theme="dark"] .sticker{display:inline}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .art-text.on-accent{fill:var(--paper)}}:root[data-theme="dark"] .art-text.on-accent{fill:var(--paper)}
+.decor,.bg{pointer-events:none}
+.hit{fill:transparent;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ed-hit{fill:transparent}
+.obj{cursor:pointer;outline:none;-webkit-tap-highlight-color:transparent}
+.obj .lift{transition:transform 180ms ease;transform-box:fill-box;transform-origin:center}
+.obj:hover .lift,.obj.hov .lift,.obj.selected .lift{transform:translate(-1px,-4px)}
+.ring{fill:none;stroke:var(--accent1);stroke-width:3.5;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 550ms ease}
+.obj.selected .ring{stroke-dashoffset:0}.obj.noring.selected .ring{stroke-dashoffset:1}
+.obj:focus-visible .ring{stroke-dashoffset:0;stroke:var(--line);stroke-dasharray:.02 .014}
+.w-sel{display:none}.obj.selected .w-sel{display:inline}.obj.selected .w-idle{display:none}
+.w-dark{display:none}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .w-dark{display:inline}}:root[data-theme="dark"] .w-dark{display:inline}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .w-light{display:none}}:root[data-theme="dark"] .w-light{display:none}
+.tag{margin-top:1rem;min-height:10rem;padding:1.1rem 1.2rem 1.2rem;background:var(--card);border:2px solid var(--line);border-radius:255px 18px 225px 18px/18px 225px 18px 255px}
+.hint{margin:0;color:var(--muted);font-size:1.1rem}
+.tag h2{margin:0;font-size:1.45rem;font-weight:800;line-height:1.2;color:var(--line)}
+.stat{margin:.35rem 0 0;font-weight:600;font-size:.95rem}
+.stat::before{content:"";display:inline-block;width:.8em;height:.8em;margin-right:.45em;border:2px solid var(--line);border-radius:50%;vertical-align:-.08em}
+.stat.s-open::before{background:var(--accent2)}.stat.s-waitlist::before{background:var(--accent1)}
+.tag p.desc{margin:.35rem 0 1rem;max-width:36ch}
+.btn{display:inline-block;padding:.6rem 1.1rem;background:var(--line);color:var(--paper);font-family:var(--font);font-weight:800;font-size:1rem;text-decoration:none;border:0;border-radius:12px 4px 14px 5px;box-shadow:4px 4px 0 var(--accent1);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+.btn:hover{transform:translate(-1px,-1px);box-shadow:5px 5px 0 var(--accent1)}
+.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--accent1)}
+.btn:focus-visible,.links a:focus-visible,.foot a:focus-visible{outline:3px dashed var(--accent1);outline-offset:4px}
+.links-h{margin:2.25rem 0 .25rem;font-size:1.1rem;font-weight:600;color:var(--muted)}
+.links ul{list-style:none;margin:0;padding:0}
+.links a{display:block;padding:.75rem .1rem;border-bottom:2px dashed var(--grid);color:var(--text);font-weight:600;font-size:1.1rem;text-decoration:none}
+.links a:hover{color:var(--line);text-decoration:underline;text-decoration-color:var(--accent1);text-decoration-thickness:3px;text-underline-offset:4px}
+.links .ls{font-weight:400;color:var(--muted);font-size:.95rem}
+.foot{margin:2rem 0 0;color:var(--muted);font-size:.9rem}.foot a{color:inherit}
+.toast{position:fixed;left:50%;bottom:calc(1rem + env(safe-area-inset-bottom,0px));transform:translate(-50%,1rem);width:min(26rem,calc(100% - 2rem));padding:.75rem 1rem;background:var(--line);color:var(--paper);border-radius:14px 6px 16px 6px;box-shadow:4px 4px 0 var(--accent1);font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease}.toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){.obj .lift,.ring,.btn,.toast{transition:none}}
+:root[data-motion="off"] .lift,:root[data-motion="off"] .ring,:root[data-motion="off"] .btn{transition:none}
+</style>
+</head>
+<body>
+<main class="page">
+<header>
+<h1 class="name">Pia Morandi</h1>
+<p class="bio">Illustrator in Turin. Picture books, plants, and one orange cat.</p>
+</header>
+<figure class="desk">
+<svg viewBox="0 0 400 440" role="group" aria-label="Pia’s desk. Each object opens one of her links.">
+<defs><filter id="b-cup" class="boil" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="2" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.8" xChannelSelector="R" yChannelSelector="G"/></filter><filter id="b-print" class="boil" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="2" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.8" xChannelSelector="R" yChannelSelector="G"/></filter><filter id="b-sketchbook" class="boil" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="2" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.8" xChannelSelector="R" yChannelSelector="G"/></filter><filter id="b-cat" class="boil" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="2" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.8" xChannelSelector="R" yChannelSelector="G"/></filter><filter id="b-envelope" class="boil" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="2" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.8" xChannelSelector="R" yChannelSelector="G"/></filter></defs>
+<rect class="mat" x="6" y="6" width="388" height="428" rx="18"/>
+<g class="grid"><line x1="30" x2="30" y1="6" y2="434"/><line x1="54" x2="54" y1="6" y2="434"/><line x1="78" x2="78" y1="6" y2="434"/><line x1="102" x2="102" y1="6" y2="434"/><line x1="126" x2="126" y1="6" y2="434"/><line x1="150" x2="150" y1="6" y2="434"/><line x1="174" x2="174" y1="6" y2="434"/><line x1="198" x2="198" y1="6" y2="434"/><line x1="222" x2="222" y1="6" y2="434"/><line x1="246" x2="246" y1="6" y2="434"/><line x1="270" x2="270" y1="6" y2="434"/><line x1="294" x2="294" y1="6" y2="434"/><line x1="318" x2="318" y1="6" y2="434"/><line x1="342" x2="342" y1="6" y2="434"/><line x1="366" x2="366" y1="6" y2="434"/><line x1="390" x2="390" y1="6" y2="434"/><line y1="30" y2="30" x1="6" x2="394"/><line y1="54" y2="54" x1="6" x2="394"/><line y1="78" y2="78" x1="6" x2="394"/><line y1="102" y2="102" x1="6" x2="394"/><line y1="126" y2="126" x1="6" x2="394"/><line y1="150" y2="150" x1="6" x2="394"/><line y1="174" y2="174" x1="6" x2="394"/><line y1="198" y2="198" x1="6" x2="394"/><line y1="222" y2="222" x1="6" x2="394"/><line y1="246" y2="246" x1="6" x2="394"/><line y1="270" y2="270" x1="6" x2="394"/><line y1="294" y2="294" x1="6" x2="394"/><line y1="318" y2="318" x1="6" x2="394"/><line y1="342" y2="342" x1="6" x2="394"/><line y1="366" y2="366" x1="6" x2="394"/><line y1="390" y2="390" x1="6" x2="394"/><line y1="414" y2="414" x1="6" x2="394"/></g>
+<g class="hits" aria-hidden="true"><ellipse data-k="social" class="hit" cx="35" cy="50" rx="54" ry="70" transform="translate(42 34) rotate(-4) rotate(-6 35 50)"/><ellipse data-k="shop" class="hit" cx="48" cy="59" rx="64" ry="76" transform="translate(274 16) rotate(5) rotate(4 48 59)"/><ellipse data-k="portfolio" class="hit" cx="100" cy="68" rx="122" ry="86" transform="translate(92 168) rotate(-5) rotate(3 100 68)"/><ellipse data-k="newsletter" class="hit" cx="76" cy="68" rx="90" ry="62" transform="translate(38 306) rotate(-3 76 68)"/><ellipse data-k="commissions" class="hit" cx="62" cy="40" rx="80" ry="56" transform="translate(246 322) rotate(-7) rotate(5 62 40)"/></g>
+<g class="decor" aria-hidden="true" opacity="0.28"><g fill="none" class="stroke-line" stroke-width="2" stroke-linecap="round"><circle cx="190" cy="80" r="30" stroke-dasharray="150 38"/><circle cx="190" cy="80" r="25" stroke-dasharray="40 30 70 20"/><g transform="translate(198 372) rotate(18)"><rect x="0" y="0" width="36" height="18" rx="4"/><path d="M13 0 L13 18"/></g><path d="M244 400 l3 2 M252 408 l2 -2 M240 410 l3 1"/></g></g>
+<g class="obj" data-k="social" role="button" tabindex="0" aria-pressed="false" aria-label="Pencil cup: Instagram" transform="translate(42 34) rotate(-4)"><g class="lift" filter="url(#b-cup)"><g class="fills" transform="translate(3 3)"><g transform="translate(20 46) rotate(-12)"><polygon class="role-accent2" points="-5,0 -5,-38 0,-50 5,-38 5,0"/></g><g transform="translate(37 44) rotate(4)"><polygon class="role-accent2" points="-5,0 -5,-38 0,-50 5,-38 5,0"/></g><g transform="translate(53 46) rotate(17)"><path class="role-accent1" d="M-4 -40 Q0 -62 4 -40 Z"/></g><path class="role-accent1" d="M2 46 Q35 54 68 46 L62 108 Q35 115 8 108 Z"/></g><g transform="translate(20 46) rotate(-12)"><path class="ink" d="M-5 0 L-5 -38 L0 -50 L5 -38 L5 0 M-5 -38 L5 -38"/></g><g transform="translate(37 44) rotate(4)"><path class="ink" d="M-5 0 L-5 -38 L0 -50 L5 -38 L5 0 M-5 -38 L5 -38"/></g><g transform="translate(53 46) rotate(17)"><path class="ink" d="M0 0 L0 -40 M-4 -40 Q0 -62 4 -40 Z"/></g><path class="ink" d="M2 46 Q35 54 68 46 L62 108 Q35 115 8 108 Z"/><ellipse class="ink" cx="35" cy="46" rx="33" ry="7"/><path class="ink" d="M12 74 Q35 80 58 74"/></g><ellipse class="ring" pathLength="1" cx="35" cy="50" rx="54" ry="70" transform="rotate(-6 35 50)"/></g>
+<g class="obj" data-k="shop" role="button" tabindex="0" aria-pressed="false" aria-label="Framed print: Print shop" transform="translate(274 16) rotate(5)"><g class="lift" filter="url(#b-print)"><g class="fills" transform="translate(3 3)"><circle class="role-accent2" cx="62" cy="40" r="11"/><path class="role-accent1" d="M12 98 Q30 64 48 82 Q62 58 84 98 Z"/></g><rect class="ink" x="0" y="0" width="96" height="118" rx="3"/><rect class="ink" x="11" y="11" width="74" height="96"/><circle class="ink" cx="62" cy="40" r="11"/><path class="ink" d="M12 98 Q30 64 48 82 Q62 58 84 98"/><path class="ink" d="M60 101 q4 -4 8 0 t8 0" stroke-width="1.8"/></g><ellipse class="ring" pathLength="1" cx="48" cy="59" rx="64" ry="76" transform="rotate(4 48 59)"/></g>
+<g class="obj" data-k="portfolio" role="button" tabindex="0" aria-pressed="false" aria-label="Sketchbook: Portfolio" transform="translate(92 168) rotate(-5)"><g class="lift" filter="url(#b-sketchbook)"><g class="fills" transform="translate(3 3)"><rect class="role-accent2" x="16" y="84" width="36" height="32"/><path class="role-accent1" d="M150 94 Q128 62 152 30 Q174 62 150 94 Z"/><path class="role-accent1" d="M150 94 Q178 80 186 54 Q160 58 150 94 Z"/><circle class="role-accent2" cx="124" cy="40" r="11"/></g><path class="ink" d="M100 4 Q50 -2 2 6 L6 132 Q52 124 100 130 Z"/><path class="ink" d="M100 4 Q150 -2 198 6 L194 132 Q148 124 100 130 Z"/><g class="ink" stroke-width="2"><ellipse cx="100" cy="14" rx="5" ry="3"/><ellipse cx="100" cy="28" rx="5" ry="3"/><ellipse cx="100" cy="42" rx="5" ry="3"/><ellipse cx="100" cy="56" rx="5" ry="3"/><ellipse cx="100" cy="70" rx="5" ry="3"/><ellipse cx="100" cy="84" rx="5" ry="3"/><ellipse cx="100" cy="98" rx="5" ry="3"/><ellipse cx="100" cy="112" rx="5" ry="3"/></g><path class="ink" stroke-width="1.8" d="M16 26 q8 -5 16 0 t16 0 t16 0 t16 0 M16 40 q8 -5 16 0 t16 0 t16 0 M16 54 q8 -5 16 0 t16 0 t16 0 t16 0 M16 68 q8 -5 16 0 t16 0"/><rect class="ink" x="16" y="84" width="36" height="32" stroke-width="2"/><path class="ink" d="M150 94 Q128 62 152 30 Q174 62 150 94 M150 92 L152 36"/><path class="ink" d="M150 94 Q178 80 186 54 Q160 58 150 94"/><circle class="ink" cx="124" cy="40" r="11"/></g><ellipse class="ring" pathLength="1" cx="100" cy="68" rx="122" ry="86" transform="rotate(3 100 68)"/></g>
+<g class="obj" data-k="newsletter" role="button" tabindex="0" aria-pressed="false" aria-label="Biscotto the cat: Monthly letter" transform="translate(38 306)"><g class="lift" filter="url(#b-cat)"><g class="fills" transform="translate(3 3)"><path class="role-accent2" d="M48 30 Q90 14 132 32 Q156 52 140 84 Q112 112 60 104 Q40 100 36 78 Z"/><path class="stroke-accent2" fill="none" stroke-width="9" stroke-linecap="round" d="M138 86 Q148 112 104 116 Q66 120 42 106"/><circle class="role-accent2" cx="30" cy="54" r="24"/><path class="role-accent2" d="M12 44 L8 24 L24 33 Z M36 31 L50 20 L52 40 Z"/><path class="role-accent1" d="M27 60 L33 60 L30 64 Z"/></g><path class="ink" d="M48 30 Q90 14 132 32 Q156 52 140 84 Q112 112 60 104 Q46 101 40 90"/><path class="ink" d="M138 86 Q148 112 104 116 Q66 120 42 106"/><circle class="ink" cx="30" cy="54" r="24"/><path class="ink" d="M12 44 L8 24 L24 33 M36 31 L50 20 L52 40"/><path class="ink" stroke-width="2" d="M84 26 q-4 10 0 18 M102 25 q-4 12 0 20 M120 31 q-4 10 0 16"/><path class="ink" stroke-width="1.6" d="M10 60 L-6 57 M10 64 L-6 67 M50 60 L64 57 M50 64 L64 67"/><path class="ink" stroke-width="1.6" d="M27 60 L33 60 L30 64 Z"/><g class="w-idle"><path class="ink" stroke-width="2" d="M18 52 q4 4 8 0 M34 52 q4 4 8 0"/><text class="art-text" x="58" y="22">z z</text></g><g class="w-sel"><circle class="role-line" cx="22" cy="52" r="3.2"/><circle class="role-line" cx="38" cy="52" r="3.2"/><text class="art-text" x="56" y="20">prrr</text></g></g><ellipse class="ring" pathLength="1" cx="76" cy="68" rx="90" ry="62" transform="rotate(-3 76 68)"/></g>
+<g class="obj" data-k="commissions" role="button" tabindex="0" aria-pressed="false" aria-label="Envelope: Commissions" transform="translate(246 322) rotate(-7)"><g class="lift" filter="url(#b-envelope)"><g class="fills" transform="translate(3 3)"><rect class="role-accent2" x="92" y="8" width="22" height="26"/><circle class="role-accent1" cx="62" cy="46" r="9"/></g><g class="fills" transform="translate(3 3)"><path class="role-accent2" d="M88 -44 Q114 -49 140 -44 L138 -21 Q113 -17 88 -21 Z"/></g><rect class="ink" x="0" y="0" width="124" height="78" rx="4"/><path class="ink" d="M3 3 L62 46 L121 3 M3 75 L48 40 M121 75 L76 40"/><rect class="ink" x="92" y="8" width="22" height="26" stroke-width="1.8" stroke-dasharray="2.5 2.5"/><circle class="ink" cx="62" cy="46" r="9"/><path class="ink" stroke-width="1.6" d="M62 50 L58 46 Q56 42 60 42 Q62 42 62 44 Q62 42 64 42 Q68 42 66 46 Z"/><path class="ink" d="M88 -1 L88 -44"/><path class="ink" d="M88 -44 Q114 -49 140 -44 L138 -21 Q113 -17 88 -21 Z"/><circle class="role-line" cx="88" cy="-46" r="2.6"/><text class="art-text sm on-accent" x="113" y="-28" text-anchor="middle">open</text></g><ellipse class="ring" pathLength="1" cx="62" cy="40" rx="80" ry="56" transform="rotate(5 62 40)"/></g>
+</svg>
+</figure>
+<section class="tag" aria-live="polite">
+<p class="hint" id="hint">Tap anything on my desk.</p>
+<div id="tb" hidden>
+<h2 id="tt"></h2>
+<p class="stat" id="ts" hidden></p>
+<p class="desc" id="tx"></p>
+<a class="btn" id="tbtn" href="#"></a>
+</div>
+</section>
+<nav class="links" aria-labelledby="links-h">
+<h2 class="links-h" id="links-h">Or skip the desk</h2>
+<ul>
+<li><a href="https://www.behance.net/piamorandi" data-k="portfolio">Portfolio</a></li>
+<li><a href="https://piamorandi.shop" data-k="shop">Print shop</a></li>
+<li><a href="mailto:studio@piamorandi.it" data-k="commissions">Commissions <span class="ls">· open</span></a></li>
+<li><a href="https://www.instagram.com/piamorandi" data-k="social">Instagram</a></li>
+<li><a href="https://piamorandi.substack.com" data-k="newsletter">Monthly letter</a></li>
+</ul>
+</nav>
+<p class="foot">Demo page. The links are placeholders.</p>
+</main>
+<div class="toast" id="toast" role="status"></div>
+<script type="application/json" id="sd">{"links":{"social":{"t":"Pencil cup","d":"Daily sketches, process videos and the occasional ruined page.","c":"Follow on Instagram","u":"https://www.instagram.com/piamorandi","m":"Demo only. On a live page this would open instagram.com/piamorandi."},"shop":{"t":"Framed print","d":"Signed prints and small risograph zines, posted from Turin.","c":"Visit the print shop","u":"https://piamorandi.shop","m":"Demo only. On a live page this would open piamorandi.shop."},"portfolio":{"t":"Sketchbook","d":"Finished work: picture books, packaging, and a lot of plants.","c":"See my portfolio","u":"https://www.behance.net/piamorandi","m":"Demo only. On a live page this would open behance.net/piamorandi."},"newsletter":{"t":"Biscotto","d":"The studio cat. He guards a monthly letter with new work and early print drops.","c":"Get the monthly letter","u":"https://piamorandi.substack.com","m":"Demo only. On a live page this would open piamorandi.substack.com."},"commissions":{"t":"Envelope","d":"Book covers, editorial work and pet portraits.","c":"Ask about a commission","u":"mailto:studio@piamorandi.it","s":"Open for commissions · Booking for spring 2027.","sc":"open","m":"Demo only. On a live page this would start an email to studio@piamorandi.it."}},"boil":{"s":[2,7,13],"i":150},"motion":"auto","demo":true}</script>
+<script>(()=>{const d=document,R=d.documentElement,N=navigator,W=window,ds=R.dataset;const $=(i)=>d.getElementById(i);const D=JSON.parse($("sd").textContent),L=D.links,B=D.boil;const objs=[...d.querySelectorAll(".obj")];const turbs=[...d.querySelectorAll("filter.boil feTurbulence")];const mq=W.matchMedia("(prefers-reduced-motion: reduce)");let seeds=B?B.s:[],ms=B?B.i:0,k=0,timer=0,seen=1,last=Date.now(),measured=0,measuring=0,tries=0;let off=!B||!turbs.length||D.motion=="off"||(N.connection&&N.connection.saveData)?1:0;if(!off&&(D.motion=="reduced"||((N.hardwareConcurrency||8)<=4&&(N.deviceMemory||8)<=4))){seeds=seeds.slice(0,2);ms=D.motion=="reduced"?400:250;turbs.forEach((t)=>t.setAttribute("numOctaves",1));ds.lite=1;}const tick=()=>{k=(k+1)%seeds.length;turbs.forEach((t)=>t.setAttribute("seed",seeds[k]));};const ok=()=>!off&&!(mq.matches&&!D.force)&&!d.hidden&&seen&&Date.now()-last<45e3;const sync=()=>{if(!ok()){clearInterval(timer);timer=0;if(!measuring)ds.boil=off?"static":"paused";return;}if(timer||measuring)return;if(!measured)return measure();timer=setInterval(()=>(ok()?tick():sync()),ms);ds.boil="on";};const measure=()=>{measuring=1;ds.boil="measuring";let n=-1,sum=0,t0=0;const f=()=>{const t=performance.now();if(t0&&t-t0<1e3){if(n>=0)sum+=t-t0;n++;}if(n<5){t0=t;tick();requestAnimationFrame(f);return;}measuring=0;ds.boilMs=(sum/n).toFixed(1);if(sum/n>40&&!tries++){setTimeout(sync,2e3);return;}measured=1;if(sum/n>40)off=1;sync();};const go=()=>requestAnimationFrame(f);if(d.readyState=="complete")go();else W.addEventListener("load",go);};const poke=()=>{const idle=Date.now()-last>=45e3;last=Date.now();if(idle)sync();};["pointerdown","pointermove","keydown","scroll","focusin","touchstart"].forEach((e)=>W.addEventListener(e,poke,{passive:true,capture:true}));d.addEventListener("visibilitychange",sync);if(mq.addEventListener)mq.addEventListener("change",sync);const svg=d.querySelector(".desk svg");if(W.IntersectionObserver&&svg)new IntersectionObserver((e)=>{seen=e[e.length-1].isIntersecting;sync();}).observe(svg);sync();const hint=$("hint"),body=$("tb"),tt=$("tt"),ts=$("ts"),tx=$("tx"),btn=$("tbtn");const sel=(key)=>{const l=L[key];if(!l)return;objs.forEach((o)=>{const on=o.dataset.k==key;o.classList.toggle("selected",on);o.setAttribute("aria-pressed",on);});hint.hidden=true;body.hidden=false;tt.textContent=l.t;ts.textContent=l.s||"";ts.hidden=!l.s;ts.className="stat s-"+(l.sc||"");tx.textContent=l.d;btn.textContent=l.c;btn.href=l.u||"#";btn.dataset.k=key;};objs.forEach((o)=>{o.addEventListener("click",()=>sel(o.dataset.k));o.addEventListener("keydown",(e)=>{if(e.key=="Enter"||e.key==" "){e.preventDefault();sel(o.dataset.k);}});});d.querySelectorAll(".hit").forEach((h)=>{const key=h.dataset.k,o=objs.find((x)=>x.dataset.k==key);h.addEventListener("click",()=>sel(key));if(o){h.addEventListener("pointerenter",()=>o.classList.add("hov"));h.addEventListener("pointerleave",()=>o.classList.remove("hov"));}});if(D.demo){const toast=$("toast");let tm;d.addEventListener("click",(e)=>{const a=e.target.closest&&e.target.closest("a[data-k]");if(!a||!L[a.dataset.k])return;e.preventDefault();toast.textContent=L[a.dataset.k].m;toast.classList.add("show");clearTimeout(tm);tm=setTimeout(()=>toast.classList.remove("show"),2800);});}})();</script>
+</body>
+</html>

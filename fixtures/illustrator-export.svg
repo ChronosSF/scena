@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">
+  <defs>
+    <style>.cls-1{fill:#ff00ff;}.cls-2{fill:none;stroke:#ff00ff;stroke-width:6px;stroke-linecap:round;}.cls-3{fill:#ffff00;}</style>
+    <clipPath id="a"><circle cx="150" cy="150" r="120"/></clipPath>
+  </defs>
+  <g clip-path="url(#a)">
+    <circle class="cls-3" cx="150" cy="150" r="110"/>
+    <path class="cls-2" d="M60 150 Q150 60 240 150 Q150 240 60 150 Z"/>
+    <circle class="cls-1" cx="150" cy="150" r="22"/>
+  </g>
+  <circle class="cls-2" cx="150" cy="150" r="115"/>
+</svg>

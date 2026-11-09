@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+coverage/
+# local verification output
+tools/out/
+.DS_Store
+Thumbs.db

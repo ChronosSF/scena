@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // No "DOM" lib and no Node types: the renderer must stay a pure function.
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "include": ["src"]
+}

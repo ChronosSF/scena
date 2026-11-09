@@ -1,0 +1,37 @@
+{
+  "name": "scena",
+  "private": true,
+  "type": "module",
+  "description": "Illustrated link-in-bio: scene format, renderer and the bring-your-own-drawings studio.",
+  "packageManager": "pnpm@10.13.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "gen": "pnpm --filter @scena/renderer gen",
+    "dev": "pnpm gen && pnpm --filter @scena/studio dev",
+    "build": "pnpm gen && pnpm --filter @scena/studio build",
+    "preview": "pnpm --filter @scena/studio preview",
+    "typecheck": "pnpm gen && pnpm -r --no-bail typecheck && tsc --noEmit -p tools",
+    "test": "pnpm gen && vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "lint:scene": "node tools/lint-scene.ts",
+    "encode:desk": "node packages/scenes/scripts/encode-desk.ts",
+    "encode:samples": "node packages/scenes/scripts/encode-samples.ts",
+    "fixtures": "node tools/make-fixtures.ts",
+    "parity": "node tools/parity.ts",
+    "measure": "node tools/measure.ts",
+    "verify:studio": "node tools/verify-studio.ts",
+    "verify:runtime": "node tools/verify-runtime.ts",
+    "shots": "node tools/design-shots.ts"
+  },
+  "devDependencies": {
+    "@scena/renderer": "workspace:*",
+    "@scena/scene": "workspace:*",
+    "@scena/scenes": "workspace:*",
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,182 @@
+// Minimal Chrome DevTools Protocol client: launches headless Chrome or Edge and talks
+// to it with Node's built-in WebSocket. Used by the verify-* and measure tools.
+
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const CANDIDATES = [
+  process.env.CHROME_PATH,
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser",
+].filter((p): p is string => !!p);
+
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+type Json = any;
+interface Message { id?: number; method?: string; params?: Json; result?: Json; error?: { message: string }; sessionId?: string }
+
+export interface Page {
+  send: (method: string, params?: Json) => Promise<Json>;
+  goto: (url: string, waitMs?: number) => Promise<void>;
+  eval: <T = Json>(expression: string, contextId?: number) => Promise<T>;
+  screenshot: () => Promise<Buffer>;
+  /** Evaluate in the most recently attached child frame (out-of-process iframes, such as sandboxed srcdoc frames). */
+  frameEval: <T = Json>(expression: string) => Promise<T>;
+  /** Send a command to the most recently attached child frame (emulation does not reach out-of-process frames). */
+  frameSend: (method: string, params?: Json) => Promise<Json>;
+  click: (x: number, y: number) => Promise<void>;
+  drag: (from: [number, number], to: [number, number], steps?: number) => Promise<void>;
+  key: (key: string, code?: string) => Promise<void>;
+  logs: string[];
+  close: () => Promise<void>;
+}
+
+export interface Browser {
+  newPage: () => Promise<Page>;
+  trace: <T>(fn: () => Promise<T>, categories: string[]) => Promise<{ result: T; events: Json[] }>;
+  close: () => Promise<void>;
+}
+
+export async function launch({ port = 9333, headed = false, gpu = true, fileAccess = true } = {}): Promise<Browser> {
+  const exe = CANDIDATES.find((p) => existsSync(p));
+  if (!exe) throw new Error("No Chrome or Edge found; set CHROME_PATH.");
+  const profile = mkdtempSync(join(tmpdir(), "scena-cdp-"));
+  const flags = [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check",
+    "--hide-scrollbars", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows"];
+  if (fileAccess) flags.push("--allow-file-access-from-files");
+  flags.push(headed ? "--window-position=-2400,0" : "--headless=new");
+  if (headed) flags.push("--window-size=420,900");
+  if (!gpu) flags.push("--disable-gpu", "--disable-gpu-rasterization", "--disable-gpu-compositing");
+  const proc = spawn(exe, [...flags, "about:blank"], { stdio: "ignore" });
+  let info: Json;
+  for (let i = 0; i < 100 && !info; i++) {
+    try { info = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); } catch { await sleep(100); }
+  }
+  if (!info) throw new Error("Chrome did not open its debugging port.");
+  const ws = new WebSocket(info.webSocketDebuggerUrl);
+  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  let id = 0;
+  const pending = new Map<number, { resolve: (v: Json) => void; reject: (e: Error) => void }>();
+  const listeners: ((m: Message) => void)[] = [];
+  ws.onmessage = (ev) => {
+    const msg: Message = JSON.parse(String(ev.data));
+    if (msg.id && pending.has(msg.id)) {
+      const p = pending.get(msg.id)!;
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error.message)); else p.resolve(msg.result);
+    } else if (msg.method) listeners.forEach((fn) => fn(msg));
+  };
+  const send = (method: string, params: Json = {}, sessionId?: string) => new Promise<Json>((resolve, reject) => {
+    const mid = ++id;
+    pending.set(mid, { resolve, reject });
+    ws.send(JSON.stringify({ id: mid, method, params, ...(sessionId ? { sessionId } : {}) }));
+  });
+
+  async function newPage(): Promise<Page> {
+    const { targetId } = await send("Target.createTarget", { url: "about:blank" });
+    const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
+    const s = (m: string, p?: Json) => send(m, p, sessionId);
+    await s("Page.enable");
+    await s("Runtime.enable");
+    await s("Log.enable");
+    // sandboxed and cross-origin iframes run out of process: attach to them as they appear
+    const frames: string[] = [];
+    listeners.push((msg) => {
+      if (msg.method === "Target.attachedToTarget" && msg.sessionId === sessionId && msg.params.targetInfo.type === "iframe") {
+        frames.push(msg.params.sessionId);
+        void send("Runtime.enable", {}, msg.params.sessionId);
+        void send("Runtime.runIfWaitingForDebugger", {}, msg.params.sessionId);
+      }
+    });
+    await s("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+    const logs: string[] = [];
+    listeners.push((msg) => {
+      if (msg.sessionId !== sessionId && !frames.includes(msg.sessionId || "")) return;
+      if (msg.method === "Runtime.consoleAPICalled") logs.push(`console.${msg.params.type}: ${msg.params.args.map((a: Json) => a.value ?? a.description).join(" ")}`);
+      if (msg.method === "Runtime.exceptionThrown") logs.push(`exception: ${msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text}`);
+      if (msg.method === "Log.entryAdded") logs.push(`${msg.params.entry.level}: ${msg.params.entry.text}`);
+    });
+    const mouse = (type: string, x: number, y: number, extra: Json = {}) => s("Input.dispatchMouseEvent", { type, x, y, button: "left", pointerType: "mouse", ...extra });
+    return {
+      send: s,
+      logs,
+      async goto(url, waitMs = 800) {
+        const loaded = new Promise<void>((res) => {
+          const fn = (msg: Message) => {
+            if (msg.sessionId === sessionId && msg.method === "Page.loadEventFired") { listeners.splice(listeners.indexOf(fn), 1); res(); }
+          };
+          listeners.push(fn);
+        });
+        await s("Page.navigate", { url });
+        await loaded;
+        await sleep(waitMs);
+      },
+      async eval(expression, contextId) {
+        const r = await s("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, ...(contextId ? { contextId } : {}) });
+        if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+        return r.result.value;
+      },
+      async frameEval(expression) {
+        const fs = frames.at(-1);
+        if (!fs) throw new Error("No child frame is attached.");
+        const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, fs);
+        if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+        return r.result.value;
+      },
+      async frameSend(method, params = {}) {
+        const fs = frames.at(-1);
+        if (!fs) throw new Error("No child frame is attached.");
+        return send(method, params, fs);
+      },
+      async click(x, y) {
+        await mouse("mouseMoved", x, y);
+        await mouse("mousePressed", x, y, { clickCount: 1, buttons: 1 });
+        await mouse("mouseReleased", x, y, { clickCount: 1 });
+      },
+      async drag(from, to, steps = 8) {
+        await mouse("mouseMoved", from[0], from[1]);
+        await mouse("mousePressed", from[0], from[1], { clickCount: 1, buttons: 1 });
+        for (let i = 1; i <= steps; i++) {
+          await mouse("mouseMoved", from[0] + ((to[0] - from[0]) * i) / steps, from[1] + ((to[1] - from[1]) * i) / steps, { buttons: 1 });
+        }
+        await mouse("mouseReleased", to[0], to[1], { clickCount: 1 });
+      },
+      async key(key, code) {
+        await s("Input.dispatchKeyEvent", { type: "keyDown", key, code: code || key });
+        await s("Input.dispatchKeyEvent", { type: "keyUp", key, code: code || key });
+      },
+      async screenshot() { return Buffer.from((await s("Page.captureScreenshot", { format: "png" })).data, "base64"); },
+      close: () => send("Target.closeTarget", { targetId }),
+    };
+  }
+
+  async function trace<T>(fn: () => Promise<T>, categories: string[]) {
+    const events: Json[] = [];
+    const done = new Promise<void>((res) => {
+      const fnL = (msg: Message) => {
+        if (msg.method === "Tracing.dataCollected") events.push(...msg.params.value);
+        if (msg.method === "Tracing.tracingComplete") { listeners.splice(listeners.indexOf(fnL), 1); res(); }
+      };
+      listeners.push(fnL);
+    });
+    await send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: categories } });
+    const result = await fn();
+    await send("Tracing.end");
+    await done;
+    return { result, events };
+  }
+
+  async function close() {
+    try { await send("Browser.close"); } catch { /* already gone */ }
+    ws.close();
+    await sleep(300);
+    proc.kill();
+    try { rmSync(profile, { recursive: true, force: true }); } catch { /* Windows may hold the lock briefly */ }
+  }
+  return { newPage, trace, close };
+}

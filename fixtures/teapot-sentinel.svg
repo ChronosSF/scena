@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <title>Teapot</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M250 300 Q240 190 400 185 Q560 190 550 300 Q560 440 400 445 Q240 440 250 300 Z" fill="#00FFFF" stroke="#FF00FF" stroke-width="9"/>
+    <path d="M330 190 Q400 120 470 190 Z" fill="#FFFF00" stroke="#FF00FF" stroke-width="9"/>
+    <circle cx="400" cy="128" r="16" fill="#FFFF00" stroke="#FF00FF" stroke-width="8"/>
+    <path d="M548 260 Q640 230 640 320 Q640 400 545 380" fill="none" stroke="#FF00FF" stroke-width="9"/>
+    <path d="M255 330 Q170 320 150 240 L135 225" fill="none" stroke="#FF00FF" stroke-width="9"/>
+    <path d="M300 300 q25 -18 50 0 t50 0 t50 0 t50 0" fill="none" stroke="#FF00FF" stroke-width="6"/>
+    <circle cx="330" cy="370" r="14" fill="#FFFF00"/>
+    <circle cx="470" cy="365" r="11" fill="#FFFF00"/>
+    <path d="M330 470 Q400 485 470 470" fill="none" stroke="#FF00FF" stroke-width="7"/>
+    <path d="M610 150 q10 -20 0 -40 M640 160 q10 -25 0 -50" fill="none" stroke="#FF00FF" stroke-width="5"/>
+  </g>
+</svg>

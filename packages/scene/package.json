@@ -1,0 +1,13 @@
+{
+  "name": "@scena/scene",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The scene format: SceneDocument and PageDocument types, validation, migration and the budget lint.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  }
+}

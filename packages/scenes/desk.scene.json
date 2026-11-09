@@ -1,0 +1,900 @@
+{
+  "schemaVersion": 1,
+  "id": "desk",
+  "version": "1.0.0",
+  "name": "Illustrator's desk",
+  "author": {
+    "userId": "builtin",
+    "displayName": "Vittoria"
+  },
+  "license": "builtin",
+  "audience": [
+    "illustrators"
+  ],
+  "canvas": {
+    "width": 400,
+    "height": 440
+  },
+  "theme": {
+    "roles": [
+      "paper",
+      "mat",
+      "card",
+      "grid",
+      "line",
+      "accent1",
+      "accent2",
+      "text",
+      "muted"
+    ],
+    "palettes": [
+      {
+        "id": "riso-pink-yellow",
+        "name": "Federal blue, fluo pink, yellow",
+        "light": {
+          "paper": "#F1F3F0",
+          "mat": "#E3EAE5",
+          "card": "#FBFCFA",
+          "grid": "rgba(43,63,134,0.13)",
+          "line": "#2B3F86",
+          "accent1": "#FF5DAE",
+          "accent2": "#FFD93D",
+          "text": "#22306A",
+          "muted": "#4E5B8E",
+          "blend": "multiply",
+          "fillOpacity": 1
+        },
+        "dark": {
+          "paper": "#191C2E",
+          "mat": "#20253B",
+          "card": "#23283F",
+          "grid": "rgba(180,195,245,0.11)",
+          "line": "#B4C3F5",
+          "accent1": "#EE5FA6",
+          "accent2": "#E6C23A",
+          "text": "#E6EAF8",
+          "muted": "#A9B2D6",
+          "blend": "normal",
+          "fillOpacity": 0.85
+        }
+      },
+      {
+        "id": "forest-tangerine",
+        "name": "Forest green, tangerine, mint",
+        "light": {
+          "paper": "#F4F1EA",
+          "mat": "#E9E4D8",
+          "card": "#FCFAF5",
+          "grid": "rgba(31,77,58,0.13)",
+          "line": "#1F4D3A",
+          "accent1": "#FF7A45",
+          "accent2": "#9BE3C3",
+          "text": "#1A3A2C",
+          "muted": "#4F6B5C",
+          "blend": "multiply",
+          "fillOpacity": 1
+        },
+        "dark": {
+          "paper": "#151D19",
+          "mat": "#1B2620",
+          "card": "#202C26",
+          "grid": "rgba(170,220,195,0.10)",
+          "line": "#A8DCC2",
+          "accent1": "#F07A4A",
+          "accent2": "#6FC9A4",
+          "text": "#E6F1EA",
+          "muted": "#A3BFB0",
+          "blend": "normal",
+          "fillOpacity": 0.85
+        }
+      },
+      {
+        "id": "charcoal-red-cornflower",
+        "name": "Charcoal, bright red, cornflower",
+        "light": {
+          "paper": "#F2F0EC",
+          "mat": "#E6E2DB",
+          "card": "#FBFAF7",
+          "grid": "rgba(38,36,34,0.12)",
+          "line": "#262422",
+          "accent1": "#FF5A4E",
+          "accent2": "#7FB2FF",
+          "text": "#262422",
+          "muted": "#5E5954",
+          "blend": "multiply",
+          "fillOpacity": 1
+        },
+        "dark": {
+          "paper": "#1C1B1A",
+          "mat": "#252321",
+          "card": "#2B2927",
+          "grid": "rgba(230,225,215,0.09)",
+          "line": "#EDE8DF",
+          "accent1": "#F0605A",
+          "accent2": "#6E9FE8",
+          "text": "#F2EFEA",
+          "muted": "#B8B1A7",
+          "blend": "normal",
+          "fillOpacity": 0.85
+        }
+      },
+      {
+        "id": "violet-lime",
+        "name": "Violet, lavender, lime",
+        "light": {
+          "paper": "#F3F1F6",
+          "mat": "#E7E3EF",
+          "card": "#FCFBFD",
+          "grid": "rgba(59,42,107,0.12)",
+          "line": "#3B2A6B",
+          "accent1": "#B79CFF",
+          "accent2": "#D4F05A",
+          "text": "#2E2156",
+          "muted": "#5D5283",
+          "blend": "multiply",
+          "fillOpacity": 1
+        },
+        "dark": {
+          "paper": "#1B1726",
+          "mat": "#231E32",
+          "card": "#282238",
+          "grid": "rgba(200,185,250,0.10)",
+          "line": "#CDBEFF",
+          "accent1": "#9F84F0",
+          "accent2": "#C2DD4E",
+          "text": "#EEEAF8",
+          "muted": "#B2A9D2",
+          "blend": "normal",
+          "fillOpacity": 0.85
+        }
+      },
+      {
+        "id": "teal-sunflower",
+        "name": "Deep teal, aqua, sunflower",
+        "light": {
+          "paper": "#EFF4F3",
+          "mat": "#DFEAE8",
+          "card": "#FAFCFC",
+          "grid": "rgba(14,79,92,0.13)",
+          "line": "#0E4F5C",
+          "accent1": "#2EC4B6",
+          "accent2": "#FFB238",
+          "text": "#0B3D47",
+          "muted": "#3F6870",
+          "blend": "multiply",
+          "fillOpacity": 1
+        },
+        "dark": {
+          "paper": "#11201F",
+          "mat": "#172A29",
+          "card": "#1C302F",
+          "grid": "rgba(150,215,210,0.10)",
+          "line": "#93D6CF",
+          "accent1": "#2BB3A6",
+          "accent2": "#E9A43A",
+          "text": "#E3F2F0",
+          "muted": "#9CC3BE",
+          "blend": "normal",
+          "fillOpacity": 0.85
+        }
+      }
+    ],
+    "defaultPalette": "riso-pink-yellow",
+    "font": {
+      "family": "Shantell Sans",
+      "weights": [
+        400,
+        600,
+        800
+      ],
+      "fallback": "\"Chalkboard SE\", \"Comic Neue\", \"Segoe Print\", \"Trebuchet MS\", sans-serif"
+    }
+  },
+  "effects": {
+    "boil": {
+      "enabled": true,
+      "baseFrequency": 0.04,
+      "octaves": 2,
+      "displacement": 2.8,
+      "seeds": [
+        2,
+        7,
+        13
+      ],
+      "intervalMs": 150,
+      "scope": "object"
+    },
+    "lift": {
+      "dx": -1,
+      "dy": -4,
+      "ms": 180
+    },
+    "ring": {
+      "strokeWidth": 3.5,
+      "drawMs": 550
+    },
+    "fillOffset": {
+      "x": 3,
+      "y": 3
+    }
+  },
+  "slots": [
+    {
+      "id": "portfolio",
+      "label": "Sketchbook",
+      "objectId": "sketchbook",
+      "kind": "portfolio",
+      "defaults": {
+        "title": "Sketchbook",
+        "description": "Finished work.",
+        "cta": "See my portfolio"
+      },
+      "a11yLabel": "Sketchbook: {list}",
+      "optional": true
+    },
+    {
+      "id": "shop",
+      "label": "Framed print",
+      "objectId": "print",
+      "kind": "shop",
+      "defaults": {
+        "title": "Framed print",
+        "description": "Prints and small editions.",
+        "cta": "Visit the shop"
+      },
+      "a11yLabel": "Framed print: {list}",
+      "optional": true
+    },
+    {
+      "id": "commissions",
+      "label": "Envelope",
+      "objectId": "envelope",
+      "kind": "commissions",
+      "statusAware": true,
+      "defaults": {
+        "title": "Envelope",
+        "description": "Commissions and enquiries.",
+        "cta": "Ask about a commission"
+      },
+      "a11yLabel": "Envelope: {list}",
+      "optional": true
+    },
+    {
+      "id": "social",
+      "label": "Pencil cup",
+      "objectId": "cup",
+      "kind": "social",
+      "defaults": {
+        "title": "Pencil cup",
+        "description": "Sketches and process.",
+        "cta": "Follow along"
+      },
+      "a11yLabel": "Pencil cup: {list}",
+      "optional": true
+    },
+    {
+      "id": "newsletter",
+      "label": "Cat",
+      "objectId": "cat",
+      "kind": "newsletter",
+      "defaults": {
+        "title": "The cat",
+        "description": "A monthly letter with new work.",
+        "cta": "Get the letter"
+      },
+      "a11yLabel": "{title} the cat: {list}",
+      "optional": true
+    }
+  ],
+  "layers": [
+    {
+      "id": "mat",
+      "type": "background",
+      "asset": "mat"
+    },
+    {
+      "id": "grid",
+      "type": "background",
+      "asset": "grid-24"
+    },
+    {
+      "id": "clutter",
+      "type": "decor",
+      "name": "Desk clutter",
+      "asset": "clutter",
+      "opacity": 0.28
+    },
+    {
+      "id": "cup",
+      "type": "object",
+      "name": "Pencil cup",
+      "slotId": "social",
+      "transform": {
+        "x": 42,
+        "y": 34,
+        "rotate": -4
+      },
+      "parts": [
+        {
+          "asset": "cup-fills",
+          "role": "fills"
+        },
+        {
+          "asset": "cup-lines",
+          "role": "lines"
+        }
+      ],
+      "hotspot": {
+        "shape": "ellipse",
+        "cx": 35,
+        "cy": 50,
+        "rx": 54,
+        "ry": 70,
+        "rotate": -6
+      },
+      "effects": [
+        "boil",
+        "lift",
+        "ring"
+      ]
+    },
+    {
+      "id": "print",
+      "type": "object",
+      "name": "Framed print",
+      "slotId": "shop",
+      "transform": {
+        "x": 274,
+        "y": 16,
+        "rotate": 5
+      },
+      "parts": [
+        {
+          "asset": "print-fills",
+          "role": "fills"
+        },
+        {
+          "asset": "print-lines",
+          "role": "lines"
+        }
+      ],
+      "hotspot": {
+        "shape": "ellipse",
+        "cx": 48,
+        "cy": 59,
+        "rx": 64,
+        "ry": 76,
+        "rotate": 4
+      },
+      "effects": [
+        "boil",
+        "lift",
+        "ring"
+      ]
+    },
+    {
+      "id": "sketchbook",
+      "type": "object",
+      "name": "Sketchbook",
+      "slotId": "portfolio",
+      "transform": {
+        "x": 92,
+        "y": 168,
+        "rotate": -5
+      },
+      "parts": [
+        {
+          "asset": "sketchbook-fills",
+          "role": "fills"
+        },
+        {
+          "asset": "sketchbook-lines",
+          "role": "lines"
+        }
+      ],
+      "hotspot": {
+        "shape": "ellipse",
+        "cx": 100,
+        "cy": 68,
+        "rx": 122,
+        "ry": 86,
+        "rotate": 3
+      },
+      "effects": [
+        "boil",
+        "lift",
+        "ring"
+      ]
+    },
+    {
+      "id": "cat",
+      "type": "object",
+      "name": "Cat",
+      "slotId": "newsletter",
+      "transform": {
+        "x": 38,
+        "y": 306
+      },
+      "parts": [
+        {
+          "asset": "cat-fills",
+          "role": "fills"
+        },
+        {
+          "asset": "cat-lines",
+          "role": "lines"
+        },
+        {
+          "asset": "cat-idle",
+          "role": "lines",
+          "when": "idle"
+        },
+        {
+          "asset": "cat-awake",
+          "role": "lines",
+          "when": "selected"
+        }
+      ],
+      "hotspot": {
+        "shape": "ellipse",
+        "cx": 76,
+        "cy": 68,
+        "rx": 90,
+        "ry": 62,
+        "rotate": -3
+      },
+      "effects": [
+        "boil",
+        "lift",
+        "ring"
+      ]
+    },
+    {
+      "id": "envelope",
+      "type": "object",
+      "name": "Envelope",
+      "slotId": "commissions",
+      "transform": {
+        "x": 246,
+        "y": 322,
+        "rotate": -7
+      },
+      "parts": [
+        {
+          "asset": "envelope-fills",
+          "role": "fills"
+        },
+        {
+          "asset": "envelope-flag-open",
+          "role": "fills",
+          "when": "status:open"
+        },
+        {
+          "asset": "envelope-flag-waitlist",
+          "role": "fills",
+          "when": "status:waitlist"
+        },
+        {
+          "asset": "envelope-lines",
+          "role": "lines"
+        },
+        {
+          "asset": "envelope-sign-open",
+          "role": "lines",
+          "when": "status:open"
+        },
+        {
+          "asset": "envelope-sign-closed",
+          "role": "lines",
+          "when": "status:closed"
+        },
+        {
+          "asset": "envelope-sign-waitlist",
+          "role": "lines",
+          "when": "status:waitlist"
+        }
+      ],
+      "hotspot": {
+        "shape": "ellipse",
+        "cx": 62,
+        "cy": 40,
+        "rx": 80,
+        "ry": 56,
+        "rotate": 5
+      },
+      "effects": [
+        "boil",
+        "lift",
+        "ring"
+      ]
+    }
+  ],
+  "fallback": {
+    "heading": "Or skip the desk",
+    "order": [
+      "portfolio",
+      "shop",
+      "commissions",
+      "social",
+      "newsletter"
+    ]
+  },
+  "assets": {
+    "mat": {
+      "id": "mat",
+      "kind": "procedural",
+      "generator": "mat",
+      "params": {
+        "inset": 6,
+        "rx": 18
+      },
+      "width": 400,
+      "height": 440,
+      "bytes": 0,
+      "sha256": ""
+    },
+    "grid-24": {
+      "id": "grid-24",
+      "kind": "procedural",
+      "generator": "grid",
+      "params": {
+        "inset": 6,
+        "step": 24,
+        "start": 30
+      },
+      "width": 400,
+      "height": 440,
+      "bytes": 0,
+      "sha256": ""
+    },
+    "clutter": {
+      "id": "clutter",
+      "kind": "svg-inline",
+      "src": "<g fill=\"none\" class=\"stroke-line\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"190\" cy=\"80\" r=\"30\" stroke-dasharray=\"150 38\"/><circle cx=\"190\" cy=\"80\" r=\"25\" stroke-dasharray=\"40 30 70 20\"/><g transform=\"translate(198 372) rotate(18)\"><rect x=\"0\" y=\"0\" width=\"36\" height=\"18\" rx=\"4\"/><path d=\"M13 0 L13 18\"/></g><path d=\"M244 400 l3 2 M252 408 l2 -2 M240 410 l3 1\"/></g>",
+      "width": 0,
+      "height": 0,
+      "bytes": 378,
+      "sha256": "8d3eff008c8ba5af6a455df3f146a0d85cda16400220de4b3168a594f8510534",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 5
+    },
+    "cup-fills": {
+      "id": "cup-fills",
+      "kind": "svg-inline",
+      "src": "<g transform=\"translate(20 46) rotate(-12)\"><polygon class=\"role-accent2\" points=\"-5,0 -5,-38 0,-50 5,-38 5,0\"/></g><g transform=\"translate(37 44) rotate(4)\"><polygon class=\"role-accent2\" points=\"-5,0 -5,-38 0,-50 5,-38 5,0\"/></g><g transform=\"translate(53 46) rotate(17)\"><path class=\"role-accent1\" d=\"M-4 -40 Q0 -62 4 -40 Z\"/></g><path class=\"role-accent1\" d=\"M2 46 Q35 54 68 46 L62 108 Q35 115 8 108 Z\"/>",
+      "width": 69.7,
+      "height": 117.7,
+      "bbox": {
+        "x": 2,
+        "y": -6.2,
+        "w": 69.7,
+        "h": 117.7
+      },
+      "bytes": 407,
+      "sha256": "a1d9785ce21872551f9aa32a3bb71b32e5365b0d93e929aa709e07747db6af3b",
+      "colorRoles": [
+        "accent1",
+        "accent2"
+      ],
+      "nodeCount": 4
+    },
+    "cup-lines": {
+      "id": "cup-lines",
+      "kind": "svg-inline",
+      "src": "<g transform=\"translate(20 46) rotate(-12)\"><path class=\"ink\" d=\"M-5 0 L-5 -38 L0 -50 L5 -38 L5 0 M-5 -38 L5 -38\"/></g><g transform=\"translate(37 44) rotate(4)\"><path class=\"ink\" d=\"M-5 0 L-5 -38 L0 -50 L5 -38 L5 0 M-5 -38 L5 -38\"/></g><g transform=\"translate(53 46) rotate(17)\"><path class=\"ink\" d=\"M0 0 L0 -40 M-4 -40 Q0 -62 4 -40 Z\"/></g><path class=\"ink\" d=\"M2 46 Q35 54 68 46 L62 108 Q35 115 8 108 Z\"/><ellipse class=\"ink\" cx=\"35\" cy=\"46\" rx=\"33\" ry=\"7\"/><path class=\"ink\" d=\"M12 74 Q35 80 58 74\"/>",
+      "width": 72.1,
+      "height": 120.1,
+      "bbox": {
+        "x": 0.8,
+        "y": -7.4,
+        "w": 72.1,
+        "h": 120.1
+      },
+      "bytes": 503,
+      "sha256": "e806108b0413e60ff592fead79529cabc17206255e3d5e9cc974e3a2c8544ca0",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 6
+    },
+    "print-fills": {
+      "id": "print-fills",
+      "kind": "svg-inline",
+      "src": "<circle class=\"role-accent2\" cx=\"62\" cy=\"40\" r=\"11\"/><path class=\"role-accent1\" d=\"M12 98 Q30 64 48 82 Q62 58 84 98 Z\"/>",
+      "width": 72,
+      "height": 69,
+      "bbox": {
+        "x": 12,
+        "y": 29,
+        "w": 72,
+        "h": 69
+      },
+      "bytes": 120,
+      "sha256": "30dd5a2a272df6e137b9a76bd771e68bff83b6e7a1443fa9fc5f5269d91794b1",
+      "colorRoles": [
+        "accent1",
+        "accent2"
+      ],
+      "nodeCount": 2
+    },
+    "print-lines": {
+      "id": "print-lines",
+      "kind": "svg-inline",
+      "src": "<rect class=\"ink\" x=\"0\" y=\"0\" width=\"96\" height=\"118\" rx=\"3\"/><rect class=\"ink\" x=\"11\" y=\"11\" width=\"74\" height=\"96\"/><circle class=\"ink\" cx=\"62\" cy=\"40\" r=\"11\"/><path class=\"ink\" d=\"M12 98 Q30 64 48 82 Q62 58 84 98\"/><path class=\"ink\" d=\"M60 101 q4 -4 8 0 t8 0\" stroke-width=\"1.8\"/>",
+      "width": 98.4,
+      "height": 120.4,
+      "bbox": {
+        "x": -1.2,
+        "y": -1.2,
+        "w": 98.4,
+        "h": 120.4
+      },
+      "bytes": 283,
+      "sha256": "ee27d4de5aad270f62c41b0e3f026c86fafcfda772e46f9b4f0c30afcd3cdf00",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 5
+    },
+    "sketchbook-fills": {
+      "id": "sketchbook-fills",
+      "kind": "svg-inline",
+      "src": "<rect class=\"role-accent2\" x=\"16\" y=\"84\" width=\"36\" height=\"32\"/><path class=\"role-accent1\" d=\"M150 94 Q128 62 152 30 Q174 62 150 94 Z\"/><path class=\"role-accent1\" d=\"M150 94 Q178 80 186 54 Q160 58 150 94 Z\"/><circle class=\"role-accent2\" cx=\"124\" cy=\"40\" r=\"11\"/>",
+      "width": 170,
+      "height": 87,
+      "bbox": {
+        "x": 16,
+        "y": 29,
+        "w": 170,
+        "h": 87
+      },
+      "bytes": 263,
+      "sha256": "ebda9d89dc898dcc7cf4cf5fb0e139e3aa7bd4daf3b6076d87d7ed20f07ab757",
+      "colorRoles": [
+        "accent1",
+        "accent2"
+      ],
+      "nodeCount": 4
+    },
+    "sketchbook-lines": {
+      "id": "sketchbook-lines",
+      "kind": "svg-inline",
+      "src": "<path class=\"ink\" d=\"M100 4 Q50 -2 2 6 L6 132 Q52 124 100 130 Z\"/><path class=\"ink\" d=\"M100 4 Q150 -2 198 6 L194 132 Q148 124 100 130 Z\"/><g class=\"ink\" stroke-width=\"2\"><ellipse cx=\"100\" cy=\"14\" rx=\"5\" ry=\"3\"/><ellipse cx=\"100\" cy=\"28\" rx=\"5\" ry=\"3\"/><ellipse cx=\"100\" cy=\"42\" rx=\"5\" ry=\"3\"/><ellipse cx=\"100\" cy=\"56\" rx=\"5\" ry=\"3\"/><ellipse cx=\"100\" cy=\"70\" rx=\"5\" ry=\"3\"/><ellipse cx=\"100\" cy=\"84\" rx=\"5\" ry=\"3\"/><ellipse cx=\"100\" cy=\"98\" rx=\"5\" ry=\"3\"/><ellipse cx=\"100\" cy=\"112\" rx=\"5\" ry=\"3\"/></g><path class=\"ink\" stroke-width=\"1.8\" d=\"M16 26 q8 -5 16 0 t16 0 t16 0 t16 0 M16 40 q8 -5 16 0 t16 0 t16 0 M16 54 q8 -5 16 0 t16 0 t16 0 t16 0 M16 68 q8 -5 16 0 t16 0\"/><rect class=\"ink\" x=\"16\" y=\"84\" width=\"36\" height=\"32\" stroke-width=\"2\"/><path class=\"ink\" d=\"M150 94 Q128 62 152 30 Q174 62 150 94 M150 92 L152 36\"/><path class=\"ink\" d=\"M150 94 Q178 80 186 54 Q160 58 150 94\"/><circle class=\"ink\" cx=\"124\" cy=\"40\" r=\"11\"/>",
+      "width": 198.4,
+      "height": 133,
+      "bbox": {
+        "x": 0.8,
+        "y": 0.2,
+        "w": 198.4,
+        "h": 133
+      },
+      "bytes": 927,
+      "sha256": "e77105d488e6bb30e558e33423563a59035c53d34ad3a7a14a3765868bc5d4a2",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 15
+    },
+    "cat-fills": {
+      "id": "cat-fills",
+      "kind": "svg-inline",
+      "src": "<path class=\"role-accent2\" d=\"M48 30 Q90 14 132 32 Q156 52 140 84 Q112 112 60 104 Q40 100 36 78 Z\"/><path class=\"stroke-accent2\" fill=\"none\" stroke-width=\"9\" stroke-linecap=\"round\" d=\"M138 86 Q148 112 104 116 Q66 120 42 106\"/><circle class=\"role-accent2\" cx=\"30\" cy=\"54\" r=\"24\"/><path class=\"role-accent2\" d=\"M12 44 L8 24 L24 33 Z M36 31 L50 20 L52 40 Z\"/><path class=\"role-accent1\" d=\"M27 60 L33 60 L30 64 Z\"/>",
+      "width": 149.4,
+      "height": 105.9,
+      "bbox": {
+        "x": 1.5,
+        "y": 15.5,
+        "w": 149.4,
+        "h": 105.9
+      },
+      "bytes": 411,
+      "sha256": "0c294097c421471148eaf232fc3f7114727901d0bacec708e96a4b10335ad22e",
+      "colorRoles": [
+        "accent1",
+        "accent2"
+      ],
+      "nodeCount": 5
+    },
+    "cat-lines": {
+      "id": "cat-lines",
+      "kind": "svg-inline",
+      "src": "<path class=\"ink\" d=\"M48 30 Q90 14 132 32 Q156 52 140 84 Q112 112 60 104 Q46 101 40 90\"/><path class=\"ink\" d=\"M138 86 Q148 112 104 116 Q66 120 42 106\"/><circle class=\"ink\" cx=\"30\" cy=\"54\" r=\"24\"/><path class=\"ink\" d=\"M12 44 L8 24 L24 33 M36 31 L50 20 L52 40\"/><path class=\"ink\" stroke-width=\"2\" d=\"M84 26 q-4 10 0 18 M102 25 q-4 12 0 20 M120 31 q-4 10 0 16\"/><path class=\"ink\" stroke-width=\"1.6\" d=\"M10 60 L-6 57 M10 64 L-6 67 M50 60 L64 57 M50 64 L64 67\"/><path class=\"ink\" stroke-width=\"1.6\" d=\"M27 60 L33 60 L30 64 Z\"/>",
+      "width": 154.8,
+      "height": 99.3,
+      "bbox": {
+        "x": -7.2,
+        "y": 18.8,
+        "w": 154.8,
+        "h": 99.3
+      },
+      "bytes": 522,
+      "sha256": "0148fb98ad9a09b19625dc5af9878d88f0851cfa863338bd292c593f5e615b0c",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 7
+    },
+    "cat-idle": {
+      "id": "cat-idle",
+      "kind": "svg-inline",
+      "src": "<path class=\"ink\" stroke-width=\"2\" d=\"M18 52 q4 4 8 0 M34 52 q4 4 8 0\"/><text class=\"art-text\" x=\"58\" y=\"22\">z z</text>",
+      "width": 66,
+      "height": 49.4,
+      "bbox": {
+        "x": 16.8,
+        "y": 5.8,
+        "w": 66,
+        "h": 49.4
+      },
+      "bytes": 119,
+      "sha256": "8793f3e8f83517b27be46619f156ae36694ce4fe097cc8ec6d2f47bcaaa4cb27",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 2
+    },
+    "cat-awake": {
+      "id": "cat-awake",
+      "kind": "svg-inline",
+      "src": "<circle class=\"role-line\" cx=\"22\" cy=\"52\" r=\"3.2\"/><circle class=\"role-line\" cx=\"38\" cy=\"52\" r=\"3.2\"/><text class=\"art-text\" x=\"56\" y=\"20\">prrr</text>",
+      "width": 71.3,
+      "height": 52.6,
+      "bbox": {
+        "x": 17.6,
+        "y": 3.8,
+        "w": 71.3,
+        "h": 52.6
+      },
+      "bytes": 150,
+      "sha256": "e55af6ba250b38eaf4213cc93a98e76a855b1c980ae32e54a94c29f329b42853",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 3
+    },
+    "envelope-fills": {
+      "id": "envelope-fills",
+      "kind": "svg-inline",
+      "src": "<rect class=\"role-accent2\" x=\"92\" y=\"8\" width=\"22\" height=\"26\"/><circle class=\"role-accent1\" cx=\"62\" cy=\"46\" r=\"9\"/>",
+      "width": 61,
+      "height": 47,
+      "bbox": {
+        "x": 53,
+        "y": 8,
+        "w": 61,
+        "h": 47
+      },
+      "bytes": 116,
+      "sha256": "24056a6e3533c55716adad40c14b2c20d16ef1337a09295336ae56bab4b8d725",
+      "colorRoles": [
+        "accent1",
+        "accent2"
+      ],
+      "nodeCount": 2
+    },
+    "envelope-lines": {
+      "id": "envelope-lines",
+      "kind": "svg-inline",
+      "src": "<rect class=\"ink\" x=\"0\" y=\"0\" width=\"124\" height=\"78\" rx=\"4\"/><path class=\"ink\" d=\"M3 3 L62 46 L121 3 M3 75 L48 40 M121 75 L76 40\"/><rect class=\"ink\" x=\"92\" y=\"8\" width=\"22\" height=\"26\" stroke-width=\"1.8\" stroke-dasharray=\"2.5 2.5\"/><circle class=\"ink\" cx=\"62\" cy=\"46\" r=\"9\"/><path class=\"ink\" stroke-width=\"1.6\" d=\"M62 50 L58 46 Q56 42 60 42 Q62 42 62 44 Q62 42 64 42 Q68 42 66 46 Z\"/>",
+      "width": 126.4,
+      "height": 80.4,
+      "bbox": {
+        "x": -1.2,
+        "y": -1.2,
+        "w": 126.4,
+        "h": 80.4
+      },
+      "bytes": 386,
+      "sha256": "1b08840e4fe562807ebf91ea643d492aa88a974b74b5185321717b0a0c1b5d6e",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 5
+    },
+    "envelope-flag-open": {
+      "id": "envelope-flag-open",
+      "kind": "svg-inline",
+      "src": "<path class=\"role-accent2\" d=\"M88 -44 Q114 -49 140 -44 L138 -21 Q113 -17 88 -21 Z\"/>",
+      "width": 52,
+      "height": 27.5,
+      "bbox": {
+        "x": 88,
+        "y": -46.5,
+        "w": 52,
+        "h": 27.5
+      },
+      "bytes": 84,
+      "sha256": "a0f85f67457e408baca65847ab9d72a9b851980fa1e85734fced4618387e94e2",
+      "colorRoles": [
+        "accent2"
+      ],
+      "nodeCount": 1
+    },
+    "envelope-flag-waitlist": {
+      "id": "envelope-flag-waitlist",
+      "kind": "svg-inline",
+      "src": "<path class=\"role-accent1\" d=\"M88 -44 Q114 -49 140 -44 L138 -21 Q113 -17 88 -21 Z\"/>",
+      "width": 52,
+      "height": 27.5,
+      "bbox": {
+        "x": 88,
+        "y": -46.5,
+        "w": 52,
+        "h": 27.5
+      },
+      "bytes": 84,
+      "sha256": "5fd59ec04db98ce518fc8d22931a965dff5eb3321220aff4e6ee93ae5a0aecd2",
+      "colorRoles": [
+        "accent1"
+      ],
+      "nodeCount": 1
+    },
+    "envelope-sign-open": {
+      "id": "envelope-sign-open",
+      "kind": "svg-inline",
+      "src": "<path class=\"ink\" d=\"M88 -1 L88 -44\"/><path class=\"ink\" d=\"M88 -44 Q114 -49 140 -44 L138 -21 Q113 -17 88 -21 Z\"/><circle class=\"role-line\" cx=\"88\" cy=\"-46\" r=\"2.6\"/><text class=\"art-text sm on-accent\" x=\"113\" y=\"-28\" text-anchor=\"middle\">open</text>",
+      "width": 57,
+      "height": 50,
+      "bbox": {
+        "x": 84.2,
+        "y": -49.8,
+        "w": 57,
+        "h": 50
+      },
+      "bytes": 249,
+      "sha256": "a994d74f9c35a3dbc178cf4917b65ee9fac0486143f555f9df51da0981a2b4ba",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 4
+    },
+    "envelope-sign-closed": {
+      "id": "envelope-sign-closed",
+      "kind": "svg-inline",
+      "src": "<path class=\"ink\" d=\"M88 -1 L88 -44\"/><path class=\"ink\" d=\"M88 -44 Q114 -49 140 -44 L138 -21 Q113 -17 88 -21 Z\"/><circle class=\"role-line\" cx=\"88\" cy=\"-46\" r=\"2.6\"/><text class=\"art-text sm\" x=\"113\" y=\"-28\" text-anchor=\"middle\">closed</text>",
+      "width": 57,
+      "height": 50,
+      "bbox": {
+        "x": 84.2,
+        "y": -49.8,
+        "w": 57,
+        "h": 50
+      },
+      "bytes": 241,
+      "sha256": "d02beb51df44090581aebc1e9b3d0152fac94805f68b7006a90a48888f20ced2",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 4
+    },
+    "envelope-sign-waitlist": {
+      "id": "envelope-sign-waitlist",
+      "kind": "svg-inline",
+      "src": "<path class=\"ink\" d=\"M88 -1 L88 -44\"/><path class=\"ink\" d=\"M88 -44 Q114 -49 140 -44 L138 -21 Q113 -17 88 -21 Z\"/><circle class=\"role-line\" cx=\"88\" cy=\"-46\" r=\"2.6\"/><text class=\"art-text sm on-accent\" x=\"113\" y=\"-28\" text-anchor=\"middle\">waitlist</text>",
+      "width": 57,
+      "height": 50,
+      "bbox": {
+        "x": 84.2,
+        "y": -49.8,
+        "w": 57,
+        "h": 50
+      },
+      "bytes": 253,
+      "sha256": "b84f4dccac72fac2423ddff9f2bd88149783454cea958916f6cd19844b0b5681",
+      "colorRoles": [
+        "line"
+      ],
+      "nodeCount": 4
+    }
+  },
+  "editable": {
+    "palettes": "all",
+    "allowDisableSlots": true
+  },
+  "copy": {
+    "hint": "Tap anything on the desk.",
+    "sceneLabel": "A desk. Each object opens a link."
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@scena/renderer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "renderPage(scene, page) -> a self-contained HTML page with the inlined, CSP-hashed runtime.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./build-runtime": "./scripts/build-runtime.ts"
+  },
+  "scripts": {
+    "gen": "node scripts/build-runtime.ts",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p runtime && tsc --noEmit -p tsconfig.node.json"
+  },
+  "dependencies": {
+    "@scena/scene": "workspace:*"
+  },
+  "devDependencies": {
+    "@scena/scenes": "workspace:*",
+    "esbuild": "0.28.2"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "scene": {
+    "id": "desk",
+    "version": "1.0.0"
+  },
+  "handle": "pia",
+  "profile": {
+    "displayName": "Pia Morandi",
+    "bio": "Illustrator in Turin. Picture books, plants, and one orange cat."
+  },
+  "theme": {
+    "palette": "riso-pink-yellow",
+    "mode": "auto"
+  },
+  "motion": "auto",
+  "links": {
+    "portfolio": {
+      "enabled": true,
+      "title": "Sketchbook",
+      "description": "Finished work: picture books, packaging, and a lot of plants.",
+      "cta": "See my portfolio",
+      "url": "https://www.behance.net/piamorandi",
+      "listLabel": "Portfolio"
+    },
+    "shop": {
+      "enabled": true,
+      "title": "Framed print",
+      "description": "Signed prints and small risograph zines, posted from Turin.",
+      "cta": "Visit the print shop",
+      "url": "https://piamorandi.shop",
+      "listLabel": "Print shop"
+    },
+    "commissions": {
+      "enabled": true,
+      "title": "Envelope",
+      "description": "Book covers, editorial work and pet portraits.",
+      "cta": "Ask about a commission",
+      "url": "mailto:studio@piamorandi.it",
+      "status": "open",
+      "statusNote": "Booking for spring 2027.",
+      "listLabel": "Commissions"
+    },
+    "social": {
+      "enabled": true,
+      "title": "Pencil cup",
+      "description": "Daily sketches, process videos and the occasional ruined page.",
+      "cta": "Follow on Instagram",
+      "url": "https://www.instagram.com/piamorandi",
+      "listLabel": "Instagram"
+    },
+    "newsletter": {
+      "enabled": true,
+      "title": "Biscotto",
+      "description": "The studio cat. He guards a monthly letter with new work and early print drops.",
+      "cta": "Get the monthly letter",
+      "url": "https://piamorandi.substack.com",
+      "listLabel": "Monthly letter"
+    }
+  },
+  "fallbackList": {
+    "show": true,
+    "heading": "Or skip the desk"
+  },
+  "seo": {
+    "title": "Pia Morandi, illustrator"
+  },
+  "badge": false,
+  "copy": {
+    "hint": "Tap anything on my desk.",
+    "sceneLabel": "Pia’s desk. Each object opens one of her links."
+  }
+}

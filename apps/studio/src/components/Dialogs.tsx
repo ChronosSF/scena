@@ -1,0 +1,110 @@
+import { useEffect, useState } from "react";
+import { Copy, Download, FileCode2, FileJson, Film, Upload } from "lucide-react";
+import { renderPage } from "@scena/renderer";
+import { useStudio } from "../store.ts";
+import * as actions from "../actions.ts";
+import { gzipSize, kb } from "../util.ts";
+import { useUi } from "../ui.ts";
+import { Dialog } from "./Dialog.tsx";
+import { Button } from "./ui.tsx";
+
+export function ExportDialog({ open, onClose, onImport }: { open: boolean; onClose: () => void; onImport: () => void }) {
+  const { scene, page } = useStudio();
+  const [size, setSize] = useState("");
+  // measured each time the dialog opens
+  useEffect(() => {
+    if (!open) return;
+    const html = renderPage(scene, page).html;
+    setSize(kb(html.length));
+    void gzipSize(html).then((gz) => { if (gz) setSize(`${kb(html.length)} · ${kb(gz)} gzipped`); });
+  }, [open]);
+  const handle = page.handle || "page";
+  return (
+    <Dialog open={open} onClose={onClose} labelledBy="export-h">
+      <div className="dlg-body">
+        <h2 className="dlg-title" id="export-h">Export</h2>
+        <p className="dlg-text">The page is one HTML file with the drawings, styles and a small script inside. No external scripts; it works on any static host.</p>
+        <div className="dl-list">
+          <button type="button" className="dl-item" onClick={actions.downloadPage} data-ui="dl-page">
+            <span className="dl-icon"><FileCode2 aria-hidden="true" strokeWidth={1.75} /></span>
+            <span><span className="dl-title">Page</span><br /><span className="dl-sub">{handle}.html · {size}</span></span>
+            <Download className="dl-go" aria-hidden="true" strokeWidth={1.75} />
+          </button>
+          <button type="button" className="dl-item" onClick={actions.downloadScene} data-ui="dl-scene">
+            <span className="dl-icon"><FileJson aria-hidden="true" strokeWidth={1.75} /></span>
+            <span><span className="dl-title">Scene</span><br /><span className="dl-sub">{scene.id}.scene.json · drawings, tap areas, palettes</span></span>
+            <Download className="dl-go" aria-hidden="true" strokeWidth={1.75} />
+          </button>
+          <button type="button" className="dl-item" onClick={actions.downloadPageData} data-ui="dl-data">
+            <span className="dl-icon"><FileJson aria-hidden="true" strokeWidth={1.75} /></span>
+            <span><span className="dl-title">Page data</span><br /><span className="dl-sub">{handle}.page.json · your words and links</span></span>
+            <Download className="dl-go" aria-hidden="true" strokeWidth={1.75} />
+          </button>
+        </div>
+      </div>
+      <div className="dlg-foot">
+        <Button variant="ghost" icon={Upload} onClick={() => { onClose(); onImport(); }}>Import JSON…</Button>
+        <span className="spacer" />
+        <Button variant="primary" onClick={onClose} data-ui="dlg-done">Done</Button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Several drawings dropped or chosen at once: the frames of one animation, or separate drawings? */
+export function FramesChoiceDialog() {
+  const { ask } = useUi();
+  const n = ask?.count || 0;
+  return (
+    <Dialog open={!!ask} onClose={() => ask?.resolve(null)} labelledBy="frames-q-h">
+      <div className="dlg-body">
+        <h2 className="dlg-title" id="frames-q-h">Add {n} drawings</h2>
+        <p className="dlg-text">Are these the frames of one animation? Frames sit on top of each other and flip, like a hand-drawn loop.</p>
+        <div className="dl-list">
+          <button type="button" className="dl-item" onClick={() => ask?.resolve("frames")} data-ui="choice-frames">
+            <span className="dl-icon"><Film aria-hidden="true" strokeWidth={1.75} /></span>
+            <span><span className="dl-title">One drawing with {n} frames</span><br /><span className="dl-sub">Flips at 6 fps; change the speed and when it plays later</span></span>
+          </button>
+          <button type="button" className="dl-item" onClick={() => ask?.resolve("separate")} data-ui="choice-separate">
+            <span className="dl-icon"><Copy aria-hidden="true" strokeWidth={1.75} /></span>
+            <span><span className="dl-title">{n} separate drawings</span><br /><span className="dl-sub">Each lands on the canvas on its own</span></span>
+          </button>
+        </div>
+      </div>
+      <div className="dlg-foot"><span className="spacer" /><Button variant="ghost" onClick={() => ask?.resolve(null)}>Cancel</Button></div>
+    </Dialog>
+  );
+}
+
+export function ResetDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Dialog open={open} onClose={onClose} labelledBy="reset-h">
+      <div className="dlg-body">
+        <h2 className="dlg-title" id="reset-h">Start over?</h2>
+        <p className="dlg-text">This clears the canvas in this browser. Export first if you want to keep it; Undo can bring it back.</p>
+      </div>
+      <div className="dlg-foot">
+        <Button onClick={() => { actions.openDesk(); onClose(); }}>Open Pia's desk</Button>
+        <span className="spacer" />
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={() => { actions.startBlank(); onClose(); }} data-ui="reset-blank">Empty canvas</Button>
+      </div>
+    </Dialog>
+  );
+}
+
+export function ImportErrorsDialog({ problems, onClose }: { problems: string[]; onClose: () => void }) {
+  return (
+    <Dialog open={problems.length > 0} onClose={onClose} labelledBy="import-h">
+      <div className="dlg-body">
+        <h2 className="dlg-title" id="import-h">That import did not work</h2>
+        <p className="dlg-text">Nothing was changed. Here is what we found:</p>
+        <ul className="errors">
+          {problems.slice(0, 12).map((p, i) => <li key={i}>{p}</li>)}
+          {problems.length > 12 ? <li>…and {problems.length - 12} more</li> : null}
+        </ul>
+      </div>
+      <div className="dlg-foot"><Button variant="primary" onClick={onClose}>OK</Button></div>
+    </Dialog>
+  );
+}

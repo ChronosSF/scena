@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 200 200" onload="alert('svg onload')">
+  <script>alert('script element')</script>
+  <style>@import url("https://evil.example/x.css"); .x { fill: url(https://evil.example/p.png) }</style>
+  <foreignObject width="200" height="200"><div xmlns="http://www.w3.org/1999/xhtml"><iframe src="https://evil.example"></iframe></div></foreignObject>
+  <image href="https://evil.example/track.png" width="10" height="10"/>
+  <use xlink:href="https://evil.example/sprite.svg#icon"/>
+  <a href="javascript:alert('link')"><path d="M100 30 Q170 100 100 170 Q30 100 100 30 Z" fill="#FFFF00" stroke="#FF00FF" stroke-width="6" onclick="alert('click')" style="fill: url(https://evil.example/fill.png); stroke-width: 6"/></a>
+  <path d="M100 40 L100 165" stroke="#ff00ff" stroke-width="4" fill="none" onmouseover="alert(1)"/>
+  <animate attributeName="href" to="javascript:alert(2)"/>
+</svg>

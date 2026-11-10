@@ -1,0 +1,58 @@
+# The gate for every push to master and every pull request. Two jobs run in parallel:
+#   check   pnpm check: typecheck, the vitest suite and the studio build
+#   chrome  the build opened from file:// in the runner's Google Chrome, driven through
+#           the DevTools protocol (tools/cdp.ts): parity with the prototype, the page
+#           runtime's boil control, and the studio end to end
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6 # the version comes from "packageManager" in package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  chrome:
+    name: Parity and headless Chrome
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm parity
+      - run: pnpm verify:runtime
+      - run: pnpm verify:studio
+      - name: Keep the studio screenshots when a check fails
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verify-studio-screenshots
+          path: tools/out
+          if-no-files-found: ignore
+          retention-days: 7

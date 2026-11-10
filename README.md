@@ -1,5 +1,7 @@
 # Scena (working name)
 
+[![CI](https://github.com/ChronosSF/scena/actions/workflows/ci.yml/badge.svg)](https://github.com/ChronosSF/scena/actions/workflows/ci.yml)
+
 An illustrated link-in-bio. Instead of a list of buttons, a person's page is a drawing: tap the
 sketchbook for the portfolio, the envelope for commissions, the cat for the newsletter. The
 platform adds the life to any drawing: hand-drawn line boil, a lift on hover, a ring that draws

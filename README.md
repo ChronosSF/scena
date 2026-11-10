@@ -9,7 +9,8 @@ motion.
 This repository holds the scene format, the renderer that turns a scene and a page into one
 self-contained HTML file, and the **studio**: an illustrator drops in their own drawings (SVG,
 or PNG from Procreate), marks which ones are clickable, attaches links, and exports the page.
-The product plan is in [docs/development-plan.md](docs/development-plan.md).
+The product plan is in [docs/development-plan.md](docs/development-plan.md); the work it describes is
+tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/milestones).
 
 ## Stack
 

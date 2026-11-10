@@ -4,6 +4,7 @@
 **Date:** 9 November 2026
 **Status:** v1 for decision. No application code yet.
 **Reference:** the attached prototype `Pia Morandi, illustrator.html` is the look-and-feel baseline throughout. Where this plan says "the prototype", it means that file.
+**Tracking:** the work is tracked as [milestones](https://github.com/ChronosSF/scena/milestones) and [issues](https://github.com/ChronosSF/scena/issues) on GitHub: one milestone per row of section 9 plus the two later phases, one issue per deliverable, exit criterion and open question. The issues are the live state; this document is the reasoning behind them.
 
 Working name used in this document: **Scena** (placeholder, see assumptions). Public pages live at `scena.example/<handle>`, the editor at `app.scena.example`.
 

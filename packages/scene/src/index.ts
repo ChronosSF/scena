@@ -4,6 +4,6 @@
 export type * from "./types.ts";
 export * from "./constants.ts";
 export { parseColor, isColor, luminance, contrast, near, over, type Rgba } from "./color.ts";
-export { fragmentProblem, isSafeRasterUrl, safeHref, safeId } from "./safety.ts";
+export { FRAGMENT_ELEMENTS, fragmentProblem, isSafeId, isSafeRasterUrl, safeHref, safeId } from "./safety.ts";
 export { migrate, documentKind, validateScene, validatePage, parseScene, parsePage } from "./validate.ts";
 export { lintScene, lintPage, assetNodeCount, partAssets, layerAssets, sceneAssetIds, isUploadedBackground } from "./lint.ts";

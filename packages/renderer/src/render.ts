@@ -390,7 +390,7 @@ function letteredName(ctx: Ctx, name: string): string | null {
  * the exact markup without the document shell or the runtime.
  */
 export function renderParts(scene: SceneDocument, page: PageDocument | undefined, opts: RenderOptions = {}): RenderedParts {
-  const P = opts.idPrefix || "";
+  const P = safeId(opts.idPrefix || ""); // written into id attributes and url(#...) as it is, and callers build it from layer ids
   const ctx: Ctx = { scene, page, opts, P, warnings: [] };
   const palette = resolvePalette(scene, page);
   const editor = !!opts.editor;

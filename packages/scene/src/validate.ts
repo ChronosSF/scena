@@ -4,7 +4,7 @@
 
 import { SCHEMA_VERSION, ROLES, KINDS, PART_ROLES, WHENS, STATUSES, LAYER_TYPES, ASSET_KINDS, EFFECTS, LIMITS, FRAMES, FRAME_PLAYS, BACKGROUND_FITS, LETTERING, TYPEFACES, typeface } from "./constants.ts";
 import { isColor } from "./color.ts";
-import { fragmentProblem, isSafeRasterUrl } from "./safety.ts";
+import { fragmentProblem, isSafeId, isSafeRasterUrl } from "./safety.ts";
 import type { DocumentKind, PageDocument, SceneDocument } from "./types.ts";
 
 // Loosely typed view of unvalidated JSON; the checks below are what make it safe to use.
@@ -64,6 +64,12 @@ function checker(errors: string[]) {
       if (max && v.length > max) { errors.push(`${path}: ${v.length} characters, the limit is ${max}`); return false; }
       return true;
     },
+    /** An id: it is written into attributes, selectors and url(#...) references, and the studio builds other ids from it. */
+    id(v: unknown, path: string): v is string {
+      if (!isStr(v)) { errors.push(`${path}: expected text`); return false; }
+      if (!isSafeId(v)) { errors.push(`${path}: use only letters, digits, - and _, starting with a letter or digit, 64 characters at most`); return false; }
+      return true;
+    },
     num(v: unknown, path: string, { min, max }: NumOpts = {}): v is number {
       if (!isNum(v)) { errors.push(`${path}: expected a number`); return false; }
       if (min !== undefined && v < min) { errors.push(`${path}: ${v} is below ${min}`); return false; }
@@ -91,7 +97,7 @@ export function validateScene(doc: unknown): string[] {
   const v = checker(errors);
   if (!v.obj(doc, "scene")) return errors;
   v.need(doc.schemaVersion === SCHEMA_VERSION, "schemaVersion", `expected ${SCHEMA_VERSION}, got ${JSON.stringify(doc.schemaVersion)}`);
-  v.str(doc.id, "id");
+  v.id(doc.id, "id");
   if (v.str(doc.version, "version")) v.need(/^\d+\.\d+\.\d+$/.test(doc.version), "version", `"${doc.version}" is not semver (x.y.z)`);
   v.str(doc.name, "name");
   if (v.obj(doc.author, "author")) { v.str(doc.author.userId, "author.userId", { empty: true }); v.str(doc.author.displayName, "author.displayName", { empty: true }); }
@@ -107,7 +113,7 @@ export function validateScene(doc: unknown): string[] {
       t.palettes.forEach((p: Loose, i: number) => {
         const path = `theme.palettes[${i}]`;
         if (!v.obj(p, path)) return;
-        if (v.str(p.id, `${path}.id`)) { v.need(!paletteIds.has(p.id), `${path}.id`, `duplicate palette "${p.id}"`); paletteIds.add(p.id); }
+        if (v.id(p.id, `${path}.id`)) { v.need(!paletteIds.has(p.id), `${path}.id`, `duplicate palette "${p.id}"`); paletteIds.add(p.id); }
         for (const mode of ["light", "dark"] as const) {
           const m = p[mode];
           if (!v.obj(m, `${path}.${mode}`)) continue;
@@ -153,6 +159,7 @@ export function validateScene(doc: unknown): string[] {
       const path = `assets["${key}"]`;
       if (!v.obj(a, path)) continue;
       assetIds.add(key);
+      v.id(key, `${path} (its key)`);
       v.need(a.id === key, `${path}.id`, `must equal its key ("${key}")`);
       if (!v.oneOf(a.kind, ASSET_KINDS, `${path}.kind`)) continue;
       v.num(a.width, `${path}.width`, { min: 0 });
@@ -180,7 +187,7 @@ export function validateScene(doc: unknown): string[] {
     doc.slots.forEach((s: Loose, i: number) => {
       const path = `slots[${i}]${s && isStr(s.id) ? ` ("${s.id}")` : ""}`;
       if (!v.obj(s, path)) return;
-      if (v.str(s.id, `${path}.id`)) { v.need(!slotIds.has(s.id), `${path}.id`, `duplicate slot "${s.id}"`); slotIds.add(s.id); }
+      if (v.id(s.id, `${path}.id`)) { v.need(!slotIds.has(s.id), `${path}.id`, `duplicate slot "${s.id}"`); slotIds.add(s.id); }
       v.str(s.label, `${path}.label`);
       v.str(s.objectId, `${path}.objectId`);
       v.oneOf(s.kind, KINDS, `${path}.kind`);
@@ -201,7 +208,7 @@ export function validateScene(doc: unknown): string[] {
     doc.layers.forEach((l: Loose, i: number) => {
       const path = label(l, i);
       if (!v.obj(l, path)) return;
-      if (v.str(l.id, `${path}.id`)) { v.need(!layerIds.has(l.id), `${path}.id`, `duplicate layer "${l.id}"`); layerIds.add(l.id); }
+      if (v.id(l.id, `${path}.id`)) { v.need(!layerIds.has(l.id), `${path}.id`, `duplicate layer "${l.id}"`); layerIds.add(l.id); }
       if (!v.oneOf(l.type, LAYER_TYPES, `${path}.type`)) return;
       if (l.transform !== undefined && v.obj(l.transform, `${path}.transform`)) {
         v.num(l.transform.x, `${path}.transform.x`); v.num(l.transform.y, `${path}.transform.y`);
@@ -336,7 +343,7 @@ export function validatePage(doc: unknown, scene?: unknown): string[] {
   const v = checker(errors);
   if (!v.obj(doc, "page")) return errors;
   v.need(doc.schemaVersion === SCHEMA_VERSION, "schemaVersion", `expected ${SCHEMA_VERSION}, got ${JSON.stringify(doc.schemaVersion)}`);
-  if (v.obj(doc.scene, "scene")) { v.str(doc.scene.id, "scene.id"); v.str(doc.scene.version, "scene.version"); }
+  if (v.obj(doc.scene, "scene")) { v.id(doc.scene.id, "scene.id"); v.str(doc.scene.version, "scene.version"); }
   if (v.str(doc.handle, "handle")) v.need(/^[a-z0-9][a-z0-9_-]{1,29}$/.test(doc.handle), "handle", "2-30 characters: lowercase letters, digits, - and _");
   if (v.obj(doc.profile, "profile")) {
     v.str(doc.profile.displayName, "profile.displayName", { max: LIMITS.displayName });
@@ -350,6 +357,7 @@ export function validatePage(doc: unknown, scene?: unknown): string[] {
   if (v.obj(doc.links, "links")) {
     for (const [slot, l] of Object.entries(doc.links) as [string, Loose][]) {
       const path = `links["${slot}"]`;
+      v.id(slot, `${path} (its key)`);
       if (!v.obj(l, path)) continue;
       v.need(isBool(l.enabled), `${path}.enabled`, "expected true or false");
       v.str(l.title, `${path}.title`, { empty: !l.enabled, max: 60 });

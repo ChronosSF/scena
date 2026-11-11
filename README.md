@@ -35,7 +35,7 @@ pnpm install
 pnpm dev          # the studio with hot reload at http://localhost:5173 (and /demo-desk.html)
 pnpm build        # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm preview      # serve the build at http://localhost:4173
-pnpm test         # 75 tests: renderer snapshots and parity, scene model, lint and safety patterns, studio editing operations, file sniffing, frames, board and lettering
+pnpm test         # 79 tests: renderer snapshots and parity, scene model, lint and safety patterns, studio editing operations, file sniffing, frames, board and lettering
 pnpm typecheck    # every package, the page runtime, the scripts and the tools
 pnpm check        # typecheck + test + build
 
@@ -163,6 +163,8 @@ mouse input has been automated.
 
 Small, optional additions the build needed:
 
+- ids (scene, palette, asset, slot and layer) use only letters, digits, `-` and `_`, 64 characters at
+  most, because they are written into attributes, selectors and `url(#...)` references;
 - a `procedural` asset kind for the mat, grid and dot paper;
 - multi-part decoration layers;
 - `name` on layers, `bbox` on assets and `name` on palettes;

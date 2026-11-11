@@ -3,14 +3,13 @@
 // Runs in the browser (DOMParser never executes scripts). Output is a string built
 // from scratch, so only allowlisted elements and attributes can appear.
 
-import { ART_CLASSES, LIMITS, fragmentProblem, near, parseColor, type PartRole, type Role, type SvgInlineAsset } from "@scena/scene";
+import { ART_CLASSES, FRAGMENT_ELEMENTS, LIMITS, fragmentProblem, near, parseColor, type PartRole, type Role, type SvgInlineAsset } from "@scena/scene";
 import { esc } from "@scena/renderer";
 import { sha256Hex } from "../util.ts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-const ALLOWED = new Set(["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "defs",
-  "clipPath", "mask", "linearGradient", "radialGradient", "stop", "text", "tspan", "use"]);
+const ALLOWED = new Set<string>(["svg", ...FRAGMENT_ELEMENTS]); // one list: what is kept here is what the fragment check accepts
 const UNWRAP = new Set(["a", "switch"]); // keep the drawing inside, drop the wrapper
 const SHAPES = new Set(["path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "use"]);
 const FILLABLE = new Set(["path", "rect", "circle", "ellipse", "polyline", "polygon"]);

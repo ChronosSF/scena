@@ -1,7 +1,7 @@
 // Scene model: validation, migration and the budget lint, against the built-in desk.
 import { describe, expect, test } from "vitest";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { contrast, documentKind, fragmentProblem, lintPage, lintScene, migrate, parseColor, safeHref, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
+import { contrast, documentKind, fragmentProblem, isSafeId, lintPage, lintScene, migrate, parseColor, safeHref, safeId, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const desk = DESK_SCENE, pia = PIA_PAGE;
@@ -43,6 +43,38 @@ describe("validation", () => {
     expect(errs.some((e) => e.includes("cat-lines") && e.includes("safety check"))).toBe(true);
     expect(errs.some((e) => e.includes("light.line"))).toBe(true);
     expect(errs.some((e) => e.includes('assets["ext"].url'))).toBe(true);
+  });
+
+  test("ids are limited to characters that mean nothing in markup or a selector", () => {
+    const hostile = 'x"><img src=x onerror=alert(1)>';
+    const refused = (errs: string[], where: string) => errs.some((e) => e.includes(where) && e.includes("use only letters, digits"));
+
+    for (const bad of [hostile, "a b", "a.b", "a#b", "", "-a", "_a", "ä", "a".repeat(65)]) {
+      const s = clone(desk) as any;
+      s.layers[0].id = bad;
+      expect(refused(validateScene(s), "layers[0]"), JSON.stringify(bad)).toBe(true);
+      expect(isSafeId(bad), JSON.stringify(bad)).toBe(false);
+    }
+    for (const ok of ["cat", "steam-mug-f2-fills", "bg_grid-24", "A1", "7up", "a".repeat(64)]) expect(isSafeId(ok), ok).toBe(true);
+
+    // every other place a document carries an id
+    const s = clone(desk) as any;
+    s.id = hostile;
+    s.theme.palettes[0].id = hostile;
+    s.slots[0].id = hostile;
+    s.assets[hostile] = { ...s.assets["cat-lines"], id: hostile };
+    const errs = validateScene(s);
+    expect(errs.some((e) => e.startsWith("id: use only letters, digits"))).toBe(true);
+    for (const where of ["theme.palettes[0].id", "slots[0]", `assets["${hostile}"] (its key)`]) expect(refused(errs, where), where).toBe(true);
+
+    const p = clone(pia) as any;
+    p.scene.id = hostile;
+    p.links[hostile] = { ...p.links.shop };
+    const perrs = validatePage(p);
+    for (const where of ["scene.id", `links["${hostile}"] (its key)`]) expect(refused(perrs, where), where).toBe(true);
+
+    // what the renderer does with a string nobody validated
+    expect(safeId(hostile)).toBe("x___img_src_x_onerror_alert_1__");
   });
 });
 
@@ -108,21 +140,49 @@ describe("helpers", () => {
     expect(safeHref("mailto:a@")).toBe("");
   });
 
-  test("the fragment filter catches a tag however it is spaced", () => {
-    for (const bad of ["<script>", "< script>", "</script>", "< / script >", "<\n/\tscript", "<SCRIPT", "<a href='#x'>", "<animateTransform", "<image", "<foreignObject>"]) {
+  test("the fragment filter allows drawing elements only, however a tag is spaced", () => {
+    for (const bad of [
+      "<script>", "< script>", "</script>", "< / script >", "<\n/\tscript", "<SCRIPT", "<a href='#x'>", "<animateTransform", "<image", "<foreignObject>",
+      // elements a block list would have to know about: anything that is not a drawing element is refused
+      "<div>", "<abbr>", "<svg>", "<g-x>", "<gx>", "<svg:script>", "<p><details open>", "<G><Iframe>",
+      // a "<" with no element name after it
+      "a < b", "<!-- note -->", "<![CDATA[x]]>", "<?xml?>", "<!DOCTYPE svg>", "<",
+    ]) {
       expect(fragmentProblem(bad), bad).not.toBe("");
     }
-    for (const ok of ['<path d="M0 0L10 10"/>', '<g fill="#fff"><circle r="4"/></g>', "<abbr>", "a < b", "< / g>"]) {
+    for (const ok of [
+      '<path d="M0 0L10 10"/>', '<g fill="#fff"><circle r="4"/></g>', "< / g>", "<G/>", '<use href="#a"/>',
+      '<clipPath id="c"><rect width="4" height="4"/></clipPath>', '<linearGradient id="g"><stop offset="0"/></linearGradient>',
+      '<text x="1" class="on-accent">Tom &amp; Pia&#39;s desk</text>',
+    ]) {
       expect(fragmentProblem(ok), ok).toBe("");
     }
+  });
+
+  test("the fragment filter catches an event handler after any separator", () => {
+    for (const bad of [
+      '<rect onclick="x()"/>', '<rect/onclick="x()"/>', "<rect/onmouseover=x() width=9>", '<rect width="9"onclick="x()"/>', "<rect width='9'onclick='x()'/>",
+      '<rect\tonclick="x()"/>', '<rect\nONCLICK = "x()"/>',
+    ]) {
+      expect(fragmentProblem(bad), bad).toMatch(/on[a-z]+\s*=/i);
+    }
+  });
+
+  test("every built-in drawing passes the fragment filter", () => {
+    const inline = Object.values(desk.assets).filter((a) => a.kind === "svg-inline");
+    expect(inline.length).toBeGreaterThan(10);
+    for (const a of inline) expect(fragmentProblem(a.src), a.id).toBe("");
   });
 
   test("the safety patterns stay fast on hostile input", () => {
     // Each of these took several seconds on 128 KB before the patterns were made linear.
     const timed = (fn: () => string) => { const start = Date.now(); const out = fn(); return { out, ms: Date.now() - start }; };
     const fragment = timed(() => fragmentProblem("<" + " ".repeat(200_000) + "x"));
-    expect(fragment.out).toBe("");
+    expect(fragment.out).not.toBe(""); // refused: no drawing element is called x
     expect(fragment.ms).toBeLessThan(500);
+    const allowed = timed(() => fragmentProblem("<" + " ".repeat(200_000) + "g>" + "</g>".repeat(20_000)));
+    expect(allowed.out).toBe("");
+    expect(allowed.ms).toBeLessThan(500);
     const mailto = timed(() => safeHref("mailto:" + "!@".repeat(100_000) + "<"));
     expect(mailto.out).toBe("");
     expect(mailto.ms).toBeLessThan(500);

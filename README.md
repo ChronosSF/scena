@@ -35,7 +35,7 @@ pnpm install
 pnpm dev          # the studio with hot reload at http://localhost:5173 (and /demo-desk.html)
 pnpm build        # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm preview      # serve the build at http://localhost:4173
-pnpm test         # 70 tests: renderer snapshots and parity, scene model and lint, studio editing operations, frames, board and lettering
+pnpm test         # 75 tests: renderer snapshots and parity, scene model, lint and safety patterns, studio editing operations, file sniffing, frames, board and lettering
 pnpm typecheck    # every package, the page runtime, the scripts and the tools
 pnpm check        # typecheck + test + build
 

@@ -1,7 +1,7 @@
 // Scene model: validation, migration and the budget lint, against the built-in desk.
 import { describe, expect, test } from "vitest";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { contrast, documentKind, lintPage, lintScene, migrate, parseColor, safeHref, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
+import { contrast, documentKind, fragmentProblem, lintPage, lintScene, migrate, parseColor, safeHref, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const desk = DESK_SCENE, pia = PIA_PAGE;
@@ -102,6 +102,30 @@ describe("helpers", () => {
     expect(safeHref("mailto:a@b.it")).toBe("mailto:a@b.it");
     expect(safeHref("javascript:alert(1)")).toBe("");
     expect(safeHref("ftp://x")).toBe("");
+    expect(safeHref("mailto:a@b.it?subject=Hello")).toBe("mailto:a@b.it?subject=Hello");
+    expect(safeHref("mailto:a@b.it,c@d.it")).toBe("mailto:a@b.it,c@d.it");
+    expect(safeHref("mailto:@b.it")).toBe("");
+    expect(safeHref("mailto:a@")).toBe("");
+  });
+
+  test("the fragment filter catches a tag however it is spaced", () => {
+    for (const bad of ["<script>", "< script>", "</script>", "< / script >", "<\n/\tscript", "<SCRIPT", "<a href='#x'>", "<animateTransform", "<image", "<foreignObject>"]) {
+      expect(fragmentProblem(bad), bad).not.toBe("");
+    }
+    for (const ok of ['<path d="M0 0L10 10"/>', '<g fill="#fff"><circle r="4"/></g>', "<abbr>", "a < b", "< / g>"]) {
+      expect(fragmentProblem(ok), ok).toBe("");
+    }
+  });
+
+  test("the safety patterns stay fast on hostile input", () => {
+    // Each of these took several seconds on 128 KB before the patterns were made linear.
+    const timed = (fn: () => string) => { const start = Date.now(); const out = fn(); return { out, ms: Date.now() - start }; };
+    const fragment = timed(() => fragmentProblem("<" + " ".repeat(200_000) + "x"));
+    expect(fragment.out).toBe("");
+    expect(fragment.ms).toBeLessThan(500);
+    const mailto = timed(() => safeHref("mailto:" + "!@".repeat(100_000) + "<"));
+    expect(mailto.out).toBe("");
+    expect(mailto.ms).toBeLessThan(500);
   });
 });
 

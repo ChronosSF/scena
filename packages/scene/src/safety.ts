@@ -3,8 +3,10 @@
 // the studio (apps/studio/src/ingest/svg.ts); these checks run in the pure
 // renderer and the validator, where no DOM parser exists.
 
+// Every pattern in this file has to run in linear time: the input is untrusted, and a pattern
+// that can split a run of characters in more than one way goes quadratic on a long run.
 const BAD_FRAGMENT: RegExp[] = [
-  /<\s*\/?\s*(script|foreignobject|iframe|object|embed|image|img|a|style|link|meta|svg|html|body|animate\w*|set|audio|video|canvas|handler|listener)\b/i,
+  /<[\s/]*(script|foreignobject|iframe|object|embed|image|img|a|style|link|meta|svg|html|body|animate\w*|set|audio|video|canvas|handler|listener)\b/i,
   /\son[a-z]+\s*=/i,
   /javascript\s*:/i,
   /data\s*:\s*text\/html/i,
@@ -34,7 +36,7 @@ export function safeHref(url: unknown): string {
   if (typeof url !== "string") return "";
   const u = url.trim();
   if (!u) return "";
-  if (/^mailto:[^\s<>"]+@[^\s<>"]+$/i.test(u)) return u;
+  if (/^mailto:[^\s<>"@]+@[^\s<>"]+$/i.test(u)) return u; // the first @ is the only place to split
   if (/^https:\/\/[^\s<>"]+$/i.test(u)) return u;
   if (/^http:\/\/[^\s<>"]+$/i.test(u)) return "https://" + u.slice(7);
   if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/[^\s<>"]*)?$/i.test(u)) return "https://" + u;

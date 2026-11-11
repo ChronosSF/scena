@@ -1,0 +1,48 @@
+# Dependabot: security fixes straight away, version bumps once a month and in bulk.
+#
+# Security updates are a repository setting (Dependabot alerts and Dependabot security
+# updates), not something this file schedules. When an advisory matches a dependency,
+# direct or transitive, Dependabot opens a pull request at once, at whatever version the
+# fix needs. The ignore rule and the cooldown below do not apply to them.
+#
+# Version updates, which this file does schedule, are kept quiet:
+#   - patch releases are skipped. They arrive with the next minor, or as a security update.
+#   - minor releases come as one pull request a month for the whole workspace.
+#   - major releases come one pull request each, because each needs its changelog read.
+#   - a release has to be public for a week (a month for a major) before it is proposed,
+#     so a broken or compromised publish is usually caught by others first.
+version: 2
+updates:
+  # The pnpm workspace: the root, apps/* and packages/*.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+    groups:
+      # A dependency joins the first group it matches.
+      minor:
+        update-types: ["minor"]
+      # react, react-dom and their types only work as a matching set.
+      react-major:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+        update-types: ["major"]
+    labels: ["dependencies"]
+
+  # The actions in .github/workflows. They are pinned to a major tag, so only a new
+  # major shows up here.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["dependencies"]

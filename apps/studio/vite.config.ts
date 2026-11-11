@@ -15,6 +15,7 @@ import { resolve } from "node:path";
 import { renderPage } from "@scena/renderer";
 import { DESK_SCENE, PIA_PAGE, framesDemo } from "@scena/scenes";
 import { buildRuntime, RUNTIME_ENTRY } from "@scena/renderer/build-runtime";
+import { inlineHandler, isDataBlock, isExternal, policyFor, scriptElements, withPolicy } from "./csp.ts";
 
 function runtime(): Plugin {
   return {
@@ -91,35 +92,21 @@ function contentSecurityPolicy(): Plugin {
       // a browser reads CRLF as LF before it hashes a script, so the file is hashed and written with LF
       const html = String(file.source).replace(/\r\n/g, "\n");
 
-      const hashes: string[] = [];
-      for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
-        const attrs = m[1]!, body = m[2]!;
-        if (/\bsrc\s*=/i.test(attrs)) throw new Error("scena-csp: a script is still external; the policy allows inlined scripts only, by hash");
-        if (/\btype\s*=\s*["']?application\/json/i.test(attrs)) continue; // data, never executed
-        hashes.push(`'sha256-${sha256(body)}'`);
+      // The reading and writing of the HTML is in csp.ts, where it is tested.
+      try {
+        const scripts = scriptElements(html);
+        if (scripts.some(isExternal)) throw new Error("a script is still external; the policy allows inlined scripts only, by hash");
+        const handler = inlineHandler(html, scripts);
+        if (handler) throw new Error(`index.html has an inline event handler, which the policy blocks: ${handler}`);
+        // The preview is a srcdoc frame: it inherits this policy on top of the page's own, so the
+        // page runtime has to be allowed here as well.
+        const pageRuntime = await buildRuntime({ write: false });
+        const hashes = scripts.filter((s) => !isDataBlock(s)).map((s) => sha256(s.body));
+        if (!hashes.length) throw new Error("no inline script found in index.html");
+        file.source = withPolicy(html, policyFor([...hashes, pageRuntime.sha256]));
+      } catch (e) {
+        throw new Error(`scena-csp: ${(e as Error).message}`);
       }
-      if (!hashes.length) throw new Error("scena-csp: no inline script found in index.html");
-      const handler = /<[^>]+\son[a-z]+\s*=/i.exec(html.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
-      if (handler) throw new Error(`scena-csp: index.html has an inline event handler, which the policy blocks: ${handler[0].slice(0, 100)}`);
-
-      // The preview is a srcdoc frame: it inherits this policy on top of the page's own, so the
-      // page runtime has to be allowed here as well.
-      const pageRuntime = await buildRuntime({ write: false });
-      const policy = [
-        "default-src 'none'",
-        `script-src ${hashes.join(" ")} 'sha256-${pageRuntime.sha256}'`,
-        "style-src 'unsafe-inline' https://fonts.googleapis.com", // React and the renderer write style attributes and <style>
-        "font-src https://fonts.gstatic.com",
-        "img-src data: blob:", // drawings are data: URLs in the documents and blob: URLs on the stage
-        "connect-src data:", // rasters are read back from their data: URLs to be trimmed and re-encoded
-        "base-uri 'none'",
-        "form-action 'none'",
-      ].join("; ");
-
-      const anchor = '<meta charset="utf-8">';
-      const at = html.indexOf(anchor);
-      if (at < 0) throw new Error(`scena-csp: index.html has no ${anchor} to put the policy after`);
-      file.source = html.slice(0, at + anchor.length) + `\n<meta http-equiv="Content-Security-Policy" content="${policy}">` + html.slice(at + anchor.length);
     } },
   };
 }

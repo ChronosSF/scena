@@ -43,8 +43,22 @@ async function keyWith(key: string, code: string, modifiers: number, vk = 0) {
 }
 const ALT = 1, CTRL = 2, SHIFT = 8;
 const setFiles = (selector: string, files: string[]) => page.setFiles(selector, files);
-/** Intercepts download links so their files can be read back with `downloads()`. */
-const hookDownloads = () => page.eval(`(() => { window.__dl = {}; const orig = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl[this.download] = fetch(this.href).then((r) => r.text()); else orig.call(this); }; })()`);
+/**
+ * Intercepts download links so their files can be read back with `downloads()`. It keeps the Blob
+ * behind each blob: URL and reads that, because the build's Content Security Policy does not let
+ * the page fetch a blob: URL (the studio never does).
+ */
+const hookDownloads = () => page.eval(`(() => {
+  window.__dl = {};
+  const blobs = new Map(), make = URL.createObjectURL;
+  URL.createObjectURL = function (b) { const u = make.call(URL, b); if (b instanceof Blob) blobs.set(u, b); return u; };
+  const orig = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () {
+    if (!this.download) return orig.call(this);
+    const blob = blobs.get(this.href);
+    window.__dl[this.download] = blob ? blob.text() : Promise.reject(new Error("the download is not a Blob the page made: " + this.href.slice(0, 40)));
+  };
+})()`);
 const downloads = () => page.eval<Record<string, string>>(`(async () => { const o = {}; for (const [k, v] of Object.entries(window.__dl)) o[k] = await v; return o; })()`);
 /** A point on the empty workspace, left of the page: pressing it deselects. */
 const emptyWorkspace = () => page.eval<[number, number]>(`(() => { const r = document.querySelector(".workspace").getBoundingClientRect(); return [r.x + 16, r.y + 120]; })()`);
@@ -147,8 +161,15 @@ check("arrow keys nudge the focused drawing", Math.round((after.x - before.x) * 
 // hostile SVG, dropped onto the canvas with a real drag and drop: it lands where it was dropped
 const dropAt = await page.eval<[number, number]>(`(() => { const r = document.querySelector("#stage .desk").getBoundingClientRect(); return [r.x + r.width * 0.3, r.y + r.height * 0.3]; })()`);
 const dragData = { items: [], files: [fixture("malicious.svg")], dragOperationsMask: 1 };
+// The file is parsed into an inert document before the sanitiser reads it. Its inline handlers
+// can never run there, but the build's Content Security Policy refuses them as they are parsed
+// and logs each refusal: expected in this step, and only in this step.
+const hostileFrom = page.logs.length;
 for (const type of ["dragEnter", "dragOver", "drop"]) await page.send("Input.dispatchDragEvent", { type, x: dropAt[0], y: dropAt[1], data: dragData });
 await sleep(1200);
+const hostileTo = page.logs.length;
+const HANDLER_REFUSED = /inline event handler.*Content Security Policy/i;
+const hostileRefusals = page.logs.slice(hostileFrom, hostileTo).filter((l) => HANDLER_REFUSED.test(l)).length;
 const landed = await page.eval<[number, number] | null>(`(() => { const el = document.querySelector('#stage [data-layer="malicious"]'); if (!el) return null; const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
 check("a file dropped on the canvas lands where it was dropped", !!landed && Math.hypot(landed[0] - dropAt[0], landed[1] - dropAt[1]) < 40, { dropAt, landed });
 const evil = await page.eval<string>(`Object.values(sceneStudio.store.getSnapshot().scene.assets).filter((a) => a.id.startsWith("malicious")).map((a) => a.src).join(" ")`);
@@ -414,8 +435,30 @@ check("phone tabs switch between Layers and the inspector", tabbed.layers === tr
 await clickOn("#tab-layers");
 writeFileSync(join(out, "studio-375.png"), await page.screenshot());
 
-const errors = page.logs.filter((l) => /^(error|exception|console\.error)/i.test(l) && !/fonts\.g/.test(l));
-check("console is clean", errors.length === 0, errors.join(" | "));
+const errors = page.logs.filter((l, i) => /^(error|exception|console\.error)/i.test(l) && !/fonts\.g/.test(l)
+  && !(i >= hostileFrom && i < hostileTo && HANDLER_REFUSED.test(l)));
+check("console is clean", errors.length === 0, errors.join(" | ").slice(0, 600));
+
+// The build's Content Security Policy (apps/studio/vite.config.ts) is the layer behind the
+// sanitisers: markup that reaches the studio's DOM must not be able to run script. A refusal
+// during the run above would have shown in the console check; this injects a handler on
+// purpose. The dev server has no policy, so there is nothing to check against it.
+const policy = await page.eval<string>(`(document.querySelector('meta[http-equiv="Content-Security-Policy"]') || {}).content || ""`);
+if (process.argv[2] && !policy) console.log("SKIP  Content Security Policy checks: this target has no policy (the dev server)");
+else {
+  check("the build names its scripts by hash in a Content Security Policy",
+    /default-src 'none'/.test(policy) && /script-src 'sha256-[^;]+/.test(policy) && !/script-src[^;]*'unsafe-(inline|eval)'/.test(policy), policy.slice(0, 90));
+  check("the policy refused the hostile drawing's handlers as the file was parsed", hostileRefusals > 0, { refusals: hostileRefusals });
+  const probe = await page.eval<{ ran: boolean; blocked: string }>(`new Promise((done) => {
+    let blocked = "";
+    document.addEventListener("securitypolicyviolation", (e) => { blocked = e.violatedDirective; }, { once: true });
+    const d = document.createElement("div");
+    d.innerHTML = '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" onload="window.__cspProbe=1" onerror="window.__cspProbe=1">';
+    document.body.append(d);
+    setTimeout(() => { d.remove(); done({ ran: !!window.__cspProbe, blocked }); }, 500);
+  })`);
+  check("markup injected into the studio cannot run script", probe.ran === false && probe.blocked.startsWith("script-src"), probe);
+}
 
 await chrome.close();
 console.log(failures ? `\n${failures} check(s) failed` : "\nall checks passed");

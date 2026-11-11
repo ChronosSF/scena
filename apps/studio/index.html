@@ -9,8 +9,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Shantell+Sans:wght@400;600;800&amp;display=swap" rel="stylesheet">
-<!-- the other curated faces are only previewed in the Typeface cards: loaded without blocking first paint -->
-<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&amp;family=Patrick+Hand&amp;family=Kalam:wght@400;700&amp;family=Fredoka:wght@400;600;700&amp;family=Instrument+Serif&amp;display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<!-- the other curated faces are only previewed in the Typeface cards: loaded without blocking first
+     paint, and switched on by main.tsx (an inline onload would be blocked by the build's policy) -->
+<link id="more-faces" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&amp;family=Patrick+Hand&amp;family=Kalam:wght@400;700&amp;family=Fredoka:wght@400;600;700&amp;family=Instrument+Serif&amp;display=swap" rel="stylesheet" media="print">
 </head>
 <body>
 <div id="root"></div>

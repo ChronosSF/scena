@@ -22,6 +22,9 @@ tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/
 - The studio is React 19 on Vite 8, built into one HTML file that opens from disk. Its interface
   uses headless Radix primitives (menus, popovers, tooltips) and Lucide icons, styled by hand;
   the design system is in [docs/design/studio-ui.md](docs/design/studio-ui.md).
+- The built studio carries a Content Security Policy, written at build time: only the bundled app
+  and the page runtime may run, both named by hash, so markup from a document cannot run script
+  even if a sanitiser misses it. The dev server has no policy; `pnpm verify:studio` checks the build.
 - Vitest for tests, `tsc` 7 for type checks, headless Chrome over CDP for end-to-end checks.
 
 Why this and not the plan's full stack yet: [docs/adr/0001-tech-stack.md](docs/adr/0001-tech-stack.md).

@@ -422,6 +422,8 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 #stage .page { padding-top: 1.75rem; }
 #stage .desk { position: relative; }
 #stage .desk svg { touch-action: none; user-select: none; -webkit-user-select: none; }
+/* nothing is dragged in a built-in scene, so a finger on the drawing scrolls the page as anywhere else */
+#stage[data-fixed] .desk svg { touch-action: manipulation; }
 #stage [data-layer] { cursor: default; outline: none; }
 #stage [data-layer]:focus-visible { outline: none; }
 #stage [data-layer][opacity="0"] { pointer-events: none; }

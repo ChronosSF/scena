@@ -3,11 +3,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { lintScene, validatePage, validateScene, type ObjectLayer } from "@scena/scene";
 import {
-  addSample, builtInDeskDocs, canTurnOff, deskDocs, getLayer, isBuiltIn, makeDecor, moveDrawing, offeredPalettes, pageFor, removeLayer, reorder,
-  setCanvas, setKind, setSurface, slotRows, toggleHidden,
+  FIXED_SCENE, addSample, builtInDeskDocs, canTurnOff, defaultLink, deskDocs, getLayer, isBuiltIn, makeDecor, moveDrawing, offeredPalettes, pageFor, reconcile, removeLayer,
+  reorder, setCanvas, setKind, setSurface, slotRows, toggleHidden,
 } from "../src/model.ts";
 import { removeLettering, setTypeface } from "../src/board.ts";
 import { store } from "../src/store.ts";
+import { uiSnapshot } from "../src/ui.ts";
 
 describe("a built-in scene and its new page", () => {
   test("the desk opens as it ships, with a page made from the slots' own wording", () => {
@@ -61,8 +62,70 @@ describe("a built-in scene and its new page", () => {
   test("pageFor makes a valid page for any scene, with or without slots", () => {
     const { scene } = deskDocs();
     expect(validatePage(pageFor(scene), scene)).toEqual([]);
+    // a scene may leave a default title empty; a link that is on still needs one, so the label stands in
+    scene.slots[0]!.defaults.title = "";
+    expect(validateScene(scene)).toEqual([]);
+    expect(defaultLink(scene.slots[0]!).title).toBe(scene.slots[0]!.label);
+    expect(validatePage(pageFor(scene), scene)).toEqual([]);
+    expect(defaultLink(scene.slots.find((s) => s.statusAware)!)).toMatchObject({ enabled: true, url: "", status: "open", statusNote: "" });
     scene.slots = [];
     expect(Object.keys(pageFor(scene).links)).toEqual([]);
+  });
+
+  test("in a scene of your own the rule follows what you do, and a link that comes on has a title", () => {
+    const { scene, page } = deskDocs(); // Pia's desk as a private copy
+    const shop = scene.slots.find((s) => s.id === "shop")!, layer = scene.layers.find((l) => l.type === "object" && l.slotId === "shop")!;
+    shop.optional = false;
+    scene.editable.allowDisableSlots = false;
+    expect(toggleHidden(scene, page, {}, layer.id)).toBe(true); // you are the author: hiding it makes the slot optional
+    expect(page.links.shop!.enabled).toBe(false);
+    expect(shop.optional).toBe(true);
+    expect(scene.editable.allowDisableSlots).toBe(true);
+    expect(validatePage(page, scene)).toEqual([]);
+
+    page.links.shop!.title = "  "; // allowed while the link is off
+    expect(validatePage(page, scene)).toEqual([]);
+    expect(toggleHidden(scene, page, {}, layer.id)).toBe(false);
+    expect(page.links.shop).toMatchObject({ enabled: true, title: shop.defaults.title });
+    expect(validatePage(page, scene)).toEqual([]);
+  });
+
+  test("older saved work is brought in line with the rules instead of being refused", () => {
+    // each of these could be saved by the studio before the rule or the field's check existed
+    const own = deskDocs();
+    own.scene.slots.find((s) => s.id === "shop")!.optional = false;
+    own.scene.editable.palettes = ["riso-pink-yellow"];
+    own.page.links.shop!.enabled = false;
+    own.page.links.portfolio!.title = "";
+    own.page.links.social!.url = "my instagram";
+    own.page.theme.palette = "violet-lime";
+    own.page.profile.displayName = "";
+    expect(validatePage(own.page, own.scene).length).toBeGreaterThan(3);
+    reconcile(own.scene, own.page);
+    expect([...validateScene(own.scene), ...validatePage(own.page, own.scene)]).toEqual([]);
+    expect(own.page.links.shop!.enabled).toBe(false); // what you did stands: the scene's rule moved
+    expect(own.scene.slots.find((s) => s.id === "shop")!.optional).toBe(true);
+    expect(own.scene.editable.palettes).toEqual(["riso-pink-yellow", "violet-lime"]);
+    expect(own.page.theme.palette).toBe("violet-lime");
+    expect(own.page.links.portfolio!.title).toBe(own.scene.slots.find((s) => s.id === "portfolio")!.defaults.title);
+    expect(own.page.links.social!.url).toBe("");
+    expect(own.page.profile.displayName).toBe("Your Name");
+
+    const builtIn = builtInDeskDocs();
+    builtIn.scene.slots.find((s) => s.id === "shop")!.optional = false;
+    builtIn.scene.editable.palettes = ["riso-pink-yellow", "teal-sunflower"];
+    builtIn.page.links.shop!.enabled = false;
+    builtIn.page.theme.palette = "violet-lime";
+    const sceneBefore = JSON.stringify(builtIn.scene);
+    reconcile(builtIn.scene, builtIn.page);
+    expect([...validateScene(builtIn.scene), ...validatePage(builtIn.page, builtIn.scene)]).toEqual([]);
+    expect(JSON.stringify(builtIn.scene)).toBe(sceneBefore); // a built-in scene's rule stands: the page moves
+    expect(builtIn.page.links.shop!.enabled).toBe(true);
+    expect(builtIn.page.theme.palette).toBe("riso-pink-yellow");
+
+    const fine = builtInDeskDocs(), was = JSON.stringify(fine);
+    reconcile(fine.scene, fine.page);
+    expect(JSON.stringify(fine)).toBe(was);
   });
 });
 
@@ -103,6 +166,46 @@ describe("the store keeps a built-in scene as it is", () => {
     }
     expect(console.warn).toHaveBeenCalledTimes(attempts.length);
     expect(validateScene(store.getSnapshot().scene)).toEqual([]);
+    // the refusal is said, after whatever the caller announced for the change it thought it made
+    vi.advanceTimersByTime(1);
+    expect(uiSnapshot().toast).toMatchObject({ msg: FIXED_SCENE, kind: "error" });
+  });
+
+  test("handing the same scene back does not make an edit a replacement", () => {
+    const before = docs();
+    expect(store.change((s) => { s.scene.layers.pop(); return { scene: s.scene }; })).toBe(false);
+    expect(docs()).toEqual(before);
+    // the same object, untouched, is fine: importing only a page does this
+    expect(store.change((s) => { s.page.profile.displayName = "Ada"; return { scene: s.scene, page: s.page }; })).toBe(true);
+    expect(store.getSnapshot().page.profile.displayName).toBe("Ada");
+  });
+
+  test("a refused change leaves no undo step and keeps redo", () => {
+    vi.setSystemTime(Date.now() + 5000); // past the burst window, so each change opens its own step
+    store.change(({ page }) => { page.profile.bio = "One."; });
+    vi.setSystemTime(Date.now() + 5000);
+    store.change(({ page }) => { page.profile.bio = "Two."; });
+    expect(store.undo()).toBe(true);
+    expect(store.getSnapshot().page.profile.bio).toBe("One.");
+    expect(store.getSnapshot().canRedo).toBe(true);
+
+    vi.setSystemTime(Date.now() + 5000);
+    expect(store.change(({ scene }) => { scene.name = "Mine"; })).toBe(false);
+    expect(store.getSnapshot().canRedo).toBe(true);
+    expect(store.redo()).toBe(true); // redo is as it was
+    expect(store.getSnapshot().page.profile.bio).toBe("Two.");
+    expect(store.undo()).toBe(true); // and undo goes one real step back, not to an empty one
+    expect(store.getSnapshot().page.profile.bio).toBe("One.");
+  });
+
+  test("the scene is compared against what it was, change after change", () => {
+    const scene0 = docs().scene;
+    for (const bio of ["a", "ab", "abc"]) expect(store.change(({ page }) => { page.profile.bio = bio; })).toBe(true);
+    expect(store.change(({ scene }) => { scene.canvas.width = 500; })).toBe(false);
+    expect(store.change(({ page }) => { page.profile.bio = "abcd"; })).toBe(true);
+    expect(store.change(({ scene }) => { scene.canvas.width = 500; })).toBe(false); // the restored copy is held to the same text
+    expect(docs().scene).toBe(scene0);
+    expect(store.getSnapshot().page.profile.bio).toBe("abcd");
   });
 
   test("the page takes every edit the links-only form makes, and undo brings each back", () => {

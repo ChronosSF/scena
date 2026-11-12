@@ -11,9 +11,11 @@ export interface UiState {
   live: { msg: string; n: number };
   /** Several drawings dropped at once: frames of one drawing, or separate drawings? */
   ask: { count: number; resolve: (choice: FramesChoice | null) => void } | null;
+  /** Opening `what` would replace the work on the canvas: go ahead? */
+  replace: { what: string; resolve: (ok: boolean) => void } | null;
 }
 
-let state: UiState = { toast: null, live: { msg: "", n: 0 }, ask: null };
+let state: UiState = { toast: null, live: { msg: "", n: 0 }, ask: null, replace: null };
 let n = 0;
 let toastTimer = 0;
 const listeners = new Set<() => void>();
@@ -37,6 +39,11 @@ export function toast(msg: string, kind: "" | "error" = ""): void {
 /** Asks the frames-or-separate question; resolves null when the dialog is dismissed. */
 export function askFramesChoice(count: number): Promise<FramesChoice | null> {
   return new Promise((resolve) => emit({ ask: { count, resolve: (c) => { emit({ ask: null }); resolve(c); } } }));
+}
+
+/** Asks before the work on the canvas is replaced by `what`; resolves false when the dialog is dismissed. */
+export function askReplace(what: string): Promise<boolean> {
+  return new Promise((resolve) => emit({ replace: { what, resolve: (ok) => { emit({ replace: null }); resolve(ok); } } }));
 }
 
 /** The current UI state, outside React (tests). */

@@ -217,7 +217,7 @@ the preview only, never to the export.
     real ones and decorations cannot be picked. A press or Enter on an object selects it, and
     the page's own ring and panel show the selection. There are no handles and no toolbar, and
     the keys that move, turn, resize, delete or reorder do nothing. A dropped file is refused
-    with a toast that says why.
+    with a toast that says why. On a phone a swipe that starts on the drawing scrolls the page.
   - The inspector with an object selected is the **link's form**: the slot's label and kind as
     a heading (not a field), an on/off switch in the section head, then title, description,
     button text, URL and the plain-list wording, and the commission status and note where the
@@ -229,9 +229,19 @@ the preview only, never to the export.
 
   The mode is entered from the More menu ("Fill in a ready-made scene: the desk") or the empty
   state. It opens the desk with a new page made from the slots' own wording, not Pia's page.
-- **Fields that must not be empty.** A link that is on needs a title and a page needs a name.
-  Emptying either keeps the last value in the document and says so under the field, as the page
-  address already did, so the saved work always opens.
+- **Fields the page depends on.** A link needs a title, a page needs a name, and an address
+  has to be one. Each of these fields keeps what was typed and says what is wrong under it,
+  while the document holds something valid: the last title or name, or no address at all (a
+  link never keeps pointing at an address that is being replaced). A link that comes back on
+  without a title takes its slot's.
+- **Saving.** Autosave checks the documents first. Work that would not open again is not
+  written over work that does: the indicator in the bar turns to a warning that says so, and the
+  last saved work stays. Work saved under older rules is brought in line when it is opened, so
+  it is not turned away for something the studio itself allowed.
+- **Opening another scene.** "Fill in a ready-made scene" and "Open Pia's finished desk"
+  replace what is on the canvas, so when there is work there (a drawing, a background,
+  lettering, or words typed on the page) a small dialog asks first, with Cancel and "Open it".
+  On an empty, untouched canvas they open at once.
 - **Frames** ([ADR 0002](../adr/0002-frame-animation.md)). A collapsible section under Placement.
   - Before a drawing has frames, the section shows one line of explanation and a dashed "Add
     frames" target. Choose files, or drop them on the section.

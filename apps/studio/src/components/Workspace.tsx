@@ -117,7 +117,7 @@ export function Workspace() {
                     <SamplesMenu trigger="empty" />
                   </div>
                   {/* the other way to a page: a scene that is already drawn, to fill in */}
-                  <p className="empty-alt">No drawings of your own? <button type="button" className="link-btn" onClick={actions.openBuiltInDesk} data-ui="empty-builtin">Fill in a ready-made scene</button>.</p>
+                  <p className="empty-alt">No drawings of your own? <button type="button" className="link-btn" onClick={() => void actions.openBuiltInDesk()} data-ui="empty-builtin">Fill in a ready-made scene</button>.</p>
                 </div>
               ) : null}
             </div>

@@ -2,7 +2,7 @@
 // in the browser's storage, never dropped, so the next autosave does not write over it.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { deskDocs } from "../src/model.ts";
-import { openSaved, readSaved } from "../src/store.ts";
+import { openSaved, readSaved, store } from "../src/store.ts";
 
 const KEY = "scene-studio/v1", ASIDE = "scene-studio/v1/set-aside";
 
@@ -76,6 +76,22 @@ describe("opening saved work", () => {
     expect(s.items.has(KEY)).toBe(false);
   });
 
+  test("work saved under older rules is brought in line and opens", () => {
+    // a link turned off on a slot that is not optional, and an address that is not one: the studio used to save both
+    const raw = saved((d) => {
+      d.scene.slots.find((x) => x.id === "shop")!.optional = false;
+      d.page.links.shop!.enabled = false;
+      d.page.links.social!.url = "my instagram";
+    });
+    const s = storage({ [KEY]: raw });
+    const opened = openSaved(s);
+    expect(opened.setAside).toBe(false);
+    expect(opened.docs?.page.links.shop!.enabled).toBe(false);
+    expect(opened.docs?.page.links.social!.url).toBe("");
+    expect(opened.docs?.scene.slots.find((x) => x.id === "shop")!.optional).toBe(true);
+    expect(s.items.has(ASIDE)).toBe(false);
+  });
+
   test("a storage that refuses every write keeps the work where it was", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const raw = saved(olderId);
@@ -84,5 +100,37 @@ describe("opening saved work", () => {
     s.removeItem = () => { throw new Error("SecurityError"); };
     expect(openSaved(s)).toEqual({ docs: null, setAside: false });
     expect(s.items.get(KEY)).toBe(raw);
+  });
+});
+
+describe("autosave", () => {
+  test("work that would not open again is never written over work that does", () => {
+    vi.useFakeTimers();
+    const s = storage({});
+    vi.stubGlobal("window", globalThis);
+    vi.stubGlobal("localStorage", s);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      store.change(() => ({ ...deskDocs(), sel: null, stash: {} }), { noHistory: true });
+      vi.advanceTimersByTime(400);
+      const good = s.items.get(KEY)!;
+      expect(readSaved(good).docs?.page.handle).toBe(deskDocs().page.handle);
+      expect(store.getSnapshot().saveStatus).toBe("saved");
+
+      // no field stores this, so it stands for whatever a field may let through one day
+      store.change(({ page }) => { page.handle = "Not A Handle!"; });
+      vi.advanceTimersByTime(400);
+      expect(s.items.get(KEY)).toBe(good);
+      expect(store.getSnapshot().saveStatus).toBe("not-valid");
+      expect(warn).toHaveBeenCalledOnce();
+
+      store.change(({ page }) => { page.handle = "ada"; });
+      vi.advanceTimersByTime(400);
+      expect(readSaved(s.items.get(KEY)!).docs?.page.handle).toBe("ada");
+      expect(store.getSnapshot().saveStatus).toBe("saved");
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 });

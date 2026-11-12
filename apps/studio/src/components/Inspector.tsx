@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Maximize2, RotateCw, Shapes, Trash2 } from "lucide-react";
 import { LIMITS, safeHref, type CommissionStatus, type Layer, type LinkContent, type Motion, type ObjectLayer, type SlotKind } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
-import { CANVASES, KIND_LABELS, SURFACES, canTurnOff, currentSurface, getLayer, isBuiltIn, offeredPalettes, slotOf, type Surface } from "../model.ts";
+import { CANVASES, KIND_LABELS, SURFACES, canTurnOff, currentSurface, defaultLink, getLayer, isBuiltIn, offeredPalettes, slotOf, type Surface } from "../model.ts";
 import { drawingThumb, thumbTheme } from "../thumbs.ts";
 import { assetSummary } from "../describe.ts";
 import * as actions from "../actions.ts";
@@ -46,15 +46,7 @@ function LinkFields({ slotId }: { slotId: string }) {
       <TitleField slotId={slotId} />
       <TextField label="Description" value={link.description} max={LIMITS.description} multiline name="link-description" onChange={(v) => editLink((l) => { l.description = v; })} />
       <TextField label="Button text" value={link.cta} max={40} name="link-cta" onChange={(v) => editLink((l) => { l.cta = v; })} />
-      <TextField label="URL" value={link.url} type="url" inputMode="url" placeholder="https://… or mailto:…" name="url"
-        check={(v) => {
-          if (!v.trim()) return { level: "warn", text: "Add an address so the button goes somewhere." };
-          const s = safeHref(v);
-          if (!s) return { level: "error", text: "Use a web address (https://…) or an email (mailto:…)." };
-          if (s !== v.trim()) return { level: "", text: `Will open ${s}` };
-          return null;
-        }}
-        onChange={(v) => editLink((l) => { l.url = v.trim(); })} />
+      <UrlField slotId={slotId} />
       <TextField label="Wording in the plain list" value={link.listLabel || ""} max={60} placeholder={link.title || "Same as the title"}
         hint="The text-only list under the drawing, for screen readers and quick visitors."
         onChange={(v) => editLink((l) => { if (v) l.listLabel = v; else delete l.listLabel; })} />
@@ -63,23 +55,60 @@ function LinkFields({ slotId }: { slotId: string }) {
 }
 
 /**
- * A link that is on needs a title, or the page is not valid. So an emptied field keeps the
- * last title in the document and says why, as the page address does.
+ * A field whose value in the document has to stay valid, so that saved work always opens.
+ * The field shows what was typed; the document gets a value only when the caller says which
+ * (the typed text when it is valid, something safe otherwise, or nothing, which leaves the
+ * document as it is). When the document changes from elsewhere (undo, a rename, an import)
+ * the field follows it.
  */
+function useDraft(inDocument: string, write: (v: string) => void): [string, (typed: string, toStore?: string) => void] {
+  const [draft, setDraft] = useState(inDocument);
+  const wrote = useRef(inDocument); // what this field last put in the document
+  useEffect(() => {
+    if (inDocument === wrote.current) return;
+    wrote.current = inDocument;
+    setDraft(inDocument);
+  }, [inDocument]);
+  return [draft, (typed, toStore) => {
+    setDraft(typed);
+    if (toStore === undefined || toStore === inDocument) return;
+    wrote.current = toStore;
+    write(toStore);
+  }];
+}
+
+/** A link needs a title to be on, so an emptied field keeps the last title in the document and says why. */
 function TitleField({ slotId }: { slotId: string }) {
   const { page } = useStudio();
   const link = page.links[slotId];
-  const [draft, setDraft] = useState(link?.title ?? "");
-  useEffect(() => { setDraft(link?.title ?? ""); }, [link?.title]);
+  const [draft, type] = useDraft(link?.title ?? "", (v) => store.change(({ page: p }) => { const l = p.links[slotId]; if (l) l.title = v; }));
   if (!link) return null;
-  const needed = link.enabled !== false;
   return (
     <TextField label="Title" value={draft} max={60} name="link-title"
-      check={(v) => (needed && !v.trim() ? { level: "error", text: `A link that is on needs a title. The page keeps "${link.title}" until you type one.` } : null)}
-      onChange={(v) => {
-        setDraft(v);
-        if (v.trim() || !needed) store.change(({ page: p }) => { const l = p.links[slotId]; if (l) l.title = v; });
-      }} />
+      check={(v) => (v.trim() ? null : { level: "error", text: link.title ? `A link needs a title. The page keeps "${link.title}" until you type one.` : "A link needs a title." })}
+      onChange={(v) => type(v, v.trim() ? v : undefined)} />
+  );
+}
+
+/**
+ * The address is stored only when it is one. While it is not, the link has no address: it
+ * does not keep pointing at the one being replaced, and the page stays valid.
+ */
+function UrlField({ slotId }: { slotId: string }) {
+  const { page } = useStudio();
+  const link = page.links[slotId];
+  const [draft, type] = useDraft(link?.url ?? "", (v) => store.change(({ page: p }) => { const l = p.links[slotId]; if (l) l.url = v; }));
+  if (!link) return null;
+  return (
+    <TextField label="URL" value={draft} type="url" inputMode="url" placeholder="https://… or mailto:…" name="url"
+      check={(v) => {
+        if (!v.trim()) return { level: "warn", text: "Add an address so the button goes somewhere." };
+        const s = safeHref(v);
+        if (!s) return { level: "error", text: "Use a web address (https://…) or an email (mailto:…). Until it is one, the link has no address." };
+        if (s !== v.trim()) return { level: "", text: `Will open ${s}` };
+        return null;
+      }}
+      onChange={(v) => type(v, safeHref(v) ? v.trim() : "")} />
   );
 }
 
@@ -131,9 +160,7 @@ function SlotInspector({ layer }: { layer: ObjectLayer }) {
         ) : (
           <>
             <p className="field-hint">This page has nothing for {slot.label} yet.</p>
-            <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => store.change(({ page: p }) => {
-              p.links[slot.id] = { enabled: true, title: slot.defaults.title, description: slot.defaults.description, cta: slot.defaults.cta, url: "", ...(slot.statusAware ? { status: "open" as const, statusNote: "" } : {}) };
-            })}>Set up this link</button>
+            <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => store.change(({ page: p }) => { p.links[slot.id] = defaultLink(slot); })}>Set up this link</button>
           </>
         )}
       </Section>
@@ -340,12 +367,11 @@ function PageInspector() {
 
 /** A page needs a name, so an emptied field keeps the last one in the document and says why. */
 function NameField({ name }: { name: string }) {
-  const [draft, setDraft] = useState(name);
-  useEffect(() => { setDraft(name); }, [name]);
+  const [draft, type] = useDraft(name, (v) => store.change(({ page: p }) => { p.profile.displayName = v; p.seo.title = ""; }));
   return (
     <TextField label="Name" value={draft} max={LIMITS.displayName} name="display-name"
       check={(v) => (v.trim() ? null : { level: "error", text: `A page needs a name. It keeps "${name}" until you type one.` })}
-      onChange={(v) => { setDraft(v); if (v.trim()) store.change(({ page: p }) => { p.profile.displayName = v; p.seo.title = ""; }); }} />
+      onChange={(v) => type(v, v.trim() ? v : undefined)} />
   );
 }
 

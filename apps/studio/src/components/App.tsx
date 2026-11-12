@@ -9,7 +9,7 @@ import { LinksPanel } from "./LinksPanel.tsx";
 import { isBuiltIn } from "../model.ts";
 import { Workspace } from "./Workspace.tsx";
 import { Inspector } from "./Inspector.tsx";
-import { ExportDialog, FramesChoiceDialog, ImportErrorsDialog, ResetDialog, SetAsideDialog } from "./Dialogs.tsx";
+import { ExportDialog, FramesChoiceDialog, ImportErrorsDialog, ReplaceDialog, ResetDialog, SetAsideDialog } from "./Dialogs.tsx";
 import { Feedback } from "./Feedback.tsx";
 import { TooltipProvider, hasFiles } from "./ui.tsx";
 
@@ -138,6 +138,7 @@ export function App() {
       <SetAsideDialog open={setAsideOpen} onClose={() => setSetAsideOpen(false)} />
       <ImportErrorsDialog problems={problems} onClose={() => setProblems([])} />
       <FramesChoiceDialog />
+      <ReplaceDialog />
       <Feedback />
     </TooltipProvider>
   );

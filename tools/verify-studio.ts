@@ -34,6 +34,10 @@ async function clickOn(selector: string) {
   await page.click(c[0], c[1]);
   await sleep(250);
 }
+/** Opening another scene asks first when there is work on the canvas: agree. */
+async function confirmReplace() {
+  if (await page.eval<boolean>(`!!document.querySelector('dialog[open] [data-ui="replace-ok"]')`)) await clickOn('dialog[open] [data-ui="replace-ok"]');
+}
 const state = () => page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); return { layers: s.scene.layers.map((l) => l.id + ":" + l.type), sel: s.sel, links: s.page.links, palette: s.page.theme.palette, mode: s.page.theme.mode, view: s.view }; })()`);
 const layer = (id: string) => page.eval<any>(`sceneStudio.store.getSnapshot().scene.layers.find((l) => l.id === ${JSON.stringify(id)})`);
 async function keyWith(key: string, code: string, modifiers: number, vk = 0) {
@@ -384,6 +388,7 @@ check("the round trip carries backgrounds, lettering and the typeface", /"type":
 await clickOn('[data-ui="view-edit"]');
 await clickOn('[data-ui="more"]');
 await clickOn('[data-ui="menu-desk"]');
+await confirmReplace();
 await sleep(300);
 await setFiles("#background-file", [fixture("paper-texture.png")]);
 await sleep(1500);
@@ -465,10 +470,17 @@ else {
 // what is typed in a link's form reaches the page.
 await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 await sleep(300);
+const sceneJson = () => page.eval<string>(`JSON.stringify(sceneStudio.store.getSnapshot().scene)`);
+const mine = await sceneJson();
 await clickOn('[data-ui="more"]');
 await clickOn('[data-ui="menu-builtin"]');
+const asked = await page.eval<string>(`(document.querySelector("dialog[open] #replace-h") || {}).textContent || ""`);
+await clickOn('dialog[open] [data-ui="replace-cancel"]');
+check("opening the ready-made desk over work asks first, and Cancel leaves the work alone", asked === "Open the ready-made desk?" && (await sceneJson()) === mine, { asked });
+await clickOn('[data-ui="more"]');
+await clickOn('[data-ui="menu-builtin"]');
+await clickOn('dialog[open] [data-ui="replace-ok"]');
 await sleep(400);
-const sceneJson = () => page.eval<string>(`JSON.stringify(sceneStudio.store.getSnapshot().scene)`);
 const builtIn0 = await sceneJson();
 const mode = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); return {
   license: s.scene.license, panel: document.getElementById("panel-layers").getAttribute("aria-label"),
@@ -484,9 +496,13 @@ check("a ready-made scene opens in the links-only mode, with a new page to fill 
 const catAt = await center(page, '#stage g[data-k="newsletter"]');
 await page.drag(catAt!, [catAt![0] + 70, catAt![1] - 50]);
 await sleep(300);
+const dragged = await page.eval<any>(`({ sel: sceneStudio.store.getSnapshot().sel, handles: document.querySelectorAll("#stage .ov *, #stage .ov-tools").length })`);
+check("a drag on the canvas moves nothing and picks nothing", (await sceneJson()) === builtIn0 && dragged.sel === null && dragged.handles === 0, dragged);
+await page.click(catAt![0], catAt![1]);
+await sleep(300);
 const pressed = await page.eval<any>(`({ sel: sceneStudio.store.getSnapshot().sel, inspector: document.getElementById("inspector").getAttribute("aria-label"),
   title: (document.querySelector('[data-ui="slot-title"]') || {}).textContent, handles: document.querySelectorAll("#stage .ov *, #stage .ov-tools").length })`);
-check("a drag on the canvas selects the drawing and moves nothing", (await sceneJson()) === builtIn0 && pressed.sel === "cat" && pressed.inspector === "Link settings" && pressed.title === "Cat" && pressed.handles === 0, pressed);
+check("a click on a drawing selects it, with its link's form and no handles", (await sceneJson()) === builtIn0 && pressed.sel === "cat" && pressed.inspector === "Link settings" && pressed.title === "Cat" && pressed.handles === 0, pressed);
 
 await page.eval(`document.querySelector('#stage g[data-k="newsletter"]').focus()`);
 for (const [key, code] of [["ArrowRight", "ArrowRight"], ["]", "BracketRight"], ["+", "Equal"], ["Delete", "Delete"], ["PageUp", "PageUp"]]) await page.key(key!, code!);
@@ -533,6 +549,14 @@ const emptied = await page.eval<any>(`({ title: sceneStudio.store.getSnapshot().
 check("an emptied title is not stored: the page keeps the last one and the field says why", emptied.title === "Letters from my desk" && emptied.field === "" && /needs a title/.test(emptied.msg) && emptied.errs.length === 0, emptied);
 await typeInto('#inspector [name="link-title"]', "Letters from my desk");
 
+await typeInto('#inspector [name="url"]', "my shop");
+const notAddress = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); const f = document.querySelector('#inspector [name="url"]'); return {
+  url: s.page.links.newsletter.url, field: f.value, msg: f.closest(".field").querySelector(".field-msg").textContent,
+  row: (document.querySelector('[data-link-row="newsletter"] .layer-note') || {}).textContent, errs: sceneStudio.validatePage(s.page, s.scene) }; })()`);
+check("text that is not an address stays in the field and out of the page", notAddress.url === "" && notAddress.field === "my shop" && notAddress.msg.includes("has no address")
+  && notAddress.row === "No address" && notAddress.errs.length === 0, notAddress);
+await typeInto('#inspector [name="url"]', "example.com/letter");
+
 await clickOn('[data-ui="view-preview"]');
 await sleep(500);
 const inPreview = await page.eval<boolean>(`document.getElementById("preview").srcdoc.includes("Letters from my desk") && document.getElementById("preview").srcdoc.includes("https://example.com/letter")`);
@@ -547,6 +571,13 @@ await clickOn("#slot-on");
 const on = await page.eval<any>(`({ enabled: sceneStudio.store.getSnapshot().page.links.newsletter.enabled, drawn: !!document.querySelector('#stage g[data-k="newsletter"]') })`);
 check("turning a link off takes its drawing and its list entry off the page, and on brings them back",
   off.enabled === false && off.drawn === false && off.listed === false && off.row === "Off" && on.enabled === true && on.drawn === true, { off, on });
+
+// a link that was turned off with no title (older work could hold one) gets its slot's title back when it comes on
+await clickOn("#slot-on");
+await page.eval(`sceneStudio.store.change((s) => { s.page.links.newsletter.title = ""; })`);
+await clickOn("#slot-on");
+const backOn = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); return { enabled: s.page.links.newsletter.enabled, title: s.page.links.newsletter.title, errs: sceneStudio.validatePage(s.page, s.scene) }; })()`);
+check("a link that comes back on always has a title", backOn.enabled === true && backOn.title === "The cat" && backOn.errs.length === 0, backOn);
 
 await clickOn('[data-link-row="commissions"] .layer-main');
 await clickOn('#inspector input[type="radio"][value="waitlist"]');
@@ -567,6 +598,17 @@ check("the page keeps its words, palette and motion, and nothing that belongs to
   pageForm.sections === "Profile,Palette,Appearance,Words,Scene" && pageForm.palettes === 5 && pageForm.palette === "violet-lime" && pageForm.limits === "40,120,60" && pageForm.errs.length === 0, pageForm);
 check("after all of it the scene is byte for byte what it was", (await sceneJson()) === builtIn0);
 
+// what the form leaves behind always opens again: a half-typed address, then a reload
+await clickOn('[data-link-row="social"] .layer-main');
+await typeInto('#inspector [name="url"]', "instagram");
+await sleep(600);
+await page.goto(target, 1200);
+const reopened = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); return { dialog: !!document.querySelector("dialog[open]"), license: s.scene.license,
+  social: s.page.links.social.url, commission: s.page.links.commissions.status, save: (document.querySelector("[data-save]") || {}).getAttribute("data-save"),
+  aside: localStorage.getItem("scene-studio/v1/set-aside") }; })()`);
+check("work left with a half-typed address opens again after a reload", reopened.dialog === false && reopened.license === "builtin" && reopened.social === "" && reopened.commission === "waitlist"
+  && reopened.save === "saved" && reopened.aside === null, reopened);
+
 await page.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
 await sleep(500);
 await clickOn("#tab-layers");
@@ -575,6 +617,29 @@ const phone = await page.eval<any>(`({ scroll: document.documentElement.scrollWi
   form: document.getElementById("inspector").hidden === false && !!document.querySelector('#inspector [name="link-title"]'), title: (document.querySelector('[data-ui="slot-title"]') || {}).textContent })`);
 check("on a phone a link's row opens its form, with no sideways scrolling", phone.scroll <= 375 && phone.tabs === "Links,Link" && phone.form === true && phone.title === "Framed print", phone);
 writeFileSync(join(out, "studio-links-375.png"), await page.screenshot());
+
+// Nothing is dragged in this mode, so a finger that starts on a drawing scrolls the page and
+// picks nothing; a tap picks. Real touch events, as a phone sends them.
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+await clickOn("#tab-layers");
+await page.eval(`sceneStudio.store.select(null); document.querySelector(".workspace-scroll").scrollTop = 0`);
+await sleep(300);
+const fingerAt = await page.eval<[number, number]>(`(() => { const r = document.querySelector('#stage g[data-k="portfolio"]').getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)]; })()`);
+const touch = (type: string, y: number) => page.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: fingerAt[0], y }] });
+await touch("touchStart", fingerAt[1]);
+for (let i = 1; i <= 8; i++) { await touch("touchMove", fingerAt[1] - i * 15); await sleep(16); }
+await touch("touchEnd", 0);
+await sleep(400);
+const swipe = await page.eval<any>(`({ scrolled: document.querySelector(".workspace-scroll").scrollTop, sel: sceneStudio.store.getSnapshot().sel, tab: sceneStudio.store.getSnapshot().tab })`);
+check("a swipe that starts on a drawing scrolls the page and picks nothing", swipe.scrolled > 40 && swipe.sel === null && swipe.tab === "layers", swipe);
+await page.eval(`document.querySelector(".workspace-scroll").scrollTop = 0`);
+await sleep(200);
+await touch("touchStart", fingerAt[1]);
+await touch("touchEnd", 0);
+await sleep(400);
+const tap = await page.eval<any>(`({ sel: sceneStudio.store.getSnapshot().sel, title: (document.querySelector('[data-ui="slot-title"]') || {}).textContent })`);
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+check("a tap on a drawing picks it", tap.sel === "sketchbook" && tap.title === "Sketchbook", tap);
 
 // Saved work this build cannot open (a check got stricter since it was saved) is set aside,
 // not dropped: the studio starts fresh, says so at once, and autosave does not write over it.

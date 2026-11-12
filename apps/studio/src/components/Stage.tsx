@@ -122,11 +122,10 @@ export function Stage({ scale = 1 }: { scale?: number }) {
   function onPointerDown(e: PointerEvent<HTMLElement>) {
     if (view !== "edit" || e.button > 0) return;
     const target = e.target as Element;
-    if (locked) {
-      const id = layerIdAt(target);
-      if (id) store.select(id); else if (target.closest(".desk")) store.select(null);
-      return; // no drag is started: the drawings stay where the scene's author put them
-    }
+    // No drag is started in a built-in scene: the drawings stay where the scene's author put
+    // them. A press does not select either, or a finger that starts a scroll on a drawing
+    // would pick it; the click does (onClick), as a tap does on the published page.
+    if (locked) return;
     const action = target.closest<HTMLElement>("[data-act]");
     if (action && sel) {
       e.preventDefault();
@@ -272,7 +271,11 @@ export function Stage({ scale = 1 }: { scale?: number }) {
   // Links inside the canvas never navigate; list entries select their drawing.
   function onClick(e: MouseEvent<HTMLElement>) {
     const a = (e.target as Element).closest("a");
-    if (!a) return;
+    if (!a) {
+      // a built-in scene: a click or a tap on an object picks it, one on the board lets go
+      if (locked && view === "edit" && (e.target as Element).closest(".desk")) store.select(layerIdAt(e.target as Element));
+      return;
+    }
     e.preventDefault();
     const k = a.dataset.k;
     const target = k && scene.layers.find((l) => l.type === "object" && l.slotId === k);
@@ -341,7 +344,7 @@ export function Stage({ scale = 1 }: { scale?: number }) {
 
   return (
     <div className="stage" id="stage" role="region" aria-label={locked ? "Canvas: your page as visitors see it. Choose a drawing to edit its link." : "Canvas: your page as visitors see it, editable"}
-      data-theme={parts.rootAttrs.theme || undefined} data-motion={parts.rootAttrs.motion || undefined} data-fr={playing ? undefined : "off"}
+      data-theme={parts.rootAttrs.theme || undefined} data-motion={parts.rootAttrs.motion || undefined} data-fr={playing ? undefined : "off"} data-fixed={locked ? "" : undefined}
       onKeyDown={onKeyDown} onFocus={onFocus} onClick={onClick}>
       {holdCss ? <style>{holdCss}</style> : null}
       <div className="page">

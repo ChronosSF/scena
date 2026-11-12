@@ -40,7 +40,7 @@ pnpm install
 pnpm dev          # the studio with hot reload at http://localhost:5173 (and /demo-desk.html)
 pnpm build        # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm preview      # serve the build at http://localhost:4173
-pnpm test         # 106 tests: renderer snapshots and parity, scene model, lint and safety checks, studio editing operations, the links-only mode, saved work, file sniffing, the build's policy, frames, board and lettering
+pnpm test         # 113 tests: renderer snapshots and parity, scene model, lint and safety checks, studio editing operations, the links-only mode, saved work, file sniffing, the build's policy, frames, board and lettering
 pnpm typecheck    # every package, the page runtime, the scripts and the tools
 pnpm check        # typecheck + test + build
 
@@ -190,7 +190,8 @@ Three restrictions, all enforced by the validator:
 
 - A page changes its scene only as far as the scene's `editable` says: its palette comes from
   `editable.palettes` when that is a list, and it turns a link off only when
-  `editable.allowDisableSlots` is set and the slot is `optional`. The studio goes further for a
+  `editable.allowDisableSlots` is set and the slot is `optional`. In a scene of your own the
+  studio sets those two when you hide a link, since you are its author. It goes further for a
   scene with `license: "builtin"`: it shows the links-only mode, and its store undoes any change
   that touches the scene.
 

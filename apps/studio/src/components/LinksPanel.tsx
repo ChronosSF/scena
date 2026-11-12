@@ -3,7 +3,7 @@
 
 import { useMemo } from "react";
 import { Eye, EyeOff, Lock, Shapes } from "lucide-react";
-import type { ObjectLayer, Slot } from "@scena/scene";
+import { safeHref, type ObjectLayer, type Slot } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
 import { canTurnOff, isHidden, slotRows } from "../model.ts";
 import { drawingThumb, thumbTheme } from "../thumbs.ts";
@@ -18,7 +18,7 @@ function LinkRow({ slot, layer }: { slot: Slot; layer: ObjectLayer }) {
   const theme = thumbTheme(page);
   const thumb = useMemo(() => drawingThumb(scene, page, layer, `lk-${layer.id}`), [rev, layer.id]); // documents mutate in place
   // what is still to do, at a glance: a link that is on and goes nowhere
-  const note = hidden ? "Off" : !link ? "Not set up" : !link.url ? "No address" : "";
+  const note = hidden ? "Off" : !link ? "Not set up" : !safeHref(link.url) ? "No address" : "";
   return (
     <li className={`layer${isSel ? " is-sel" : ""}${hidden ? " is-hidden" : ""}`} data-link-row={slot.id}>
       {/* on a phone the form is on the other tab; a row has nothing else to offer, so it goes there */}

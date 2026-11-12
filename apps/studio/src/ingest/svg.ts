@@ -3,7 +3,7 @@
 // Runs in the browser (DOMParser never executes scripts). Output is a string built
 // from scratch, so only allowlisted elements and attributes can appear.
 
-import { ART_CLASSES, FRAGMENT_ELEMENTS, LIMITS, fragmentProblem, near, parseColor, type PartRole, type Role, type SvgInlineAsset } from "@scena/scene";
+import { ART_CLASSES, FRAGMENT_ATTRIBUTES, FRAGMENT_ELEMENTS, LIMITS, fragmentProblem, near, parseColor, type PartRole, type Role, type SvgInlineAsset } from "@scena/scene";
 import { esc } from "@scena/renderer";
 import { sha256Hex } from "../util.ts";
 
@@ -13,13 +13,7 @@ const ALLOWED = new Set<string>(["svg", ...FRAGMENT_ELEMENTS]); // one list: wha
 const UNWRAP = new Set(["a", "switch"]); // keep the drawing inside, drop the wrapper
 const SHAPES = new Set(["path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "use"]);
 const FILLABLE = new Set(["path", "rect", "circle", "ellipse", "polyline", "polygon"]);
-const ATTRS = new Set(["transform", "d", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "fx", "fy", "fr",
-  "width", "height", "points", "pathLength", "offset", "dx", "dy", "rotate", "textLength", "lengthAdjust",
-  "gradientUnits", "gradientTransform", "spreadMethod", "clipPathUnits", "maskUnits", "maskContentUnits",
-  "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
-  "stroke-dasharray", "stroke-dashoffset", "stroke-opacity", "opacity", "clip-path", "clip-rule", "mask",
-  "stop-color", "stop-opacity", "font-size", "font-family", "font-weight", "font-style", "text-anchor",
-  "dominant-baseline", "letter-spacing", "display", "visibility", "paint-order", "vector-effect", "preserveAspectRatio"]);
+const ATTRS = new Set<string>(FRAGMENT_ATTRIBUTES); // the same holds for attributes (id, class and href are handled on their own)
 const STYLE_PROPS = new Set(["fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
   "stroke-miterlimit", "stroke-dasharray", "stroke-dashoffset", "stroke-opacity", "opacity", "clip-path", "clip-rule", "mask",
   "stop-color", "stop-opacity", "font-size", "font-family", "font-weight", "font-style", "text-anchor", "letter-spacing",
@@ -50,10 +44,14 @@ function sentinelRole(value: string | undefined): Role | null {
 
 const LOCAL_URL = /^url\(\s*["']?#([^"')\s]+)["']?\s*\)$/;
 
-function cleanValue(value: string, removed: Set<string>): string | null {
+/** A value the fragment check (fragmentProblem) will accept for the attribute or style property `name`, or null. */
+function cleanValue(name: string, value: string, removed: Set<string>): string | null {
   const v = String(value).trim();
-  if (/javascript:|expression\(|@import|<|>/i.test(v)) { removed.add("unsafe attribute"); return null; }
+  // a backslash is a CSS escape: it can spell url( in a way no pattern here would see
+  if (/javascript:|expression\(|@import|<|>|\\/i.test(v)) { removed.add("unsafe attribute"); return null; }
   if (/url\(/i.test(v) && !LOCAL_URL.test(v)) { removed.add("external reference"); return null; }
+  // a mask can be an image, and image-set() and its relatives fetch one without a url()
+  if (name === "mask" && v !== "none" && !LOCAL_URL.test(v)) { removed.add("external reference"); return null; }
   if (v.length > 200000) return null;
   return v;
 }
@@ -128,14 +126,14 @@ function sanitizeTree(root: Element): { tree: ElNode | null; removed: Set<string
       }
       if (isRoot && (n === "width" || n === "height" || n === "x" || n === "y")) continue; // normalised: viewBox only
       if (!ATTRS.has(n)) continue;
-      const v = cleanValue(a.value, removed);
+      const v = cleanValue(n, a.value, removed);
       if (v !== null) attrs.set(n, v);
     }
     // precedence: style attribute > class rules > presentation attributes
-    for (const [k, v] of [...attrs]) if (k.startsWith("~")) { attrs.delete(k); const vv = cleanValue(v, removed); if (vv !== null) attrs.set(k.slice(1), vv); }
+    for (const [k, v] of [...attrs]) if (k.startsWith("~")) { attrs.delete(k); const vv = cleanValue(k.slice(1), v, removed); if (vv !== null) attrs.set(k.slice(1), vv); }
     if (style) for (const [k, v] of parseDecls(style)) {
       if (!STYLE_PROPS.has(k)) continue;
-      const vv = cleanValue(v, removed);
+      const vv = cleanValue(k, v, removed);
       if (vv !== null) attrs.set(k, vv);
     }
     if (name === "use" && !href) { removed.add("use without a local reference"); return null; }

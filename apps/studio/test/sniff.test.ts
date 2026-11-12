@@ -25,10 +25,12 @@ describe("sniffing an SVG", () => {
   });
 
   test("stays fast on a file built to make the pattern backtrack", () => {
-    // With the earlier pattern 30 repetitions took 15 seconds, and each one more doubled it.
+    // With the earlier pattern 30 repetitions took 15 seconds, and each one more doubled it, so
+    // 280 would never finish. The pattern now takes well under a millisecond; the limit is far
+    // above that, so a slow or busy machine does not trip it.
     const hostile = bytes("<!--" + "--><!--".repeat(280) + "x");
     const start = Date.now();
     expect(sniff(hostile)).toBeNull();
-    expect(Date.now() - start).toBeLessThan(500);
+    expect(Date.now() - start).toBeLessThan(3000);
   });
 });

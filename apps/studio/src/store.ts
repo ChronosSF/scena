@@ -42,6 +42,8 @@ export interface StudioState {
   canUndo: boolean;
   canRedo: boolean;
   saveStatus: "saved" | "too-big";
+  /** Saved work that this build could not open is being kept in this browser (see openSaved). */
+  setAside: boolean;
   focus: FocusRequest | null;
 }
 
@@ -52,21 +54,64 @@ export interface ChangeOptions {
 }
 
 const KEY = "scene-studio/v1";
+/** Where saved work goes when this build cannot open it. Autosave never writes here. */
+const ASIDE_KEY = "scene-studio/v1/set-aside";
 const BURST_MS = 700;
 
-function loadSaved(): Docs | null {
+type SavedStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+const browserStorage = (): SavedStorage | null => {
+  try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; } // a browser may refuse access outright
+};
+
+/** The documents in saved text, or the reasons this build cannot open it. */
+export function readSaved(raw: string): { docs: Docs | null; problems: string[] } {
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
     const saved = JSON.parse(raw);
     const scene = migrate(saved.scene, "scene"), page = migrate(saved.page, "page");
-    const errs = [...validateScene(scene), ...validatePage(page, scene)];
-    if (errs.length) { console.warn("Saved work did not validate; starting fresh.", errs); return null; }
-    return { scene, page, sel: saved.sel && getLayer(scene, saved.sel) ? saved.sel : null, stash: saved.stash || {} };
+    const problems = [...validateScene(scene).map((e) => `scene: ${e}`), ...validatePage(page, scene).map((e) => `page: ${e}`)];
+    if (problems.length) return { docs: null, problems };
+    return { docs: { scene, page, sel: saved.sel && getLayer(scene, saved.sel) ? saved.sel : null, stash: saved.stash || {} }, problems: [] };
   } catch (e) {
-    console.warn("Could not read saved work", e);
-    return null;
+    return { docs: null, problems: [(e as Error).message] };
   }
+}
+
+/**
+ * Opens the autosaved work. Work that does not open (a check got stricter since it was saved,
+ * a newer build wrote it, or the text is damaged) is moved aside, never dropped: the studio
+ * starts fresh, and the next autosave would otherwise write over it. A copy set aside earlier
+ * is replaced. Returns the documents, and whether work was set aside just now.
+ */
+export function openSaved(storage: SavedStorage): { docs: Docs | null; setAside: boolean } {
+  let raw: string | null = null;
+  try { raw = storage.getItem(KEY); } catch { /* treated as nothing saved */ }
+  if (!raw) return { docs: null, setAside: false };
+  const { docs, problems } = readSaved(raw);
+  if (docs) return { docs, setAside: false };
+  console.warn("Saved work did not open. It is set aside in this browser, not deleted.", problems);
+  const keep = () => storage.setItem(ASIDE_KEY, raw);
+  try {
+    try { keep(); storage.removeItem(KEY); }
+    catch { storage.removeItem(KEY); keep(); } // no room for two copies: free the original's space first
+    return { docs: null, setAside: true };
+  } catch {
+    try { storage.setItem(KEY, raw); } catch { /* the storage refuses writes; there is nowhere to keep it */ }
+    return { docs: null, setAside: false };
+  }
+}
+
+const asideText = (): string | null => {
+  try { return browserStorage()?.getItem(ASIDE_KEY) ?? null; } catch { return null; }
+};
+
+export interface SetAsideWork {
+  /** The saved text as it was. */
+  raw: string;
+  /** The two documents, when the text still reads as JSON. */
+  scene: unknown;
+  page: unknown;
+  /** Why this build does not open it. */
+  problems: string[];
 }
 
 export function blankDocs(): Docs {
@@ -82,10 +127,28 @@ class StudioStore {
   private lastEdit = 0;
   private saveTimer = 0;
   private focusN = 0;
+  /** Saved work was set aside while this page loaded, so the user has not been told yet. */
+  readonly setAsideOnLoad: boolean;
 
   constructor() {
-    const docs = loadSaved() || blankDocs();
-    this.state = { ...docs, view: "edit", phone: true, forceMotion: false, zoom: "fit", tab: "layers", playFrames: true, frameAt: 0, framesOpen: true, rev: 0, canUndo: false, canRedo: false, saveStatus: "saved", focus: null };
+    const storage = browserStorage();
+    const opened = storage ? openSaved(storage) : { docs: null, setAside: false };
+    this.setAsideOnLoad = opened.setAside;
+    this.state = { ...(opened.docs || blankDocs()), view: "edit", phone: true, forceMotion: false, zoom: "fit", tab: "layers", playFrames: true, frameAt: 0, framesOpen: true, rev: 0, canUndo: false, canRedo: false, saveStatus: "saved", setAside: !!asideText(), focus: null };
+  }
+
+  /** The saved work that was set aside, with the reasons it does not open, or null when there is none. */
+  setAsideWork(): SetAsideWork | null {
+    const raw = asideText();
+    if (!raw) return null;
+    let scene: unknown, page: unknown;
+    try { ({ scene, page } = JSON.parse(raw)); } catch { /* not JSON: only the text can be handed back */ }
+    return { raw, scene, page, problems: readSaved(raw).problems };
+  }
+
+  discardSetAside(): void {
+    try { browserStorage()?.removeItem(ASIDE_KEY); } catch { /* nothing to remove */ }
+    this.emit({ setAside: false });
   }
 
   getSnapshot = (): StudioState => this.state;

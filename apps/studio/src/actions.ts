@@ -525,6 +525,22 @@ export function downloadPageData(): void {
   download(`${fileBase()}.page.json`, JSON.stringify(st().page, null, 2), "application/json");
 }
 
+/**
+ * Saved work that did not open (store.ts, openSaved), handed back as a file that can be
+ * corrected and imported. The names are fixed: the documents' own ids are not checked.
+ */
+export function downloadSetAside(part: "scene" | "page"): void {
+  const work = store.setAsideWork();
+  if (!work) return;
+  const doc = part === "scene" ? work.scene : work.page;
+  if (doc && typeof doc === "object") download(`set-aside.${part}.json`, JSON.stringify(doc, null, 2), "application/json");
+  else download("set-aside-work.txt", work.raw);
+}
+export function discardSetAside(): void {
+  store.discardSetAside();
+  toast("Discarded the saved work that did not open.");
+}
+
 /** Canvas coordinates of a screen point over the stage, or null. */
 export function canvasPoint(clientX: number, clientY: number): Point | null {
   const svg = document.querySelector<SVGSVGElement>("#stage .st-svg svg");

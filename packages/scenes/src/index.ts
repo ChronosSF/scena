@@ -11,6 +11,27 @@ import samples from "../samples.json" with { type: "json" };
 export const DESK_SCENE: SceneDocument = desk as unknown as SceneDocument;
 export const PIA_PAGE: PageDocument = pia as unknown as PageDocument;
 
+/** A ready-made scene, as a scene picker offers it. */
+export interface BuiltInScene {
+  /** The scene as it ships (`license: "builtin"`): a page fills it in and never changes it. */
+  scene: SceneDocument;
+  /** A finished page on the scene, with every link filled in: what a picker previews it with. */
+  sample: PageDocument;
+  /** Who the scene was drawn for, as the scene itself says (`scene.audience`). */
+  audience: readonly string[];
+}
+
+const builtIn = (scene: SceneDocument, sample: PageDocument): BuiltInScene => ({ scene, sample, audience: scene.audience });
+
+/**
+ * The ready-made scenes, in the order a picker shows them. Adding one is a change to this
+ * package alone: its scene document, a sample page, and one line here (README.md, "Adding a
+ * ready-made scene"). test/built-in.test.ts holds every entry to what a picker relies on.
+ */
+export const BUILT_IN_SCENES: readonly BuiltInScene[] = [
+  builtIn(DESK_SCENE, PIA_PAGE),
+];
+
 /** A drawing offered on its own: its layer as it sits on a desk, its link slot and its assets. */
 export interface SampleDrawing {
   key: string;

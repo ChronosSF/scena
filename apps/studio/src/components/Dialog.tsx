@@ -1,7 +1,7 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
 /** A native modal <dialog>: focus trapping, Escape and the backdrop come from the browser. */
-export function Dialog(props: { open: boolean; onClose: () => void; labelledBy: string; children: ReactNode }) {
+export function Dialog(props: { open: boolean; onClose: () => void; labelledBy: string; className?: string; style?: CSSProperties; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;
@@ -10,7 +10,7 @@ export function Dialog(props: { open: boolean; onClose: () => void; labelledBy: 
     if (!props.open && d.open) d.close();
   }, [props.open]);
   return (
-    <dialog ref={ref} aria-labelledby={props.labelledBy} onClose={props.onClose}
+    <dialog ref={ref} className={props.className} style={props.style} aria-labelledby={props.labelledBy} onClose={props.onClose}
       onClick={(e) => { if (e.target === ref.current) props.onClose(); }}>
       {props.children}
     </dialog>

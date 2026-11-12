@@ -1,7 +1,9 @@
 // Transient UI feedback: the visual toast and the screen-reader live region.
 // The toast is aria-hidden; every message is also spoken once through the live region.
+// The questions the studio asks, and the scene picker, are opened from here as well.
 
 import { useSyncExternalStore } from "react";
+import { BUILT_IN_SCENES, type BuiltInScene } from "@scena/scenes";
 
 export type FramesChoice = "frames" | "separate";
 
@@ -13,9 +15,14 @@ export interface UiState {
   ask: { count: number; resolve: (choice: FramesChoice | null) => void } | null;
   /** Opening `what` would replace the work on the canvas: go ahead? */
   replace: { what: string; resolve: (ok: boolean) => void } | null;
+  /**
+   * The scene picker is open, with these scenes to choose from. `returnTo` is where the
+   * keyboard focus goes when it closes, for an opener the browser cannot return to by itself.
+   */
+  picker: { scenes: readonly BuiltInScene[]; returnTo: HTMLElement | null } | null;
 }
 
-let state: UiState = { toast: null, live: { msg: "", n: 0 }, ask: null, replace: null };
+let state: UiState = { toast: null, live: { msg: "", n: 0 }, ask: null, replace: null, picker: null };
 let n = 0;
 let toastTimer = 0;
 const listeners = new Set<() => void>();
@@ -44,6 +51,18 @@ export function askFramesChoice(count: number): Promise<FramesChoice | null> {
 /** Asks before the work on the canvas is replaced by `what`; resolves false when the dialog is dismissed. */
 export function askReplace(what: string): Promise<boolean> {
   return new Promise((resolve) => emit({ replace: { what, resolve: (ok) => { emit({ replace: null }); resolve(ok); } } }));
+}
+
+/**
+ * Opens the scene picker. It offers the ready-made scenes that ship; the automated checks
+ * hand it a list of their own, to show it more than one scene before a second is drawn.
+ */
+export function openPicker(scenes?: readonly BuiltInScene[], returnTo: HTMLElement | null = null): void {
+  // anything but a list is the shipped one: a handler may pass its event along
+  emit({ picker: { scenes: Array.isArray(scenes) ? scenes : BUILT_IN_SCENES, returnTo } });
+}
+export function closePicker(): void {
+  if (state.picker) emit({ picker: null });
 }
 
 /** The current UI state, outside React (tests). */

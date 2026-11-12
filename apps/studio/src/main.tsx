@@ -4,6 +4,7 @@ import { renderPage } from "@scena/renderer";
 import { validatePage, validateScene } from "@scena/scene";
 import { App } from "./components/App.tsx";
 import { store } from "./store.ts";
+import { openPicker } from "./ui.ts";
 import { ingestSvg, resanitizeFragment } from "./ingest/svg.ts";
 import { SAMPLES } from "./model.ts";
 import "./studio.css";
@@ -22,8 +23,9 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>,
 );
 
-// A handle for debugging and automated checks (tools/verify-studio.ts).
+// A handle for debugging and automated checks (tools/verify-studio.ts). openPicker is here
+// so a check can show the picker a scene that is not shipped.
 declare global {
   interface Window { sceneStudio: unknown }
 }
-window.sceneStudio = { store, renderPage, ingestSvg, resanitizeFragment, SAMPLES, validateScene, validatePage };
+window.sceneStudio = { store, renderPage, ingestSvg, resanitizeFragment, SAMPLES, validateScene, validatePage, openPicker };

@@ -4,7 +4,7 @@
 import { documentKind, isSafeRasterUrl, migrate, validatePage, validateScene, type Layer, type PageDocument, type Part, type SceneDocument, type SlotKind } from "@scena/scene";
 import { layerCenter, renderPage, scaleOf, translateForCenter, type Point } from "@scena/renderer";
 import {
-  CANVASES, FIXED_SCENE, addDrawing, addSample as addSampleDoc, blankPage, builtInDeskDocs, canTurnOff, defaultLink, deskDocs, freshId, getLayer, isBuiltIn, makeClickable, makeDecor,
+  CANVASES, FIXED_SCENE, addDrawing, addSample as addSampleDoc, builtInDocs, canTurnOff, defaultLink, deskDocs, freshId, getLayer, hasWork as hasWorkDoc, isBuiltIn, makeClickable, makeDecor,
   offeredPalettes, removeLayer,
   reorder as reorderDoc, round, setCanvas as setCanvasDoc, setKind as setKindDoc, setSurface as setSurfaceDoc, slotOf, type Surface,
   moveDrawing as moveDrawingDoc, toggleHidden as toggleHiddenDoc,
@@ -13,7 +13,7 @@ import { ingestSvg, resanitizeFragment } from "./ingest/svg.ts";
 import { ingestBackground, ingestRaster, isAnimatedImage, sniff } from "./ingest/raster.ts";
 import { mergeFills, planFrames, type FramePlan } from "./ingest/frames.ts";
 import {
-  addBackgroundSample as addBackgroundSampleDoc, backgrounds, isBackground, removeLettering as removeLetteringDoc, setClip, setDarkVariant, setFit, setLettering,
+  addBackgroundSample as addBackgroundSampleDoc, isBackground, removeLettering as removeLetteringDoc, setClip, setDarkVariant, setFit, setLettering,
   setLetteringOptions as setLetteringOptionsDoc, setPlacement, setTypeface as setTypefaceDoc, useAsBackground as useAsBackgroundDoc, useAsDrawing as useAsDrawingDoc, type Placement,
 } from "./board.ts";
 import { BACKGROUND_SAMPLES } from "@scena/scenes";
@@ -23,7 +23,7 @@ import {
   setTiming, writeFrames, type Timing,
 } from "./frames.ts";
 import { blankDocs, store } from "./store.ts";
-import { announce, askFramesChoice, askReplace, toast } from "./ui.ts";
+import { announce, askFramesChoice, askReplace, closePicker, toast } from "./ui.ts";
 import { clone, download, kb, prettyName } from "./util.ts";
 
 const st = () => store.getSnapshot();
@@ -154,12 +154,8 @@ export function startBlank(): void {
   toast("Started over with an empty canvas.");
 }
 
-/** Whether opening another scene would replace something: drawings, a background, lettering, or words typed on the page. */
-function hasWork(): boolean {
-  const { scene, page } = st();
-  return scene.layers.some((l) => l.type !== "background") || backgrounds(scene).length > 0 || !!scene.header?.lettering
-    || JSON.stringify(page) !== JSON.stringify(blankPage(scene));
-}
+/** Whether opening another scene would replace something of the user's (model.ts, hasWork). */
+const hasWork = (): boolean => hasWorkDoc(st().scene, st().page);
 
 /**
  * Opening a scene replaces the one on the canvas, and autosave follows within a moment, so
@@ -173,13 +169,20 @@ export async function openDesk(o: { ask?: boolean } = {}): Promise<void> {
   toast("Opened Pia's desk. It is the same scene format your drawings use.");
 }
 
-/** The desk as a ready-made scene: the drawings are fixed, and the page is new, to be filled in. */
-export async function openBuiltInDesk(): Promise<void> {
-  if (hasWork() && !(await askReplace("the ready-made desk"))) return;
+/**
+ * A ready-made scene, chosen in the picker: its drawings are fixed, and its page is new, made
+ * from the scene's own wording, to be filled in. It opens in the editor whatever view the
+ * picker was opened from, and the picker closes. Resolves false, with the picker still open,
+ * when there was work on the canvas and the user chose to keep it.
+ */
+export async function openBuiltIn(builtIn: SceneDocument): Promise<boolean> {
+  if (hasWork() && !(await askReplace(builtIn.name))) return false;
   store.checkpoint();
-  store.change(() => ({ ...builtInDeskDocs(), sel: null, stash: {} }), { noHistory: true });
-  store.set({ playFrames: true, frameAt: 0 });
-  toast("Opened the desk as a ready-made scene. Choose a drawing to give it your link.");
+  store.change(() => ({ ...builtInDocs(builtIn), sel: null, stash: {} }), { noHistory: true });
+  store.set({ view: "edit", tab: "layers", playFrames: true, frameAt: 0 });
+  closePicker();
+  toast(`Opened ${builtIn.name}. Choose a drawing to give it your link.`);
+  return true;
 }
 
 /** True, with a word to the user, when the open scene is built-in and so takes no drawings. */

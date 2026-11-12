@@ -1,8 +1,9 @@
 import { BookOpen, Check, Download, Ellipsis, FileWarning, Import, LayoutTemplate, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ThemeMode } from "@scena/scene";
 import { store, useStudio, type StudioState } from "../store.ts";
 import { isBuiltIn } from "../model.ts";
+import { openPicker } from "../ui.ts";
 import * as actions from "../actions.ts";
 import { BudgetPill } from "./BudgetPopover.tsx";
 import { Button, IconButton, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Segmented, Tip } from "./ui.tsx";
@@ -53,6 +54,7 @@ export function SceneNameInput({ className, id }: { className: string; id?: stri
 
 export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: () => void; onImport: () => void; onReset: () => void; onSetAside: () => void }) {
   const { view, canUndo, canRedo, saveStatus, setAside, scene, phone, page } = useStudio();
+  const more = useRef<HTMLButtonElement>(null);
   return (
     <header className="bar">
       <div className="bar-start">
@@ -94,12 +96,14 @@ export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: 
         <Menu>
           <Tip label="More">
             <MenuTrigger asChild>
-              <button type="button" className="icon-btn" aria-label="More" data-ui="more"><Ellipsis aria-hidden="true" strokeWidth={1.75} /></button>
+              <button type="button" className="icon-btn" aria-label="More" data-ui="more" ref={more}><Ellipsis aria-hidden="true" strokeWidth={1.75} /></button>
             </MenuTrigger>
           </Tip>
           <MenuContent align="end">
             <MenuItem icon={Import} onSelect={onImport} data-ui="menu-import">Import scene or page…</MenuItem>
-            <MenuItem icon={LayoutTemplate} onSelect={() => void actions.openBuiltInDesk()} data-ui="menu-builtin">Fill in a ready-made scene: the desk</MenuItem>
+            {/* The menu hands the focus back to its button a moment after the picker has opened, which is too
+                late: the open picker holds it. So the picker is told where the focus goes when it closes. */}
+            <MenuItem icon={LayoutTemplate} onSelect={() => openPicker(undefined, more.current)} data-ui="menu-scenes">Choose a ready-made scene…</MenuItem>
             <MenuItem icon={BookOpen} onSelect={() => void actions.openDesk()} data-ui="menu-desk">Open Pia's finished desk</MenuItem>
             {setAside ? <MenuItem icon={FileWarning} onSelect={onSetAside} data-ui="menu-aside">Saved work that did not open…</MenuItem> : null}
             <MenuSeparator />

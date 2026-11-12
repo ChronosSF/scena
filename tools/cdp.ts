@@ -30,10 +30,16 @@ export interface Page {
   goto: (url: string, waitMs?: number) => Promise<void>;
   eval: <T = Json>(expression: string, contextId?: number) => Promise<T>;
   screenshot: () => Promise<Buffer>;
-  /** Evaluate in the most recently attached child frame (out-of-process iframes, such as sandboxed srcdoc frames). */
-  frameEval: <T = Json>(expression: string) => Promise<T>;
-  /** Send a command to the most recently attached child frame (emulation does not reach out-of-process frames). */
-  frameSend: (method: string, params?: Json) => Promise<Json>;
+  /**
+   * Evaluate in a child frame (out-of-process iframes, such as sandboxed srcdoc frames): the
+   * most recently attached one, or the one at `index`, counting the frames still attached in
+   * the order they appeared.
+   */
+  frameEval: <T = Json>(expression: string, index?: number) => Promise<T>;
+  /** Send a command to a child frame, chosen as for frameEval (emulation does not reach out-of-process frames). */
+  frameSend: (method: string, params?: Json, index?: number) => Promise<Json>;
+  /** How many child frames are attached now. A frame that has gone (a closed dialog, a view left) is not counted. */
+  frameCount: () => number;
   click: (x: number, y: number) => Promise<void>;
   drag: (from: [number, number], to: [number, number], steps?: number) => Promise<void>;
   key: (key: string, code?: string) => Promise<void>;
@@ -99,7 +105,16 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
         void send("Runtime.enable", {}, msg.params.sessionId);
         void send("Runtime.runIfWaitingForDebugger", {}, msg.params.sessionId);
       }
+      if (msg.method === "Target.detachedFromTarget" && msg.sessionId === sessionId) {
+        const at = frames.indexOf(msg.params.sessionId);
+        if (at >= 0) frames.splice(at, 1);
+      }
     });
+    const frame = (index = -1): string => {
+      const fs = frames.at(index);
+      if (!fs) throw new Error(index === -1 ? "No child frame is attached." : `No child frame at ${index}: ${frames.length} attached.`);
+      return fs;
+    };
     await s("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
     const logs: string[] = [];
     listeners.push((msg) => {
@@ -128,18 +143,13 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
         if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
         return r.result.value;
       },
-      async frameEval(expression) {
-        const fs = frames.at(-1);
-        if (!fs) throw new Error("No child frame is attached.");
-        const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, fs);
+      async frameEval(expression, index) {
+        const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, frame(index));
         if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
         return r.result.value;
       },
-      async frameSend(method, params = {}) {
-        const fs = frames.at(-1);
-        if (!fs) throw new Error("No child frame is attached.");
-        return send(method, params, fs);
-      },
+      frameSend: (method, params = {}, index) => send(method, params, frame(index)),
+      frameCount: () => frames.length,
       async click(x, y) {
         await mouse("mouseMoved", x, y);
         await mouse("mousePressed", x, y, { clickCount: 1, buttons: 1 });

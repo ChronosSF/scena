@@ -235,7 +235,10 @@ describe("rendering features", () => {
       expect(p.svg).toContain(scope === "scene" ? `<filter id="${safe}boil"` : `<filter id="${safe}b-cat"`);
       expect(p.panel).toContain(`id="${safe}hint"`);
       expect(p.list).toContain(`id="${safe}links-h"`);
+      // the caller is told, because the ids are no longer the ones it asked for
+      expect(p.warnings.filter((w) => w.startsWith("idPrefix "))).toEqual([`idPrefix ${JSON.stringify(hostile)} was written as "${safe}": use letters, digits, - and _ only`]);
     }
+    expect(renderParts(desk, pia, { idPrefix: "ed-" }).warnings).toEqual(renderParts(desk, pia).warnings);
   });
 
   test("the presenter motion override reaches the runtime data and CSS only when asked", () => {

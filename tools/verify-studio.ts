@@ -460,6 +460,122 @@ else {
   check("markup injected into the studio cannot run script", probe.ran === false && probe.blocked.startsWith("script-src"), probe);
 }
 
+// Links-only mode (issue 13): a built-in scene is filled in, not designed. The canvas only
+// selects; the drawings cannot be changed by mouse, keyboard, a dropped file or code; and
+// what is typed in a link's form reaches the page.
+await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+await sleep(300);
+await clickOn('[data-ui="more"]');
+await clickOn('[data-ui="menu-builtin"]');
+await sleep(400);
+const sceneJson = () => page.eval<string>(`JSON.stringify(sceneStudio.store.getSnapshot().scene)`);
+const builtIn0 = await sceneJson();
+const mode = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); return {
+  license: s.scene.license, panel: document.getElementById("panel-layers").getAttribute("aria-label"),
+  rows: [...document.querySelectorAll("[data-link-row]")].map((r) => r.getAttribute("data-link-row")).join(","),
+  upload: !!document.querySelector('[data-ui="upload"], [data-ui="drop"], #file'), nameField: !!document.querySelector(".name-input"),
+  editorMarkup: document.querySelectorAll("#stage [data-layer]").length, objects: document.querySelectorAll("#stage g[data-k]").length,
+  urls: Object.values(s.page.links).map((l) => l.url).join(""), errs: [...sceneStudio.validateScene(s.scene), ...sceneStudio.validatePage(s.page, s.scene)],
+}; })()`);
+check("a ready-made scene opens in the links-only mode, with a new page to fill in",
+  mode.license === "builtin" && mode.panel === "Links" && mode.rows === "portfolio,shop,commissions,social,newsletter" && !mode.upload && !mode.nameField
+  && mode.editorMarkup === 0 && mode.objects === 5 && mode.urls === "" && mode.errs.length === 0, mode);
+
+const catAt = await center(page, '#stage g[data-k="newsletter"]');
+await page.drag(catAt!, [catAt![0] + 70, catAt![1] - 50]);
+await sleep(300);
+const pressed = await page.eval<any>(`({ sel: sceneStudio.store.getSnapshot().sel, inspector: document.getElementById("inspector").getAttribute("aria-label"),
+  title: (document.querySelector('[data-ui="slot-title"]') || {}).textContent, handles: document.querySelectorAll("#stage .ov *, #stage .ov-tools").length })`);
+check("a drag on the canvas selects the drawing and moves nothing", (await sceneJson()) === builtIn0 && pressed.sel === "cat" && pressed.inspector === "Link settings" && pressed.title === "Cat" && pressed.handles === 0, pressed);
+
+await page.eval(`document.querySelector('#stage g[data-k="newsletter"]').focus()`);
+for (const [key, code] of [["ArrowRight", "ArrowRight"], ["]", "BracketRight"], ["+", "Equal"], ["Delete", "Delete"], ["PageUp", "PageUp"]]) await page.key(key!, code!);
+await sleep(200);
+check("the keys that move, turn, resize, delete and reorder do nothing", (await sceneJson()) === builtIn0, { layers: (await state()).layers.length });
+
+const toastFrom = await page.eval<string>(`(document.getElementById("toast") || {}).textContent || ""`);
+const lockedDrop = { items: [], files: [fixture("plant-procreate.png")], dragOperationsMask: 1 };
+for (const type of ["dragEnter", "dragOver", "drop"]) await page.send("Input.dispatchDragEvent", { type, x: dropAt[0], y: dropAt[1], data: lockedDrop });
+await sleep(600);
+const refusal = await page.eval<any>(`({ toast: (document.getElementById("toast") || {}).textContent || "", veil: document.querySelector(".app").classList.contains("dropping") })`);
+check("a dropped file is refused, with the reason", (await sceneJson()) === builtIn0 && refusal.toast !== toastFrom && /ready-made scene/.test(refusal.toast) && refusal.veil === false, refusal);
+
+const forced = await page.eval<any>(`(() => {
+  const ok = sceneStudio.store.change((s) => { s.scene.layers.pop(); s.scene.name = "Mine"; s.page.profile.displayName = "Changed with it"; });
+  const s = sceneStudio.store.getSnapshot();
+  return { ok, name: s.page.profile.displayName };
+})()`);
+check("a change to the scene made in code is undone as a whole", forced.ok === false && forced.name !== "Changed with it" && (await sceneJson()) === builtIn0, forced);
+
+// the link's form: what is typed reaches the canvas and the preview, within the limits
+const typeInto = async (selector: string, text: string) => {
+  await clickOn(selector);
+  await keyWith("a", "KeyA", CTRL, 65);
+  if (text) await page.send("Input.insertText", { text }); else await keyWith("Backspace", "Backspace", 0, 8); // the key code is what deletes
+  await sleep(250);
+};
+await typeInto('#inspector [name="link-title"]', "Letters from my desk");
+await typeInto('#inspector [name="url"]', "example.com/letter");
+const typed = await page.eval<any>(`(() => { const l = sceneStudio.store.getSnapshot().page.links.newsletter; const f = (n) => document.querySelector('#inspector [name="' + n + '"]'); return {
+  title: l.title, url: l.url, panel: (document.querySelector("#stage #ed-tt") || {}).textContent, list: (document.querySelector('#stage .st-list a[data-k="newsletter"]') || {}).textContent,
+  note: [...document.querySelectorAll("#inspector .field-msg")].map((m) => m.textContent).filter(Boolean).join(" | "),
+  count: f("link-title").closest(".field").querySelector(".count").textContent,
+  limits: [f("link-title").maxLength, f("link-description").maxLength, f("link-cta").maxLength].join(","), row: document.querySelector('[data-link-row="newsletter"] .layer-note'),
+}; })()`);
+check("typing in a link's form updates the page, with counts, limits and the address it will open",
+  typed.title === "Letters from my desk" && typed.url === "example.com/letter" && typed.panel === "Letters from my desk" && /Letters from my desk/.test(typed.list || "")
+  && /Will open https:\/\/example\.com\/letter/.test(typed.note) && typed.count === "20/60" && typed.limits === "60,140,40" && typed.row === null, typed);
+
+await typeInto('#inspector [name="link-title"]', "");
+const emptied = await page.eval<any>(`({ title: sceneStudio.store.getSnapshot().page.links.newsletter.title, field: document.querySelector('#inspector [name="link-title"]').value,
+  msg: document.querySelector('#inspector [name="link-title"]').closest(".field").querySelector(".field-msg").textContent,
+  errs: sceneStudio.validatePage(sceneStudio.store.getSnapshot().page, sceneStudio.store.getSnapshot().scene) })`);
+check("an emptied title is not stored: the page keeps the last one and the field says why", emptied.title === "Letters from my desk" && emptied.field === "" && /needs a title/.test(emptied.msg) && emptied.errs.length === 0, emptied);
+await typeInto('#inspector [name="link-title"]', "Letters from my desk");
+
+await clickOn('[data-ui="view-preview"]');
+await sleep(500);
+const inPreview = await page.eval<boolean>(`document.getElementById("preview").srcdoc.includes("Letters from my desk") && document.getElementById("preview").srcdoc.includes("https://example.com/letter")`);
+await clickOn('[data-ui="view-edit"]');
+await sleep(300);
+check("the preview shows what was typed", inPreview === true);
+
+await clickOn("#slot-on");
+const off = await page.eval<any>(`({ enabled: sceneStudio.store.getSnapshot().page.links.newsletter.enabled, drawn: !!document.querySelector('#stage g[data-k="newsletter"]'),
+  listed: !!document.querySelector('#stage .st-list a[data-k="newsletter"]'), row: (document.querySelector('[data-link-row="newsletter"] .layer-note') || {}).textContent })`);
+await clickOn("#slot-on");
+const on = await page.eval<any>(`({ enabled: sceneStudio.store.getSnapshot().page.links.newsletter.enabled, drawn: !!document.querySelector('#stage g[data-k="newsletter"]') })`);
+check("turning a link off takes its drawing and its list entry off the page, and on brings them back",
+  off.enabled === false && off.drawn === false && off.listed === false && off.row === "Off" && on.enabled === true && on.drawn === true, { off, on });
+
+await clickOn('[data-link-row="commissions"] .layer-main');
+await clickOn('#inspector input[type="radio"][value="waitlist"]');
+await typeInto('#inspector [name="status-note"]', "Booking for spring.");
+const commission = await page.eval<any>(`(() => { const l = sceneStudio.store.getSnapshot().page.links.commissions; return { status: l.status, note: l.statusNote, shown: (document.querySelector("#stage #ed-ts") || {}).textContent }; })()`);
+check("a commission slot takes a status and a note", commission.status === "waitlist" && commission.note === "Booking for spring." && /Booking for spring\./.test(commission.shown || ""), commission);
+writeFileSync(join(out, "studio-links.png"), await page.screenshot());
+
+await page.eval(`sceneStudio.store.select(null)`);
+await sleep(200);
+await clickOn('#inspector input[name="palette"][value="violet-lime"]');
+const pageForm = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); const f = (n) => document.querySelector('#inspector [name="' + n + '"]'); return {
+  sections: [...document.querySelectorAll("#inspector .section-title")].map((t) => t.textContent).join(","), palettes: document.querySelectorAll('#inspector input[name="palette"]').length,
+  palette: s.page.theme.palette, limits: [f("display-name").maxLength, f("bio").maxLength, f("list-heading").maxLength].join(","),
+  errs: [...sceneStudio.validateScene(s.scene), ...sceneStudio.validatePage(s.page, s.scene)],
+}; })()`);
+check("the page keeps its words, palette and motion, and nothing that belongs to the scene",
+  pageForm.sections === "Profile,Palette,Appearance,Words,Scene" && pageForm.palettes === 5 && pageForm.palette === "violet-lime" && pageForm.limits === "40,120,60" && pageForm.errs.length === 0, pageForm);
+check("after all of it the scene is byte for byte what it was", (await sceneJson()) === builtIn0);
+
+await page.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
+await sleep(500);
+await clickOn("#tab-layers");
+await clickOn('[data-link-row="shop"] .layer-main');
+const phone = await page.eval<any>(`({ scroll: document.documentElement.scrollWidth, tabs: [...document.querySelectorAll(".tabs .tab")].map((t) => t.textContent).join(","),
+  form: document.getElementById("inspector").hidden === false && !!document.querySelector('#inspector [name="link-title"]'), title: (document.querySelector('[data-ui="slot-title"]') || {}).textContent })`);
+check("on a phone a link's row opens its form, with no sideways scrolling", phone.scroll <= 375 && phone.tabs === "Links,Link" && phone.form === true && phone.title === "Framed print", phone);
+writeFileSync(join(out, "studio-links-375.png"), await page.screenshot());
+
 // Saved work this build cannot open (a check got stricter since it was saved) is set aside,
 // not dropped: the studio starts fresh, says so at once, and autosave does not write over it.
 await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });

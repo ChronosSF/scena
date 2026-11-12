@@ -142,7 +142,8 @@ the preview only, never to the export.
   - the autosave indicator, a quiet check, or a warning when the work is too big for browser
     storage;
   - Import, and Export (the one primary button);
-  - an overflow menu with Import, "Open Pia's finished desk" and "Start over…". When saved work
+  - an overflow menu with Import, "Fill in a ready-made scene: the desk", "Open Pia's finished
+    desk" and "Start over…". When saved work
     could not be opened it also has "Saved work that did not open…": a dialog that gives the
     reasons, offers the work as files in the export dialog's rows, and can discard it. The same
     dialog opens by itself once, on the load where the work was set aside.
@@ -203,7 +204,34 @@ the preview only, never to the export.
   - Palette swatches, light or dark, motion, canvas surface and size, the words around the
     drawing, and the keyboard shortcuts.
 - **Empty state.** A card centred on the empty mat: "Add your first drawing", with Upload and Add
-  a sample. It is chrome, so it sits outside the page's CSS and does not scale with the zoom.
+  a sample, and under them one quiet line for the other way to a page: "Fill in a ready-made
+  scene". It is chrome, so it sits outside the page's CSS and does not scale with the zoom.
+- **Links-only mode** (a scene with `license: "builtin"`; the plan's phase 1). The scene is
+  filled in, not designed, so the tool takes away everything that changes a drawing and keeps
+  the same places for what is left:
+  - The left panel is **Links**, with a "Ready-made" badge: the scene's slots in the order of
+    the plain list, each with its drawing's thumbnail, the eye toggle where the scene lets the
+    link be turned off, and a short note for what is still to do ("No address", "Off"). No
+    upload, samples, reordering or delete.
+  - The canvas is drawn as the published page, not as an editor canvas: the tap areas are the
+    real ones and decorations cannot be picked. A press or Enter on an object selects it, and
+    the page's own ring and panel show the selection. There are no handles and no toolbar, and
+    the keys that move, turn, resize, delete or reorder do nothing. A dropped file is refused
+    with a toast that says why.
+  - The inspector with an object selected is the **link's form**: the slot's label and kind as
+    a heading (not a field), an on/off switch in the section head, then title, description,
+    button text, URL and the plain-list wording, and the commission status and note where the
+    slot has them. With nothing selected it is the Page without Lettering, Typeface, Canvas and
+    Keyboard, with the palettes the scene offers, and a closing "Scene" note that says whose
+    drawing it is and what can be changed.
+  - The scene name in the bar is text, not a field.
+  - On a phone the tabs read Links, and Link or Page, and a link's row opens its form.
+
+  The mode is entered from the More menu ("Fill in a ready-made scene: the desk") or the empty
+  state. It opens the desk with a new page made from the slots' own wording, not Pia's page.
+- **Fields that must not be empty.** A link that is on needs a title and a page needs a name.
+  Emptying either keeps the last value in the document and says so under the field, as the page
+  address already did, so the saved work always opens.
 - **Frames** ([ADR 0002](../adr/0002-frame-animation.md)). A collapsible section under Placement.
   - Before a drawing has frames, the section shows one line of explanation and a dashed "Add
     frames" target. Choose files, or drop them on the section.

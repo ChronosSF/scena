@@ -3,7 +3,7 @@
 // DOM, so the same operations could run on a server.
 
 import type {
-  ArtLayer, Asset, Hotspot, Layer, LinkContent, ObjectLayer, PageDocument, Part, ProceduralAsset, SceneDocument, Slot, SlotKind, Transform,
+  ArtLayer, Asset, Hotspot, Layer, LinkContent, ObjectLayer, PageDocument, Palette, Part, ProceduralAsset, SceneDocument, Slot, SlotKind, Transform,
 } from "@scena/scene";
 import { MAT_SHAPE, isUploadedBackground, partAssets } from "@scena/scene";
 import { layerBBox, translateForCenter, type Point } from "@scena/renderer";
@@ -92,6 +92,54 @@ export function deskDocs(): { scene: SceneDocument; page: PageDocument } {
   scene.license = "private";
   return { scene, page: clone(PIA_PAGE) };
 }
+
+/**
+ * A built-in scene is filled in, not designed: its page owner sets the links, the words and
+ * the colours, and the drawings stay as they were made (development plan, phase 1). The
+ * studio shows such a scene in its links-only mode, and the store refuses changes to it.
+ */
+export const isBuiltIn = (scene: SceneDocument): boolean => scene.license === "builtin";
+
+/** A new page on a scene: every slot starts with the wording its author gave it, and no address. */
+export function pageFor(scene: SceneDocument): PageDocument {
+  const page = blankPage(scene);
+  page.fallbackList.heading = scene.fallback.heading;
+  delete page.copy; // the scene's own prompt and drawing label apply until the owner writes theirs
+  for (const s of scene.slots) {
+    page.links[s.id] = {
+      enabled: true, title: s.defaults.title, description: s.defaults.description, cta: s.defaults.cta, url: "",
+      ...(s.statusAware ? { status: "open" as const, statusNote: "" } : {}),
+    };
+  }
+  return page;
+}
+
+/** The desk as the built-in scene it ships as, with a new page to fill in. */
+export function builtInDeskDocs(): { scene: SceneDocument; page: PageDocument } {
+  const scene = clone(DESK_SCENE);
+  return { scene, page: pageFor(scene) };
+}
+
+/** A scene's slots with the drawings that stand for them, in the order of the plain list. */
+export function slotRows(scene: SceneDocument): { slot: Slot; layer: ObjectLayer }[] {
+  const order = [...scene.fallback.order, ...scene.slots.map((s) => s.id).filter((id) => !scene.fallback.order.includes(id))];
+  const rows: { slot: Slot; layer: ObjectLayer }[] = [];
+  for (const id of order) {
+    const slot = scene.slots.find((s) => s.id === id);
+    const layer = slot && scene.layers.find((l): l is ObjectLayer => l.type === "object" && l.slotId === slot.id);
+    if (slot && layer) rows.push({ slot, layer });
+  }
+  return rows;
+}
+
+/** The palettes a page on this scene may pick from. */
+export const offeredPalettes = (scene: SceneDocument): Palette[] => {
+  const ids = scene.editable.palettes;
+  return ids === "all" ? scene.theme.palettes : scene.theme.palettes.filter((p) => ids.includes(p.id));
+};
+
+/** Whether a page may turn this slot off: the scene has to allow it, and the slot has to be optional. */
+export const canTurnOff = (scene: SceneDocument, slot: Slot | undefined): boolean => !!slot && scene.editable.allowDisableSlots && slot.optional;
 
 const taken = (scene: SceneDocument) => new Set([...scene.layers.map((l) => l.id), ...Object.keys(scene.assets), ...scene.slots.map((s) => s.id)]);
 export function freshId(scene: SceneDocument, base: string): string {
@@ -276,6 +324,8 @@ export function toggleHidden(scene: SceneDocument, page: PageDocument, stash: Re
   if (layer.type === "object") {
     const link = page.links[layer.slotId];
     if (!link) return false;
+    // turning a link back on is always allowed; turning it off is the scene's to allow
+    if (link.enabled !== false && !canTurnOff(scene, slotOf(scene, layer))) return false;
     link.enabled = link.enabled === false;
     return !link.enabled;
   }

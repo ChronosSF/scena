@@ -4,8 +4,8 @@
 import { documentKind, isSafeRasterUrl, migrate, validatePage, validateScene, type Layer, type PageDocument, type Part, type SceneDocument, type SlotKind } from "@scena/scene";
 import { layerCenter, renderPage, scaleOf, translateForCenter, type Point } from "@scena/renderer";
 import {
-  CANVASES, addDrawing, addSample as addSampleDoc, deskDocs, freshId, getLayer, makeClickable, makeDecor, removeLayer,
-  reorder as reorderDoc, round, setCanvas as setCanvasDoc, setKind as setKindDoc, setSurface as setSurfaceDoc, type Surface,
+  CANVASES, addDrawing, addSample as addSampleDoc, builtInDeskDocs, canTurnOff, deskDocs, freshId, getLayer, isBuiltIn, makeClickable, makeDecor, offeredPalettes, removeLayer,
+  reorder as reorderDoc, round, setCanvas as setCanvasDoc, setKind as setKindDoc, setSurface as setSurfaceDoc, slotOf, type Surface,
   moveDrawing as moveDrawingDoc, toggleHidden as toggleHiddenDoc,
 } from "./model.ts";
 import { ingestSvg, resanitizeFragment } from "./ingest/svg.ts";
@@ -23,7 +23,7 @@ import {
 } from "./frames.ts";
 import { blankDocs, store } from "./store.ts";
 import { announce, askFramesChoice, toast } from "./ui.ts";
-import { download, kb, prettyName } from "./util.ts";
+import { clone, download, kb, prettyName } from "./util.ts";
 
 const st = () => store.getSnapshot();
 
@@ -75,10 +75,15 @@ export function reorder(id: string, dir: 1 | -1): void {
 }
 
 export function toggleHidden(id: string): void {
-  const layer = getLayer(st().scene, id);
+  const { scene, page } = st();
+  const layer = getLayer(scene, id);
   if (!layer) return;
+  if (layer.type === "object" && page.links[layer.slotId]?.enabled !== false && !canTurnOff(scene, slotOf(scene, layer))) {
+    toast(`${layer.name || id} is part of this scene and stays on the page.`, "error");
+    return;
+  }
   let hidden = false;
-  store.change(({ scene, page, stash }) => { hidden = toggleHiddenDoc(scene, page, stash, id); });
+  store.change((s) => { hidden = toggleHiddenDoc(s.scene, s.page, s.stash, id); });
   announce(`${layer.name || id} ${hidden ? "hidden from the page" : "shown on the page"}.`);
 }
 
@@ -153,6 +158,22 @@ export function openDesk(): void {
   toast("Opened Pia's desk. It is the same scene format your drawings use.");
 }
 
+/** The desk as a ready-made scene: the drawings are fixed, and the page is new, to be filled in. */
+export function openBuiltInDesk(): void {
+  store.checkpoint();
+  store.change(() => ({ ...builtInDeskDocs(), sel: null, stash: {} }), { noHistory: true });
+  store.set({ playFrames: true, frameAt: 0 });
+  toast("Opened the desk as a ready-made scene. Choose a drawing to give it your link.");
+}
+
+const FIXED = "This is a ready-made scene: its drawings are fixed. Start over with an empty canvas to use your own.";
+/** True, with a word to the user, when the open scene is built-in and so takes no drawings. */
+export function refusesDrawings(): boolean {
+  if (!isBuiltIn(st().scene)) return false;
+  toast(FIXED, "error");
+  return true;
+}
+
 // ------------------------------------------------------------------ files
 
 /**
@@ -161,6 +182,7 @@ export function openDesk(): void {
  * animated PNG or WebP on its own becomes a frame-animated drawing.
  */
 export async function addFiles(files: File[], at?: Point | null): Promise<void> {
+  if (refusesDrawings()) return;
   const kinds = await Promise.all(files.map(async (f) => {
     const bytes = new Uint8Array(await f.arrayBuffer());
     const t = sniff(bytes);
@@ -496,16 +518,23 @@ export async function importFiles(files: File[]): Promise<string[]> {
   if (page) problems.push(...validatePage(page).map((e) => `page: ${e}`));
   if (!scene && !page && !problems.length) problems.push("No files were read.");
   if (problems.length) return problems;
-  store.change((s) => {
-    const nextScene = scene || s.scene;
-    const nextPage = page || s.page;
-    if (scene && !page) {
-      for (const sl of scene.slots) if (!nextPage.links[sl.id]) nextPage.links[sl.id] = { enabled: true, title: sl.defaults.title, description: sl.defaults.description, cta: sl.defaults.cta, url: "" };
+  // The pair is put together first and checked as a pair, so nothing changes unless it holds.
+  const nextScene = scene || st().scene;
+  const nextPage = page || clone(st().page);
+  if (scene && !page) {
+    // the page in hand moves to the new scene: it gets the scene's slots, and keeps to what the scene allows
+    for (const sl of scene.slots) {
+      const l = nextPage.links[sl.id];
+      if (!l) nextPage.links[sl.id] = { enabled: true, title: sl.defaults.title, description: sl.defaults.description, cta: sl.defaults.cta, url: "" };
+      else if (l.enabled === false && !canTurnOff(scene, sl)) l.enabled = true;
     }
-    if (!nextScene.theme.palettes.some((p) => p.id === nextPage.theme.palette)) nextPage.theme.palette = nextScene.theme.defaultPalette;
-    nextPage.scene = { id: nextScene.id, version: nextScene.version };
-    return { scene: nextScene, page: nextPage, sel: null, stash: {} };
-  });
+  }
+  const offered = offeredPalettes(nextScene);
+  if (!offered.some((p) => p.id === nextPage.theme.palette)) nextPage.theme.palette = (offered.find((p) => p.id === nextScene.theme.defaultPalette) || offered[0] || nextScene.theme.palettes[0]!).id;
+  nextPage.scene = { id: nextScene.id, version: nextScene.version };
+  const mismatch = validatePage(nextPage, nextScene).map((e) => `page: ${e}`);
+  if (mismatch.length) return mismatch;
+  store.change(() => ({ scene: nextScene, page: nextPage, sel: null, stash: {} }));
   toast(`Imported ${[scene && "scene", page && "page"].filter(Boolean).join(" and ")}.`);
   return [];
 }

@@ -6,7 +6,7 @@
 
 import { useSyncExternalStore } from "react";
 import { migrate, validatePage, validateScene, type PageDocument, type SceneDocument } from "@scena/scene";
-import { blankPage, blankScene, getLayer, type Stash } from "./model.ts";
+import { blankPage, blankScene, getLayer, isBuiltIn, type Stash } from "./model.ts";
 
 export type View = "edit" | "preview";
 export type Zoom = "fit" | number;
@@ -179,14 +179,26 @@ class StudioStore {
    * Mutate the documents. `fn` may change scene, page and stash in place, or return
    * replacements (start over, import).
    */
-  change(fn: (s: StudioState) => Partial<Docs> | void, opts: ChangeOptions = {}): void {
+  change(fn: (s: StudioState) => Partial<Docs> | void, opts: ChangeOptions = {}): boolean {
     if (!opts.noHistory) {
       if (Date.now() - this.lastEdit > BURST_MS) this.checkpoint();
       this.lastEdit = Date.now();
     }
+    // A built-in scene is filled in through its page; the scene itself does not change. The
+    // interface offers no way to change it, and this is the rule behind the interface: a change
+    // that touched the scene is undone as a whole, page and all, so nothing is half applied.
+    // Replacing the documents (start over, open, import) is not an edit and goes through.
+    const { scene, page, stash } = this.state;
+    const held = isBuiltIn(scene) ? { scene: JSON.stringify(scene), rest: JSON.stringify({ page, stash }) } : null;
     const patch = fn(this.state) || {};
+    if (held && !patch.scene && JSON.stringify(scene) !== held.scene) {
+      console.warn("A built-in scene's drawings are fixed; the change was not applied.");
+      this.emit({ scene: JSON.parse(held.scene) as SceneDocument, ...(JSON.parse(held.rest) as Pick<Docs, "page" | "stash">) });
+      return false;
+    }
     this.emit(patch);
     this.save();
+    return true;
   }
 
   /** UI-only state: no undo step, no autosave. */

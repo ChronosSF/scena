@@ -1,7 +1,8 @@
-import { BookOpen, Check, Download, Ellipsis, FileWarning, Import, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
+import { BookOpen, Check, Download, Ellipsis, FileWarning, Import, LayoutTemplate, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ThemeMode } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
+import { isBuiltIn } from "../model.ts";
 import * as actions from "../actions.ts";
 import { BudgetPill } from "./BudgetPopover.tsx";
 import { Button, IconButton, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Segmented, Tip } from "./ui.tsx";
@@ -51,7 +52,8 @@ export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: 
       <div className="bar-start">
         <div className="brand"><BrandMark /><span className="hide-narrow">Studio</span></div>
         <span className="crumb-sep hide-narrow" aria-hidden="true">/</span>
-        <SceneNameInput className="name-input hide-narrow" />
+        {/* a built-in scene keeps its name */}
+        {isBuiltIn(scene) ? <span className="scene-name hide-narrow" data-ui="scene-name">{scene.name}</span> : <SceneNameInput className="name-input hide-narrow" />}
         <span className="bar-divider hide-narrow" aria-hidden="true" />
         <IconButton icon={Undo2} label="Undo" shortcut={`${MOD}Z`} disabled={!canUndo} onClick={actions.undo} data-ui="undo" />
         <IconButton icon={Redo2} label="Redo" shortcut={`${MOD}Shift+Z`} disabled={!canRedo} onClick={actions.redo} data-ui="redo" />
@@ -91,6 +93,7 @@ export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: 
           </Tip>
           <MenuContent align="end">
             <MenuItem icon={Import} onSelect={onImport} data-ui="menu-import">Import scene or page…</MenuItem>
+            <MenuItem icon={LayoutTemplate} onSelect={actions.openBuiltInDesk} data-ui="menu-builtin">Fill in a ready-made scene: the desk</MenuItem>
             <MenuItem icon={BookOpen} onSelect={actions.openDesk} data-ui="menu-desk">Open Pia's finished desk</MenuItem>
             {setAside ? <MenuItem icon={FileWarning} onSelect={onSetAside} data-ui="menu-aside">Saved work that did not open…</MenuItem> : null}
             <MenuSeparator />

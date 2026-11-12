@@ -385,7 +385,18 @@ export function validatePage(doc: unknown, scene?: unknown): string[] {
   if (isObj(scene) && isObj(doc.scene) && isObj(doc.theme)) {
     v.need(doc.scene.id === scene.id, "scene.id", `page is bound to "${doc.scene.id}", scene is "${scene.id}"`);
     const ids = ((scene.theme?.palettes || []) as Loose[]).map((p) => p.id);
-    v.need(ids.includes(doc.theme.palette), "theme.palette", `"${doc.theme.palette}" is not a palette of scene "${scene.id}"`);
+    if (v.need(ids.includes(doc.theme.palette), "theme.palette", `"${doc.theme.palette}" is not a palette of scene "${scene.id}"`)) {
+      // A page changes a scene only as far as the scene's `editable` says.
+      const offered = scene.editable?.palettes;
+      if (Array.isArray(offered)) v.need(offered.includes(doc.theme.palette), "theme.palette", `scene "${scene.id}" does not offer "${doc.theme.palette}" to its pages`);
+    }
+    if (isObj(doc.links)) {
+      for (const s of (Array.isArray(scene.slots) ? scene.slots : []) as Loose[]) {
+        const l = isObj(s) && isStr(s.id) ? doc.links[s.id] : undefined;
+        if (!isObj(l) || l.enabled !== false) continue;
+        v.need(scene.editable?.allowDisableSlots === true && s.optional === true, `links["${s.id}"].enabled`, `scene "${scene.id}" does not let its pages turn "${s.id}" off`);
+      }
+    }
   }
   return errors;
 }

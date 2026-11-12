@@ -12,6 +12,12 @@ import { sha256Hex } from "../util.ts";
 
 export type Sniffed = "png" | "webp" | "jpeg" | "gif" | "svg" | null;
 
+// The start of an SVG file: an optional XML declaration, comments and DOCTYPE, then <svg.
+// A declaration or a comment ends at its first terminator and the pattern cannot look past
+// it. With a lazy [\s\S]*? there instead, a file of repeated "--><!--" could be split in a
+// number of ways that doubled with every repetition, and a 200-byte file froze the tab.
+const SVG_HEAD = /^(<\?xml(?:[^?]|\?(?!>))*\?>\s*)?(<!--(?:[^-]|-(?!->))*-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i;
+
 export function sniff(bytes: Uint8Array): Sniffed {
   const b = bytes;
   if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "png";
@@ -20,7 +26,7 @@ export function sniff(bytes: Uint8Array): Sniffed {
   if (b.length > 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "gif";
   // SVG: text that contains an <svg element near the start
   const head = new TextDecoder().decode(b.slice(0, 2048)).trimStart();
-  if (/^(<\?xml[\s\S]*?\?>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(head)) return "svg";
+  if (SVG_HEAD.test(head)) return "svg";
   return null;
 }
 

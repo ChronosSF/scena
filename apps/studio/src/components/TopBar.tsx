@@ -1,4 +1,4 @@
-import { BookOpen, Check, Download, Ellipsis, Import, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
+import { BookOpen, Check, Download, Ellipsis, FileWarning, Import, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ThemeMode } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
@@ -44,8 +44,8 @@ export function SceneNameInput({ className, id }: { className: string; id?: stri
   );
 }
 
-export function TopBar({ onExport, onImport, onReset }: { onExport: () => void; onImport: () => void; onReset: () => void }) {
-  const { view, canUndo, canRedo, saveStatus, scene, phone, page } = useStudio();
+export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: () => void; onImport: () => void; onReset: () => void; onSetAside: () => void }) {
+  const { view, canUndo, canRedo, saveStatus, setAside, scene, phone, page } = useStudio();
   return (
     <header className="bar">
       <div className="bar-start">
@@ -92,6 +92,7 @@ export function TopBar({ onExport, onImport, onReset }: { onExport: () => void; 
           <MenuContent align="end">
             <MenuItem icon={Import} onSelect={onImport} data-ui="menu-import">Import scene or page…</MenuItem>
             <MenuItem icon={BookOpen} onSelect={actions.openDesk} data-ui="menu-desk">Open Pia's finished desk</MenuItem>
+            {setAside ? <MenuItem icon={FileWarning} onSelect={onSetAside} data-ui="menu-aside">Saved work that did not open…</MenuItem> : null}
             <MenuSeparator />
             <MenuItem icon={RotateCcw} onSelect={onReset} danger data-ui="menu-reset">Start over…</MenuItem>
           </MenuContent>

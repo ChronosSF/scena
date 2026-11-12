@@ -221,6 +221,26 @@ describe("rendering features", () => {
     expect(p.svg).not.toContain('class="hits"');
   });
 
+  test("the id prefix reaches the markup with safe characters only", () => {
+    // The studio builds a thumbnail's prefix from a layer id, so the prefix is not trusted either.
+    const hostile = 'th-x"><img src=x onerror=alert(1)>-', safe = "th-x___img_src_x_onerror_alert_1__-";
+    for (const scope of ["object", "scene"] as const) {
+      const scene = clone(desk);
+      scene.effects!.boil!.scope = scope; // scene-wide boil puts a prefixed filter id in every render
+      const p = renderParts(scene, pia, { idPrefix: hostile, selected: "newsletter" });
+      const all = [p.svg, p.header, p.panel, p.list, p.foot].join("\n");
+      expect(all).not.toContain("<img");
+      expect(all).not.toContain("onerror=");
+      expect(all).not.toContain(hostile);
+      expect(p.svg).toContain(scope === "scene" ? `<filter id="${safe}boil"` : `<filter id="${safe}b-cat"`);
+      expect(p.panel).toContain(`id="${safe}hint"`);
+      expect(p.list).toContain(`id="${safe}links-h"`);
+      // the caller is told, because the ids are no longer the ones it asked for
+      expect(p.warnings.filter((w) => w.startsWith("idPrefix "))).toEqual([`idPrefix ${JSON.stringify(hostile)} was written as "${safe}": use letters, digits, - and _ only`]);
+    }
+    expect(renderParts(desk, pia, { idPrefix: "ed-" }).warnings).toEqual(renderParts(desk, pia).warnings);
+  });
+
   test("the presenter motion override reaches the runtime data and CSS only when asked", () => {
     expect(html).not.toContain('"force":1');
     const forced = renderPage(desk, pia, { demo: true, forceMotion: true }).html;

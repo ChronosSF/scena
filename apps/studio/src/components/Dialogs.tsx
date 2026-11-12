@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Copy, Download, FileCode2, FileJson, Film, Upload } from "lucide-react";
 import { renderPage } from "@scena/renderer";
-import { useStudio } from "../store.ts";
+import { store, useStudio } from "../store.ts";
 import * as actions from "../actions.ts";
 import { gzipSize, kb } from "../util.ts";
 import { useUi } from "../ui.ts";
@@ -88,6 +88,50 @@ export function ResetDialog({ open, onClose }: { open: boolean; onClose: () => v
         <span className="spacer" />
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={() => { actions.startBlank(); onClose(); }} data-ui="reset-blank">Empty canvas</Button>
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * Saved work that this version could not open. It is kept in the browser, not deleted
+ * (store.ts, openSaved); this is where the user learns why, gets the files, or lets it go.
+ */
+export function SetAsideDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { setAside } = useStudio();
+  const work = useMemo(() => (open && setAside ? store.setAsideWork() : null), [open, setAside]);
+  const problems = work?.problems || [];
+  const asFiles = !!work && !!work.scene && !!work.page;
+  return (
+    <Dialog open={!!work} onClose={onClose} labelledBy="aside-h">
+      <div className="dlg-body">
+        <h2 className="dlg-title" id="aside-h">Saved work did not open</h2>
+        <p className="dlg-text">This version of the studio could not open the work saved in this browser, so it started with an empty canvas. Nothing was deleted: the saved work is kept here until you discard it. To bring it back, download it, correct it and import it.</p>
+        {problems.length ? (
+          <ul className="errors">
+            {problems.slice(0, 6).map((p, i) => <li key={i}>{p}</li>)}
+            {problems.length > 6 ? <li>…and {problems.length - 6} more</li> : null}
+          </ul>
+        ) : null}
+        <div className="dl-list">
+          <button type="button" className="dl-item" onClick={() => actions.downloadSetAside("scene")} data-ui="aside-scene">
+            <span className="dl-icon"><FileJson aria-hidden="true" strokeWidth={1.75} /></span>
+            <span><span className="dl-title">{asFiles ? "Scene" : "Saved text"}</span><br /><span className="dl-sub">{asFiles ? "set-aside.scene.json · drawings, tap areas, palettes" : "set-aside-work.txt · it does not read as JSON"}</span></span>
+            <Download className="dl-go" aria-hidden="true" strokeWidth={1.75} />
+          </button>
+          {asFiles ? (
+            <button type="button" className="dl-item" onClick={() => actions.downloadSetAside("page")} data-ui="aside-page">
+              <span className="dl-icon"><FileJson aria-hidden="true" strokeWidth={1.75} /></span>
+              <span><span className="dl-title">Page data</span><br /><span className="dl-sub">set-aside.page.json · words and links</span></span>
+              <Download className="dl-go" aria-hidden="true" strokeWidth={1.75} />
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="dlg-foot">
+        <Button variant="ghost" onClick={() => { actions.discardSetAside(); onClose(); }} data-ui="aside-discard">Discard saved work</Button>
+        <span className="spacer" />
+        <Button variant="primary" onClick={onClose} data-ui="aside-close">Close</Button>
       </div>
     </Dialog>
   );

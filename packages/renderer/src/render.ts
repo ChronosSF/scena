@@ -24,7 +24,11 @@ export interface RenderOptions {
   editor?: boolean;
   /** Slot id to render in the selected state, with the panel filled. */
   selected?: string;
-  /** Prefix for element and filter ids (the studio canvas uses "ed-"). */
+  /**
+   * Prefix for element and filter ids (the studio canvas uses "ed-"). Use letters, digits, "-"
+   * and "_" only: any other character is written as "_", with a warning, so the ids in the
+   * markup would no longer be the ones the caller expects, and two prefixes could become one.
+   */
   idPrefix?: string;
   /** Studio: blob: URLs for rasters instead of data: URLs. */
   assetHref?: (asset: Asset) => string;
@@ -390,8 +394,9 @@ function letteredName(ctx: Ctx, name: string): string | null {
  * the exact markup without the document shell or the runtime.
  */
 export function renderParts(scene: SceneDocument, page: PageDocument | undefined, opts: RenderOptions = {}): RenderedParts {
-  const P = opts.idPrefix || "";
+  const P = safeId(opts.idPrefix || ""); // written into id attributes and url(#...) as it is, and callers build it from layer ids
   const ctx: Ctx = { scene, page, opts, P, warnings: [] };
+  if (P !== (opts.idPrefix || "")) ctx.warnings.push(`idPrefix ${JSON.stringify(opts.idPrefix)} was written as "${P}": use letters, digits, - and _ only`);
   const palette = resolvePalette(scene, page);
   const editor = !!opts.editor;
   const boil = scene.effects?.boil;

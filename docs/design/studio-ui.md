@@ -142,7 +142,10 @@ the preview only, never to the export.
   - the autosave indicator, a quiet check, or a warning when the work is too big for browser
     storage;
   - Import, and Export (the one primary button);
-  - an overflow menu with Import, "Open Pia's finished desk" and "Start over…".
+  - an overflow menu with Import, "Open Pia's finished desk" and "Start over…". When saved work
+    could not be opened it also has "Saved work that did not open…": a dialog that gives the
+    reasons, offers the work as files in the export dialog's rows, and can discard it. The same
+    dialog opens by itself once, on the load where the work was set aside.
 - **Layers.** Upload, a Samples menu with thumbnails of Pia's sketches, and a dashed drop target.
   Under them, "Paint in three colours" shows the three sentinel swatches as a compact row; it
   opens a popover that maps each swatch to the palette colour it becomes.

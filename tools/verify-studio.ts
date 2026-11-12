@@ -460,6 +460,51 @@ else {
   check("markup injected into the studio cannot run script", probe.ran === false && probe.blocked.startsWith("script-src"), probe);
 }
 
+// Saved work this build cannot open (a check got stricter since it was saved) is set aside,
+// not dropped: the studio starts fresh, says so at once, and autosave does not write over it.
+await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+await sleep(600); // a pending autosave lands first
+const older = await page.eval<string>(`(() => {
+  const saved = JSON.parse(localStorage.getItem("scene-studio/v1"));
+  saved.scene.id = "old scene.v1"; // accepted before ids were limited to letters, digits, - and _
+  saved.page.scene.id = saved.scene.id;
+  const raw = JSON.stringify(saved);
+  localStorage.setItem("scene-studio/v1", raw);
+  return raw;
+})()`);
+await page.goto(target, 1200);
+await hookDownloads();
+const aside = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); return {
+  dialog: (document.querySelector("dialog[open] #aside-h") || {}).textContent,
+  reasons: [...document.querySelectorAll("dialog[open] .errors li")].map((li) => li.textContent),
+  drawings: s.scene.layers.filter((l) => l.type !== "background").length,
+  kept: localStorage.getItem("scene-studio/v1/set-aside") === ${JSON.stringify(older)},
+  current: localStorage.getItem("scene-studio/v1"),
+}; })()`);
+check("saved work that no longer validates is set aside, and the studio says so on a fresh canvas",
+  aside.dialog === "Saved work did not open" && aside.reasons.some((r: string) => r.startsWith("scene: id: use only letters")) && aside.drawings === 0 && aside.kept === true && aside.current === null,
+  { ...aside, reasons: aside.reasons.slice(0, 1) });
+await clickOn('dialog[open] [data-ui="aside-scene"]');
+await sleep(300);
+const handedBack = (await downloads())["set-aside.scene.json"] || "";
+check("the set-aside work downloads as a scene file", handedBack.includes('"id": "old scene.v1"'), handedBack.slice(0, 50).replace(/\s+/g, " "));
+await clickOn('dialog[open] [data-ui="aside-close"]');
+// new work is saved next to the copy, not over it; a later load offers the copy without asking again
+await page.eval(`sceneStudio.store.change((s) => { s.scene.name = "After the copy"; })`);
+await sleep(700);
+await page.goto(target, 1200);
+const later = await page.eval<any>(`({
+  dialog: !!document.querySelector("dialog[open]"),
+  name: sceneStudio.store.getSnapshot().scene.name,
+  kept: localStorage.getItem("scene-studio/v1/set-aside") === ${JSON.stringify(older)},
+})`);
+check("autosave leaves the set-aside copy alone, and a later load does not ask again", later.dialog === false && later.name === "After the copy" && later.kept === true, later);
+await clickOn('[data-ui="more"]');
+await clickOn('[data-ui="menu-aside"]');
+await clickOn('dialog[open] [data-ui="aside-discard"]');
+const gone = await page.eval<any>(`({ kept: localStorage.getItem("scene-studio/v1/set-aside"), dialog: !!document.querySelector("dialog[open]"), offered: sceneStudio.store.getSnapshot().setAside })`);
+check("discarding removes the copy and the menu entry", gone.kept === null && gone.dialog === false && gone.offered === false, gone);
+
 await chrome.close();
 console.log(failures ? `\n${failures} check(s) failed` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

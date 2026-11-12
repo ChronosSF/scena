@@ -1,7 +1,7 @@
 // Scene model: validation, migration and the budget lint, against the built-in desk.
 import { describe, expect, test } from "vitest";
-import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { contrast, documentKind, lintPage, lintScene, migrate, parseColor, safeHref, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
+import { BACKGROUND_SAMPLES, DESK_SCENE, PIA_PAGE, framesDemo } from "@scena/scenes";
+import { contrast, documentKind, fragmentProblem, isSafeId, lintPage, lintScene, migrate, parseColor, safeHref, safeId, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const desk = DESK_SCENE, pia = PIA_PAGE;
@@ -43,6 +43,38 @@ describe("validation", () => {
     expect(errs.some((e) => e.includes("cat-lines") && e.includes("safety check"))).toBe(true);
     expect(errs.some((e) => e.includes("light.line"))).toBe(true);
     expect(errs.some((e) => e.includes('assets["ext"].url'))).toBe(true);
+  });
+
+  test("ids are limited to characters that mean nothing in markup or a selector", () => {
+    const hostile = 'x"><img src=x onerror=alert(1)>';
+    const refused = (errs: string[], where: string) => errs.some((e) => e.includes(where) && e.includes("use only letters, digits"));
+
+    for (const bad of [hostile, "a b", "a.b", "a#b", "", "-a", "_a", "ä", "a".repeat(65)]) {
+      const s = clone(desk) as any;
+      s.layers[0].id = bad;
+      expect(refused(validateScene(s), "layers[0]"), JSON.stringify(bad)).toBe(true);
+      expect(isSafeId(bad), JSON.stringify(bad)).toBe(false);
+    }
+    for (const ok of ["cat", "steam-mug-f2-fills", "bg_grid-24", "A1", "7up", "a".repeat(64)]) expect(isSafeId(ok), ok).toBe(true);
+
+    // every other place a document carries an id
+    const s = clone(desk) as any;
+    s.id = hostile;
+    s.theme.palettes[0].id = hostile;
+    s.slots[0].id = hostile;
+    s.assets[hostile] = { ...s.assets["cat-lines"], id: hostile };
+    const errs = validateScene(s);
+    expect(errs.some((e) => e.startsWith("id: use only letters, digits"))).toBe(true);
+    for (const where of ["theme.palettes[0].id", "slots[0]", `assets["${hostile}"] (its key)`]) expect(refused(errs, where), where).toBe(true);
+
+    const p = clone(pia) as any;
+    p.scene.id = hostile;
+    p.links[hostile] = { ...p.links.shop };
+    const perrs = validatePage(p);
+    for (const where of ["scene.id", `links["${hostile}"] (its key)`]) expect(refused(perrs, where), where).toBe(true);
+
+    // what the renderer does with a string nobody validated
+    expect(safeId(hostile)).toBe("x___img_src_x_onerror_alert_1__");
   });
 });
 
@@ -102,6 +134,120 @@ describe("helpers", () => {
     expect(safeHref("mailto:a@b.it")).toBe("mailto:a@b.it");
     expect(safeHref("javascript:alert(1)")).toBe("");
     expect(safeHref("ftp://x")).toBe("");
+    expect(safeHref("mailto:a@b.it?subject=Hello")).toBe("mailto:a@b.it?subject=Hello");
+    expect(safeHref("mailto:a@b.it,c@d.it")).toBe("mailto:a@b.it,c@d.it");
+    expect(safeHref("mailto:@b.it")).toBe("");
+    expect(safeHref("mailto:a@")).toBe("");
+  });
+
+  test("the fragment check allows drawing elements only", () => {
+    for (const bad of [
+      "<script>", "< script>", "</script>", "< / script >", "<\n/\tscript", "<SCRIPT", "<a href='#x'>", "<animateTransform", "<image", "<foreignObject>",
+      // elements a block list would have to know about: anything that is not a drawing element is refused
+      "<div>", "<abbr>", "<svg>", "<g-x>", "<gx>", "<svg:script>", "<p><details open>", "<G><Iframe>", "<g<script>", "<title>Cat</title>",
+      // a "<" that does not start a tag: a comment, CDATA, a declaration, or text that should be "&lt;"
+      "a < b", "<!-- note -->", "<![CDATA[x]]>", "<?xml?>", "<!DOCTYPE svg>", "<", "< / g>", "</>", "</ g>", "<text>1 < 2</text>",
+      // a tag or a quoted value that never ends would take the markup after the fragment with it
+      "<g", '<g fill="#fff"', '<g fill="#fff>', "<g fill='#fff\">", "<g fill=",
+    ]) {
+      expect(fragmentProblem(bad), bad).not.toBe("");
+    }
+    for (const ok of [
+      '<path d="M0 0L10 10"/>', '<g fill="#fff"><circle r="4"/></g>', "<G/>", "<g></g\n>", '<use href="#a"/>',
+      '<clipPath id="c"><rect width="4" height="4"/></clipPath>', '<linearGradient id="g"><stop offset="0"/></linearGradient>',
+      '<text x="1" class="on-accent">Tom &amp; Pia&#39;s desk</text>',
+    ]) {
+      expect(fragmentProblem(ok), ok).toBe("");
+    }
+  });
+
+  test("the fragment check finds an event handler wherever a parser would", () => {
+    for (const bad of [
+      '<rect onclick="x()"/>', '<rect/onclick="x()"/>', "<rect/onmouseover=x() width=9>", '<rect width="9"onclick="x()"/>', "<rect width='9'onclick='x()'/>",
+      '<rect\tonclick="x()"/>', '<rect\nONCLICK = "x()"/>', "<rect x=1 onclick=x()>", '<rect x="1"/onclick="x()">',
+      // a ">" inside a quoted value does not end the tag, so what follows is still an attribute
+      '<path d=">" onclick="x()"/>', "<path d='\">' onclick=\"x()\"/>", '<path d="M0 0"></path onclick="x()">',
+    ]) {
+      expect(fragmentProblem(bad), bad).toMatch(/on[a-z]+\s*=/i);
+    }
+  });
+
+  test("the fragment check allows the sanitiser's attributes only", () => {
+    for (const bad of [
+      '<rect style="fill:red"/>', '<use xlink:href="#a"/>', '<rect data-x="1"/>', '<rect filter="url(#f)"/>', "<rect =x/>", '<g xmlns="http://www.w3.org/2000/svg"/>',
+      '<text>a</text foo="bar">', '<rect width="4" 4/>',
+    ]) {
+      expect(fragmentProblem(bad), bad).not.toBe("");
+    }
+    for (const ok of [
+      "<rect fill='#fff' x=1 y = \"2\" WIDTH=4 pathlength=1/>", '<path transform="translate(4 5) rotate(-3)" d="M0 0" stroke-linecap="round"/>',
+      '<text font-family="Shantell Sans, &quot;Comic Neue&quot;, cursive" text-anchor="middle">a</text>', '<g fill="rgb(10, 20, 30)" opacity=".5"/>',
+    ]) {
+      expect(fragmentProblem(ok), ok).toBe("");
+    }
+  });
+
+  test("a value cannot point outside the document, however it is spelled", () => {
+    for (const bad of [
+      '<path fill="url(https://e.example/p.svg#a)"/>', "<path fill=url(//e.example/p.svg#a)>", "<path fill='url(\"https://e.example/p\")'/>",
+      // character references and CSS escapes that a parser turns into "url("
+      '<path fill="&#117;rl(https://e.example/p.svg#a)"/>', '<path fill="&#x75;rl(https://e.example/p.svg#a)"/>', '<path fill="url&lpar;https://e.example/p.svg#a)"/>',
+      '<path fill="\\75 rl(https://e.example/p.svg#a)"/>', '<path fill="u\\72l(https://e.example/p.svg#a)"/>', '<path fill="&#92;75 rl(https://e.example/p.svg#a)"/>',
+      // a mask can be an image, and these fetch one without a url()
+      '<rect mask="image-set(&quot;https://e.example/m.png&quot; 1x)"/>', "<rect mask='-webkit-image-set(\"https://e.example/m.png\" 1x)'/>", '<rect mask="url(#m) luminance"/>',
+      // links
+      '<use href="https://e.example/a.svg#x"/>', '<use href="javascript:alert(1)"/>', '<use href=" #a"/>', '<use href="&#35;a"/>', "<use href/>",
+      '<path d="M0 0<g>"/>',
+    ]) {
+      expect(fragmentProblem(bad), bad).not.toBe("");
+    }
+    for (const ok of [
+      '<rect fill="url(#g)" mask="url(#m)" clip-path="url(#c)"/>', '<rect mask="none" stroke="url( \'#g\' )"/>', '<use href="#a-1_b"/>',
+      '<text x="1">R&amp;D, &lt;3 &gt; &quot;x&quot; &#39;y&#39;</text>', '<g id="a&amp;b"/>',
+    ]) {
+      expect(fragmentProblem(ok), ok).toBe("");
+    }
+  });
+
+  test("text between tags is not inspected, because it is inert in a drawing", () => {
+    // Patterns run over the whole fragment used to refuse the first two of these as event handlers.
+    for (const ok of [
+      "<text>'once = twice'</text>", "<text>1/one = 1</text>", "<text>C:\\drawings\\cat.svg</text>", "<text>javascript: the good parts</text>",
+      '<text>url(https://e.example) and @import, onclick="x()"</text>', "<text>5 > 3 &#117; &nbsp; &unknown;</text>", "plain text, no tags",
+    ]) {
+      expect(fragmentProblem(ok), ok).toBe("");
+    }
+  });
+
+  test("every built-in drawing passes the fragment check", () => {
+    const frames = framesDemo().scene;
+    const all = [...Object.values(desk.assets), ...Object.values(frames.assets), ...BACKGROUND_SAMPLES.flatMap((b) => Object.values(b.assets))];
+    const inline = all.filter((a) => a.kind === "svg-inline");
+    expect(inline.length).toBeGreaterThan(20);
+    for (const a of inline) expect(fragmentProblem(a.src), a.id).toBe("");
+  });
+
+  test("the safety checks stay fast on hostile input", () => {
+    // Linear work on a megabyte, the largest drawing accepted, takes a few milliseconds. The
+    // patterns these checks replaced needed minutes at this size. The limit sits hundreds of
+    // times above the first, so a slow or busy machine does not trip it, and far below the second.
+    const LIMIT_MS = 3000, MB = 1_000_000;
+    const timed = (fn: () => string) => { const start = Date.now(); const out = fn(); return { out, ms: Date.now() - start }; };
+    for (const [input, passes] of [
+      ["<" + " ".repeat(MB) + "x", false], // a "<" that never becomes a tag
+      ["<g" + " ".repeat(MB) + ">" + "<g></g>".repeat(MB / 7), true],
+      ["<g " + "x=1 ".repeat(MB / 4) + "/>", true],
+      ['<g fill="' + "url(  #a) ".repeat(MB / 10) + '"/>', true],
+      ['<g fill="' + "&amp;".repeat(MB / 5) + "javascript" + " ".repeat(MB) + '"/>', true],
+      ["<text>" + "'on = /on = ".repeat(MB / 12) + "</text>", true],
+    ] as const) {
+      const fragment = timed(() => fragmentProblem(input));
+      expect(fragment.out === "", input.slice(0, 24)).toBe(passes);
+      expect(fragment.ms, input.slice(0, 24)).toBeLessThan(LIMIT_MS);
+    }
+    const mailto = timed(() => safeHref("mailto:" + "!@".repeat(MB / 2) + "<"));
+    expect(mailto.out).toBe("");
+    expect(mailto.ms).toBeLessThan(LIMIT_MS);
   });
 });
 

@@ -7,7 +7,7 @@ import { TopBar } from "./TopBar.tsx";
 import { LayersPanel } from "./LayersPanel.tsx";
 import { Workspace } from "./Workspace.tsx";
 import { Inspector } from "./Inspector.tsx";
-import { ExportDialog, FramesChoiceDialog, ImportErrorsDialog, ResetDialog } from "./Dialogs.tsx";
+import { ExportDialog, FramesChoiceDialog, ImportErrorsDialog, ResetDialog, SetAsideDialog } from "./Dialogs.tsx";
 import { Feedback } from "./Feedback.tsx";
 import { TooltipProvider, hasFiles } from "./ui.tsx";
 
@@ -18,6 +18,7 @@ export function App() {
   const narrow = useNarrow();
   const [exportOpen, setExportOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [setAsideOpen, setSetAsideOpen] = useState(store.setAsideOnLoad); // said once, as soon as it happens; the More menu has it after that
   const [problems, setProblems] = useState<string[]>([]);
   const [dropping, setDropping] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
@@ -102,7 +103,7 @@ export function App() {
       <div className={`app${dropping ? " dropping" : ""}`} data-view={view}>
         <a className="skip" href="#stage">Skip to the canvas</a>
         <a className="skip" href="#inspector">Skip to the inspector</a>
-        <TopBar onExport={() => setExportOpen(true)} onImport={() => importInput.current?.click()} onReset={() => setResetOpen(true)} />
+        <TopBar onExport={() => setExportOpen(true)} onImport={() => importInput.current?.click()} onReset={() => setResetOpen(true)} onSetAside={() => setSetAsideOpen(true)} />
         <LayersPanel hidden={narrow && tab !== "layers"} tabbed={narrow} />
         <Workspace />
         {narrow && view === "edit" ? (
@@ -126,6 +127,7 @@ export function App() {
         }} />
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} onImport={() => importInput.current?.click()} />
       <ResetDialog open={resetOpen} onClose={() => setResetOpen(false)} />
+      <SetAsideDialog open={setAsideOpen} onClose={() => setSetAsideOpen(false)} />
       <ImportErrorsDialog problems={problems} onClose={() => setProblems([])} />
       <FramesChoiceDialog />
       <Feedback />

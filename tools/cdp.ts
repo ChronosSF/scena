@@ -95,22 +95,23 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
     // a second at most: whatever holds the port may accept the question and never answer it
     try { return (await (await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1000) })).json()).webSocketDebuggerUrl || ""; } catch { return ""; }
   };
-  let address = "", from = "";
+  let address = "";
   const started = Date.now();
   while (!address && !ended && Date.now() - started < START_MS) {
-    address = /DevTools listening on (ws:\/\/\S+)/.exec(said)?.[1] || "";
-    from = "printed by Chrome";
-    if (address) break;
-    address = await asked();
-    from = "answered on the port";
+    address = /DevTools listening on (ws:\/\/\S+)/.exec(said)?.[1] || (await asked());
     if (!address) await sleep(100);
   }
   if (!address) {
     proc.kill();
     throw failed(ended || `was still running after ${START_MS / 1000} s`, said);
   }
-  // On CI the log says how Chrome came up: what a failure there has to be compared with.
-  if (process.env.CI) console.log(`NOTE  Chrome is at ${address} (${from}) after ${Date.now() - started} ms; 127.0.0.1:${port} ${(await asked()) ? "answers" : "does not answer"}`);
+  // On CI the log says how long the start took, and where Chrome is when that is not
+  // 127.0.0.1. The first start on a runner takes seconds, and how many changes with the
+  // runner image: a failure to start is read against these lines.
+  if (process.env.CI) {
+    const usual = address.startsWith(`ws://127.0.0.1:${port}/`);
+    console.log(`NOTE  Chrome started in ${((Date.now() - started) / 1000).toFixed(1)} s${usual ? "" : `, at ${address}`}`);
+  }
   const ws = new WebSocket(address);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
   let id = 0;

@@ -11,6 +11,8 @@ motion.
 This repository holds the scene format, the renderer that turns a scene and a page into one
 self-contained HTML file, and the **studio**: an illustrator drops in their own drawings (SVG,
 or PNG from Procreate), marks which ones are clickable, attaches links, and exports the page.
+The studio also has the plan's first product in it, a links-only mode: a ready-made scene whose
+drawings are fixed, where a person fills in the links, the words and the colours.
 The product plan is in [docs/development-plan.md](docs/development-plan.md); the work it describes is
 tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/milestones).
 
@@ -38,7 +40,7 @@ pnpm install
 pnpm dev          # the studio with hot reload at http://localhost:5173 (and /demo-desk.html)
 pnpm build        # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm preview      # serve the build at http://localhost:4173
-pnpm test         # 98 tests: renderer snapshots and parity, scene model, lint and safety checks, studio editing operations, saved work, file sniffing, the build's policy, frames, board and lettering
+pnpm test         # 113 tests: renderer snapshots and parity, scene model, lint and safety checks, studio editing operations, the links-only mode, saved work, file sniffing, the build's policy, frames, board and lettering
 pnpm typecheck    # every package, the page runtime, the scripts and the tools
 pnpm check        # typecheck + test + build
 
@@ -127,6 +129,11 @@ The preview takes two to four seconds to paint the first time (web font plus the
 - **2:45** Export: one HTML file of about 20 KB with no outside scripts. Then "Open Pia's finished
   desk": "Her whole page is the same format your drawings just became."
 
+If someone asks "what if I can't draw?", open the More menu and choose "Fill in a ready-made
+scene: the desk". The panels change to a list of five links and a form: tap the cat, type a
+title and an address, turn the envelope off and on, pick a palette. Nothing on the canvas moves.
+That is the plan's first product, the page for people who use a scene somebody else drew.
+
 ## Studio design
 
 The canvas keeps the page's riso look; the tool around it is neutral, with one blue accent for
@@ -156,7 +163,8 @@ understates a budget Android.
 ## Not built yet
 
 On purpose, for the pitch: accounts, publishing, analytics, billing and custom domains (see the
-plan); the Open Graph image; the badge control in the studio (the renderer
+plan); a scene picker (the desk is the one ready-made scene) and tapping an object in the preview
+to open its form; the Open Graph image; the badge control in the studio (the renderer
 supports it); drawing a custom tap-area shape (the format supports it); gradients painted with
 the sentinel colours; `<symbol>` in uploaded SVG; and, for frame animation, motion presets (float,
 sway, blink), path motion and Lottie- or Rive-style runtimes, which are out of scope. Touch input uses pointer events, but only
@@ -178,7 +186,14 @@ Small, optional additions the build needed:
   `TYPEFACES`), `editable.font`, and `header.lettering` for a hand-lettered name
   ([ADR 0003](docs/adr/0003-board-type-lettering.md)).
 
-Two restrictions, both enforced by the validator:
+Three restrictions, all enforced by the validator:
+
+- A page changes its scene only as far as the scene's `editable` says: its palette comes from
+  `editable.palettes` when that is a list, and it turns a link off only when
+  `editable.allowDisableSlots` is set and the slot is `optional`. In a scene of your own the
+  studio sets those two when you hide a link, since you are its author. It goes further for a
+  scene with `license: "builtin"`: it shows the links-only mode, and its store undoes any change
+  that touches the scene.
 
 - Ids use only letters, digits, `-` and `_`, start with a letter or digit, and are 64 characters at
   most, because they are written into attributes, selectors and `url(#...)` references. This covers

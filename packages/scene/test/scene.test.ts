@@ -76,6 +76,35 @@ describe("validation", () => {
     // what the renderer does with a string nobody validated
     expect(safeId(hostile)).toBe("x___img_src_x_onerror_alert_1__");
   });
+
+  test("a page changes its scene only as far as the scene's editable says", () => {
+    const refusedFor = (s: any, p: any) => validatePage(p, s).filter((e) => e.includes("does not"));
+
+    // palettes: "all", or a list the page has to pick from
+    const s = clone(desk) as any, p = clone(pia) as any;
+    p.theme.palette = "violet-lime";
+    expect(validatePage(p, s)).toEqual([]);
+    s.editable.palettes = ["riso-pink-yellow", "teal-sunflower"];
+    expect(refusedFor(s, p)).toEqual(['theme.palette: scene "desk" does not offer "violet-lime" to its pages']);
+    p.theme.palette = "teal-sunflower";
+    expect(validatePage(p, s)).toEqual([]);
+
+    // a link is turned off only where the scene allows it and the slot is optional
+    p.links.shop.enabled = false;
+    expect(validatePage(p, s)).toEqual([]);
+    s.slots.find((x: any) => x.id === "shop").optional = false;
+    expect(refusedFor(s, p)).toEqual(['links["shop"].enabled: scene "desk" does not let its pages turn "shop" off']);
+    s.slots.find((x: any) => x.id === "shop").optional = true;
+    s.editable.allowDisableSlots = false;
+    expect(refusedFor(s, p)).toEqual(['links["shop"].enabled: scene "desk" does not let its pages turn "shop" off']);
+    p.links.shop.enabled = true;
+    expect(validatePage(p, s)).toEqual([]);
+
+    // without the scene there is nothing to hold the page to
+    p.links.shop.enabled = false;
+    p.theme.palette = "violet-lime";
+    expect(validatePage(p)).toEqual([]);
+  });
 });
 
 describe("migration", () => {

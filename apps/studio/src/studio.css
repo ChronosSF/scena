@@ -151,6 +151,8 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
   border: 1px solid transparent; border-radius: var(--ui-r); background: transparent;
   font-weight: 500; color: var(--ui-text-2); text-overflow: ellipsis;
 }
+/* a built-in scene's name: the same place and weight, not a field */
+.scene-name { max-width: 22ch; padding: 0 var(--ui-2); font-weight: 500; color: var(--ui-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .name-input:hover { background: var(--ui-hover); color: var(--ui-text); }
 .name-input:focus { color: var(--ui-text); background: var(--ui-panel); border-color: var(--ui-accent); outline: none; box-shadow: 0 0 0 3px var(--ui-accent-soft); }
 .bar-divider { width: 1px; height: 20px; background: var(--ui-line); margin: 0 var(--ui-1); }
@@ -213,7 +215,9 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 /* switch */
 .switch { position: relative; display: inline-flex; flex: none; width: 28px; height: 16px; cursor: pointer; }
 .switch input { position: absolute; inset: -6px; opacity: 0; margin: 0; cursor: pointer; }
-.switch-track { width: 100%; height: 100%; border-radius: 999px; background: var(--ui-field); box-shadow: inset 0 0 0 1px var(--ui-control); transition: background var(--ui-fast) var(--ui-ease), box-shadow var(--ui-fast) var(--ui-ease); }
+/* the track and its knob are a picture of the input under them: presses go through to it, or a
+   press on the knob of a switch that is on would do nothing */
+.switch-track { pointer-events: none; width: 100%; height: 100%; border-radius: 999px; background: var(--ui-field); box-shadow: inset 0 0 0 1px var(--ui-control); transition: background var(--ui-fast) var(--ui-ease), box-shadow var(--ui-fast) var(--ui-ease); }
 .switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--ui-text-2); transition: transform var(--ui-base) var(--ui-ease), background var(--ui-fast) var(--ui-ease); }
 .switch input:checked + .switch-track { background: var(--ui-accent); box-shadow: none; }
 .switch input:checked + .switch-track::after { transform: translateX(12px); background: #fff; }
@@ -348,7 +352,7 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 .layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layer-badge { display: inline-flex; align-items: center; gap: 3px; flex: none; height: 18px; padding: 0 5px; border-radius: var(--ui-r-sm); background: var(--ui-accent-soft); color: var(--ui-accent-text); font-size: var(--ui-xs); font-weight: 500; }
 .layer-badge .lucide { width: 11px; height: 11px; }
-.insp-title { padding: 0 6px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insp-title { margin: 0; padding: 0 6px; font-size: var(--ui-md); line-height: var(--ui-md-lh); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .faces { display: grid; gap: 6px; }
 .face { position: relative; display: block; }
 .face input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
@@ -375,6 +379,7 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 @media (hover: none) { .layer-tools { opacity: 1; } }
 .empty-layers { padding: var(--ui-4); color: var(--ui-text-3); font-size: var(--ui-sm); line-height: var(--ui-sm-lh); }
 .panel-foot { padding: var(--ui-3) var(--ui-4) var(--ui-4); border-top: 1px solid var(--ui-line); font-size: var(--ui-sm); color: var(--ui-text-3); }
+.links-intro { padding: 0 var(--ui-4) var(--ui-3); font-size: var(--ui-sm); line-height: var(--ui-sm-lh); color: var(--ui-text-2); }
 .link-btn { padding: 0; border: 0; background: none; color: var(--ui-accent-text); font-weight: 500; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 
@@ -417,6 +422,8 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 #stage .page { padding-top: 1.75rem; }
 #stage .desk { position: relative; }
 #stage .desk svg { touch-action: none; user-select: none; -webkit-user-select: none; }
+/* nothing is dragged in a built-in scene, so a finger on the drawing scrolls the page as anywhere else */
+#stage[data-fixed] .desk svg { touch-action: manipulation; }
 #stage [data-layer] { cursor: default; outline: none; }
 #stage [data-layer]:focus-visible { outline: none; }
 #stage [data-layer][opacity="0"] { pointer-events: none; }
@@ -456,6 +463,7 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 .empty-title { font-size: var(--ui-lg); line-height: var(--ui-lg-lh); font-weight: 600; }
 .empty-text { margin-top: var(--ui-1); color: var(--ui-text-2); font-size: var(--ui-sm); line-height: 18px; }
 .empty-actions { display: flex; justify-content: center; gap: var(--ui-2); margin-top: var(--ui-4); }
+.empty-alt { margin-top: var(--ui-3); color: var(--ui-text-3); font-size: var(--ui-sm); line-height: 18px; }
 
 /* floating workspace controls */
 .float { position: absolute; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: var(--ui-r-lg); background: var(--ui-panel); box-shadow: var(--ui-shadow-pop); }

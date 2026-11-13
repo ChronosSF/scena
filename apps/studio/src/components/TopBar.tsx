@@ -1,12 +1,19 @@
-import { BookOpen, Check, Download, Ellipsis, FileWarning, Import, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
+import { BookOpen, Check, Download, Ellipsis, FileWarning, Import, LayoutTemplate, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ThemeMode } from "@scena/scene";
-import { store, useStudio } from "../store.ts";
+import { store, useStudio, type StudioState } from "../store.ts";
+import { isBuiltIn } from "../model.ts";
 import * as actions from "../actions.ts";
 import { BudgetPill } from "./BudgetPopover.tsx";
 import { Button, IconButton, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Segmented, Tip } from "./ui.tsx";
 
 const MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
+
+const SAVE_WORDS: Record<StudioState["saveStatus"], { short: string; tip: string }> = {
+  saved: { short: "Saved in this browser", tip: "Saved in this browser" },
+  "too-big": { short: "Not saved: too big for browser storage", tip: "Not saved: too big for browser storage. Export to keep your work." },
+  "not-valid": { short: "Not saved: something here would not open again", tip: "Not saved: something here would not open again, so your last saved work is kept. Undo the last change, or export to keep this." },
+};
 
 export const APPEARANCE = [
   { value: "auto", label: "Match the visitor's device", icon: SunMoon },
@@ -51,7 +58,8 @@ export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: 
       <div className="bar-start">
         <div className="brand"><BrandMark /><span className="hide-narrow">Studio</span></div>
         <span className="crumb-sep hide-narrow" aria-hidden="true">/</span>
-        <SceneNameInput className="name-input hide-narrow" />
+        {/* a built-in scene keeps its name */}
+        {isBuiltIn(scene) ? <span className="scene-name hide-narrow" data-ui="scene-name">{scene.name}</span> : <SceneNameInput className="name-input hide-narrow" />}
         <span className="bar-divider hide-narrow" aria-hidden="true" />
         <IconButton icon={Undo2} label="Undo" shortcut={`${MOD}Z`} disabled={!canUndo} onClick={actions.undo} data-ui="undo" />
         <IconButton icon={Redo2} label="Redo" shortcut={`${MOD}Shift+Z`} disabled={!canRedo} onClick={actions.redo} data-ui="redo" />
@@ -75,10 +83,10 @@ export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: 
 
       <div className="bar-end">
         <BudgetPill />
-        <Tip label={saveStatus === "too-big" ? "Not saved: too big for browser storage. Export to keep your work." : "Saved in this browser"}>
-          <span className={`save-state hide-narrow${saveStatus === "too-big" ? " warn" : ""}`} role="status">
-            {saveStatus === "too-big" ? <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} /> : <Check aria-hidden="true" size={16} strokeWidth={1.75} />}
-            <span className="sr-only">{saveStatus === "too-big" ? "Not saved: too big for browser storage" : "Saved in this browser"}</span>
+        <Tip label={SAVE_WORDS[saveStatus].tip}>
+          <span className={`save-state hide-narrow${saveStatus === "saved" ? "" : " warn"}`} role="status" data-save={saveStatus}>
+            {saveStatus === "saved" ? <Check aria-hidden="true" size={16} strokeWidth={1.75} /> : <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} />}
+            <span className="sr-only">{SAVE_WORDS[saveStatus].short}</span>
           </span>
         </Tip>
         <Button className="hide-narrow" variant="ghost" icon={Import} onClick={onImport} data-ui="import"><span className="squeeze">Import</span></Button>
@@ -91,7 +99,8 @@ export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: 
           </Tip>
           <MenuContent align="end">
             <MenuItem icon={Import} onSelect={onImport} data-ui="menu-import">Import scene or page…</MenuItem>
-            <MenuItem icon={BookOpen} onSelect={actions.openDesk} data-ui="menu-desk">Open Pia's finished desk</MenuItem>
+            <MenuItem icon={LayoutTemplate} onSelect={() => void actions.openBuiltInDesk()} data-ui="menu-builtin">Fill in a ready-made scene: the desk</MenuItem>
+            <MenuItem icon={BookOpen} onSelect={() => void actions.openDesk()} data-ui="menu-desk">Open Pia's finished desk</MenuItem>
             {setAside ? <MenuItem icon={FileWarning} onSelect={onSetAside} data-ui="menu-aside">Saved work that did not open…</MenuItem> : null}
             <MenuSeparator />
             <MenuItem icon={RotateCcw} onSelect={onReset} danger data-ui="menu-reset">Start over…</MenuItem>

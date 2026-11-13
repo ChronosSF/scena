@@ -298,7 +298,7 @@ export function LayersPanel(props: { hidden?: boolean; tabbed?: boolean }) {
       )}
       <BackgroundGroup />
       <div className="panel-foot">
-        <button type="button" className="link-btn" onClick={actions.openDesk} data-ui="open-desk">Open Pia's finished desk</button> to see a whole page made the same way.
+        <button type="button" className="link-btn" onClick={() => void actions.openDesk()} data-ui="open-desk">Open Pia's finished desk</button> to see a whole page made the same way.
       </div>
     </aside>
   );

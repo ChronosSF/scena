@@ -76,6 +76,27 @@ export function FramesChoiceDialog() {
   );
 }
 
+/**
+ * Opening another scene replaces the one on the canvas, and autosave follows at once, so the
+ * studio asks first when there is work there (actions.ts, openDesk and openBuiltInDesk).
+ */
+export function ReplaceDialog() {
+  const { replace } = useUi();
+  return (
+    <Dialog open={!!replace} onClose={() => replace?.resolve(false)} labelledBy="replace-h">
+      <div className="dlg-body">
+        <h2 className="dlg-title" id="replace-h">Open {replace?.what}?</h2>
+        <p className="dlg-text">This replaces the drawings and the page you have here, in this browser. Export first if you want to keep them; Undo can bring them back until you close the studio.</p>
+      </div>
+      <div className="dlg-foot">
+        <span className="spacer" />
+        <Button variant="ghost" onClick={() => replace?.resolve(false)} data-ui="replace-cancel">Cancel</Button>
+        <Button variant="primary" onClick={() => replace?.resolve(true)} data-ui="replace-ok">Open it</Button>
+      </div>
+    </Dialog>
+  );
+}
+
 export function ResetDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Dialog open={open} onClose={onClose} labelledBy="reset-h">
@@ -84,7 +105,7 @@ export function ResetDialog({ open, onClose }: { open: boolean; onClose: () => v
         <p className="dlg-text">This clears the canvas in this browser. Export first if you want to keep it; Undo can bring it back.</p>
       </div>
       <div className="dlg-foot">
-        <Button onClick={() => { actions.openDesk(); onClose(); }}>Open Pia's desk</Button>
+        <Button onClick={() => { void actions.openDesk({ ask: false }); onClose(); }}>Open Pia's desk</Button>
         <span className="spacer" />
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={() => { actions.startBlank(); onClose(); }} data-ui="reset-blank">Empty canvas</Button>

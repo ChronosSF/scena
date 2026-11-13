@@ -6,7 +6,8 @@
 
 import { useSyncExternalStore } from "react";
 import { migrate, validatePage, validateScene, type PageDocument, type SceneDocument } from "@scena/scene";
-import { blankPage, blankScene, getLayer, type Stash } from "./model.ts";
+import { FIXED_SCENE, blankPage, blankScene, getLayer, isBuiltIn, reconcile, type Stash } from "./model.ts";
+import { toast } from "./ui.ts";
 
 export type View = "edit" | "preview";
 export type Zoom = "fit" | number;
@@ -41,7 +42,8 @@ export interface StudioState {
   rev: number;
   canUndo: boolean;
   canRedo: boolean;
-  saveStatus: "saved" | "too-big";
+  /** "not-valid": the documents would not open again, so the last work that does is kept instead. */
+  saveStatus: "saved" | "too-big" | "not-valid";
   /** Saved work that this build could not open is being kept in this browser (see openSaved). */
   setAside: boolean;
   focus: FocusRequest | null;
@@ -68,6 +70,8 @@ export function readSaved(raw: string): { docs: Docs | null; problems: string[] 
   try {
     const saved = JSON.parse(raw);
     const scene = migrate(saved.scene, "scene"), page = migrate(saved.page, "page");
+    // work the studio itself produced under older rules is brought in line first (model.ts)
+    try { reconcile(scene, page); } catch { /* not the shape it knows: the validators say what is wrong */ }
     const problems = [...validateScene(scene).map((e) => `scene: ${e}`), ...validatePage(page, scene).map((e) => `page: ${e}`)];
     if (problems.length) return { docs: null, problems };
     return { docs: { scene, page, sel: saved.sel && getLayer(scene, saved.sel) ? saved.sel : null, stash: saved.stash || {} }, problems: [] };
@@ -179,14 +183,48 @@ class StudioStore {
    * Mutate the documents. `fn` may change scene, page and stash in place, or return
    * replacements (start over, import).
    */
-  change(fn: (s: StudioState) => Partial<Docs> | void, opts: ChangeOptions = {}): void {
-    if (!opts.noHistory) {
-      if (Date.now() - this.lastEdit > BURST_MS) this.checkpoint();
-      this.lastEdit = Date.now();
-    }
+  change(fn: (s: StudioState) => Partial<Docs> | void, opts: ChangeOptions = {}): boolean {
+    const was = { future: this.future, lastEdit: this.lastEdit };
+    const opensStep = !opts.noHistory && Date.now() - this.lastEdit > BURST_MS;
+    if (opensStep) this.checkpoint();
+    if (!opts.noHistory) this.lastEdit = Date.now();
+    // A built-in scene is filled in through its page; the scene itself does not change. The
+    // interface offers no way to change it, and this is the rule behind the interface: a change
+    // that touched the scene is undone as a whole, page and all, so nothing is half applied.
+    // Replacing the scene with another document (start over, open, import) is not an edit and
+    // goes through; handing back the same object does not make an edit a replacement.
+    const { scene, page, stash } = this.state;
+    const held = isBuiltIn(scene) ? { scene: this.builtInJson(scene), rest: JSON.stringify({ page, stash }) } : null;
     const patch = fn(this.state) || {};
+    const replaced = patch.scene !== undefined && patch.scene !== scene;
+    if (held && !replaced && JSON.stringify(scene) !== held.scene) {
+      // nothing happened, so no undo step is left behind and redo is as it was
+      if (opensStep) this.past.pop();
+      this.future = was.future;
+      this.lastEdit = was.lastEdit;
+      const restored = JSON.parse(held.scene) as SceneDocument;
+      this.heldScene = { scene: restored, json: held.scene };
+      this.emit({ scene: restored, ...(JSON.parse(held.rest) as Pick<Docs, "page" | "stash">) });
+      console.warn("A built-in scene's drawings are fixed; the change was not applied.");
+      // said after whatever the caller announces for the change it thinks it made
+      setTimeout(() => toast(FIXED_SCENE, "error"), 0);
+      return false;
+    }
     this.emit(patch);
     this.save();
+    return true;
+  }
+
+  private heldScene: { scene: SceneDocument; json: string } | null = null;
+  /**
+   * The JSON of the built-in scene in the state, kept between changes. It is taken once per
+   * scene object: while that object is the one in the state it cannot have changed, because a
+   * change that touches it is undone above. So a keystroke in a link's form costs one
+   * serialisation of the scene, not two.
+   */
+  private builtInJson(scene: SceneDocument): string {
+    if (this.heldScene?.scene !== scene) this.heldScene = { scene, json: JSON.stringify(scene) };
+    return this.heldScene.json;
   }
 
   /** UI-only state: no undo step, no autosave. */
@@ -223,10 +261,18 @@ class StudioStore {
     this.saveTimer = window.setTimeout(() => {
       const { scene, page, sel, stash } = this.state;
       let status: StudioState["saveStatus"] = "saved";
-      try {
-        localStorage.setItem(KEY, JSON.stringify({ scene, page, sel, stash }));
-      } catch {
-        status = "too-big";
+      // Work that would not open again is never written over work that does. The fields keep
+      // the documents valid one by one; this is the rule behind all of them, present and future.
+      const problems = [...validateScene(scene).map((e) => `scene: ${e}`), ...validatePage(page, scene).map((e) => `page: ${e}`)];
+      if (problems.length) {
+        status = "not-valid";
+        console.warn("Not saved: this would not open again. The last work that does is kept.", problems);
+      } else {
+        try {
+          localStorage.setItem(KEY, JSON.stringify({ scene, page, sel, stash }));
+        } catch {
+          status = "too-big";
+        }
       }
       if (status !== this.state.saveStatus) this.emit({ saveStatus: status });
     }, 350);

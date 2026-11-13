@@ -11,7 +11,7 @@ import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type
 import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import { layerBBox, layerCenter, layerToCanvas, renderParts, scaleOf, slotStatus, transformAttr, translateForCenter, type Point } from "@scena/renderer";
 import { store, useStudio } from "../store.ts";
-import { getLayer, round, slotOf } from "../model.ts";
+import { getLayer, isBuiltIn, round, slotOf } from "../model.ts";
 import * as actions from "../actions.ts";
 import { announce } from "../ui.ts";
 import { useDocumentHidden, useReducedMotion } from "../hooks.ts";
@@ -45,14 +45,28 @@ export function Stage({ scale = 1 }: { scale?: number }) {
 
   const layer = getLayer(scene, sel);
   const slot = slotOf(scene, layer);
+  // A built-in scene is drawn as the published page, not as an editor canvas: its objects
+  // carry their slot id, the tap areas are the real ones, and decorations cannot be picked.
+  // Pressing an object selects it, to edit its link; nothing moves.
+  const locked = isBuiltIn(scene);
   // Dependencies are deliberate: rev covers every document change (documents are mutated in
   // place), and the selection and the motion override change the markup too.
   const parts = useMemo(
-    () => renderParts(scene, page, { editor: true, idPrefix: "ed-", scope: ".stage", selected: slot?.id, assetHref, forceMotion }),
-    [rev, slot?.id, forceMotion],
+    () => renderParts(scene, page, { editor: !locked, idPrefix: "ed-", scope: ".stage", selected: slot?.id, assetHref, forceMotion }),
+    [rev, slot?.id, forceMotion, locked],
   );
 
-  const layerEl = (id: string) => svgHost.current?.querySelector<SVGGElement>(`[data-layer="${CSS.escape(id)}"]`) || null;
+  /** The drawing an element belongs to: its layer id, found by slot id in a built-in scene. */
+  const layerIdAt = (el: Element | null): string | null => {
+    if (!locked) return el?.closest("[data-layer]")?.getAttribute("data-layer") || null;
+    const k = el?.closest("[data-k]")?.getAttribute("data-k");
+    return (k && scene.layers.find((l) => l.type === "object" && l.slotId === k)?.id) || null;
+  };
+  const layerEl = (id: string) => {
+    if (!locked) return svgHost.current?.querySelector<SVGGElement>(`[data-layer="${CSS.escape(id)}"]`) || null;
+    const l = getLayer(scene, id);
+    return l?.type === "object" ? svgHost.current?.querySelector<SVGGElement>(`g[data-k="${CSS.escape(l.slotId)}"]`) || null : null;
+  };
   const sceneSvg = () => svgHost.current?.querySelector("svg") || null;
 
   // Write the scene SVG, keeping focus on the same drawing. Skipped mid-drag.
@@ -60,7 +74,7 @@ export function Stage({ scale = 1 }: { scale?: number }) {
     const host = svgHost.current;
     if (!host || drag.current || parts.svg === lastSvg.current) return;
     const active = document.activeElement;
-    const focused = active && host.contains(active) ? active.closest("[data-layer]")?.getAttribute("data-layer") : null;
+    const focused = active && host.contains(active) ? layerIdAt(active) : null;
     host.innerHTML = parts.svg;
     lastSvg.current = parts.svg;
     if (focused) layerEl(focused)?.focus({ preventScroll: true });
@@ -108,6 +122,10 @@ export function Stage({ scale = 1 }: { scale?: number }) {
   function onPointerDown(e: PointerEvent<HTMLElement>) {
     if (view !== "edit" || e.button > 0) return;
     const target = e.target as Element;
+    // No drag is started in a built-in scene: the drawings stay where the scene's author put
+    // them. A press does not select either, or a finger that starts a scroll on a drawing
+    // would pick it; the click does (onClick), as a tap does on the published page.
+    if (locked) return;
     const action = target.closest<HTMLElement>("[data-act]");
     if (action && sel) {
       e.preventDefault();
@@ -189,6 +207,20 @@ export function Stage({ scale = 1 }: { scale?: number }) {
 
   // ------------------------------------------------------------ keyboard, focus, clicks
   function onKeyDown(e: KeyboardEvent<HTMLElement>) {
+    if (locked) {
+      // the page's own keys: Enter or Space picks the object, Escape lets go
+      const obj = (e.target as Element).closest?.("g[data-k]");
+      const picked = obj && svgHost.current?.contains(obj) && view === "edit" ? layerIdAt(obj) : null;
+      if (!picked) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        store.select(picked);
+        announce(`${getLayer(scene, picked)?.name || picked} selected. Its link is in the panel.`);
+      } else if (e.key === "Escape") {
+        store.select(null);
+      }
+      return;
+    }
     const el = (e.target as Element).closest?.("[data-layer]");
     if (!el || !svgHost.current?.contains(el) || view !== "edit") return;
     const id = el.getAttribute("data-layer")!;
@@ -230,6 +262,7 @@ export function Stage({ scale = 1 }: { scale?: number }) {
   }
 
   function onFocus(e: { target: EventTarget }) {
+    if (locked) return; // as on the page, focus alone picks nothing
     const el = (e.target as Element).closest?.("[data-layer]");
     const id = el?.getAttribute("data-layer");
     if (el && id && svgHost.current?.contains(el) && id !== store.getSnapshot().sel) store.select(id);
@@ -238,7 +271,11 @@ export function Stage({ scale = 1 }: { scale?: number }) {
   // Links inside the canvas never navigate; list entries select their drawing.
   function onClick(e: MouseEvent<HTMLElement>) {
     const a = (e.target as Element).closest("a");
-    if (!a) return;
+    if (!a) {
+      // a built-in scene: a click or a tap on an object picks it, one on the board lets go
+      if (locked && view === "edit" && (e.target as Element).closest(".desk")) store.select(layerIdAt(e.target as Element));
+      return;
+    }
     e.preventDefault();
     const k = a.dataset.k;
     const target = k && scene.layers.find((l) => l.type === "object" && l.slotId === k);
@@ -248,7 +285,8 @@ export function Stage({ scale = 1 }: { scale?: number }) {
   // ------------------------------------------------------------ overlay
   const status = slot ? slotStatus(slot, page.links[slot.id]) : null;
   // backgrounds are set in the inspector (fit, placement), not dragged: no handles
-  const b = layer && view === "edit" && layer.type !== "background" ? layerBBox(scene, layer, status) : null;
+  // and nothing is dragged in a built-in scene: the page's own ring shows what is selected
+  const b = layer && view === "edit" && !locked && layer.type !== "background" ? layerBBox(scene, layer, status) : null;
   let overlay = null, toolbar = null;
   if (layer && b && layer.transform) {
     const u = scene.canvas.width / ((figWidth || scene.canvas.width) * scale); // canvas units per screen pixel
@@ -296,15 +334,17 @@ export function Stage({ scale = 1 }: { scale?: number }) {
 
   // Frames: "Play on the canvas" off holds every drawing still; the selected one shows the
   // chosen frame, and while the Frames section is open the other frames show faintly behind it.
+  // A built-in scene always plays: the control that holds a frame is part of the Frames section.
+  const playing = playFrames || locked;
   const frames = layer ? frameCount(layer) : 1;
-  const hold = !playFrames && layer && frames > 1 ? `[data-layer="${CSS.escape(layer.id)}"] .fr` : "";
+  const hold = !playing && layer && frames > 1 ? `[data-layer="${CSS.escape(layer.id)}"] .fr` : "";
   const holdCss = hold
     ? `#stage ${hold}{opacity:${framesOpen ? ".2" : "0"}!important}#stage ${hold}:nth-child(${Math.min(frameAt, frames - 1) + 1}){opacity:1!important}`
     : "";
 
   return (
-    <div className="stage" id="stage" role="region" aria-label="Canvas: your page as visitors see it, editable"
-      data-theme={parts.rootAttrs.theme || undefined} data-motion={parts.rootAttrs.motion || undefined} data-fr={playFrames ? undefined : "off"}
+    <div className="stage" id="stage" role="region" aria-label={locked ? "Canvas: your page as visitors see it. Choose a drawing to edit its link." : "Canvas: your page as visitors see it, editable"}
+      data-theme={parts.rootAttrs.theme || undefined} data-motion={parts.rootAttrs.motion || undefined} data-fr={playing ? undefined : "off"} data-fixed={locked ? "" : undefined}
       onKeyDown={onKeyDown} onFocus={onFocus} onClick={onClick}>
       {holdCss ? <style>{holdCss}</style> : null}
       <div className="page">

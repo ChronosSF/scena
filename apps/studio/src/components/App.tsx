@@ -5,9 +5,11 @@ import * as actions from "../actions.ts";
 import { useNarrow } from "../hooks.ts";
 import { TopBar } from "./TopBar.tsx";
 import { LayersPanel } from "./LayersPanel.tsx";
+import { LinksPanel } from "./LinksPanel.tsx";
+import { isBuiltIn } from "../model.ts";
 import { Workspace } from "./Workspace.tsx";
 import { Inspector } from "./Inspector.tsx";
-import { ExportDialog, FramesChoiceDialog, ImportErrorsDialog, ResetDialog, SetAsideDialog } from "./Dialogs.tsx";
+import { ExportDialog, FramesChoiceDialog, ImportErrorsDialog, ReplaceDialog, ResetDialog, SetAsideDialog } from "./Dialogs.tsx";
 import { Feedback } from "./Feedback.tsx";
 import { TooltipProvider, hasFiles } from "./ui.tsx";
 
@@ -15,6 +17,9 @@ const inField = (t: EventTarget | null) => !!(t as Element | null)?.closest?.("i
 
 export function App() {
   const { sel, view, rev, forceMotion, tab, scene, page } = useStudio();
+  // A built-in scene is filled in, not designed: its links instead of layers, and a canvas that
+  // only selects (model.ts, isBuiltIn).
+  const locked = isBuiltIn(scene);
   const narrow = useNarrow();
   const [exportOpen, setExportOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -25,8 +30,8 @@ export function App() {
 
   // The page CSS, scoped to .stage. It styles the canvas and the layer thumbnails.
   const stageCss = useMemo(
-    () => pageCss(scene, resolvePalette(scene, page), { root: ".stage", body: ".stage", scope: ".stage ", editor: true, forceMotion }),
-    [rev, forceMotion], // documents are mutated in place
+    () => pageCss(scene, resolvePalette(scene, page), { root: ".stage", body: ".stage", scope: ".stage ", editor: !locked, forceMotion }),
+    [rev, forceMotion, locked], // documents are mutated in place
   );
 
   // On a phone, picking a drawing on the canvas brings its settings up; picking it in the list stays in the list.
@@ -59,7 +64,8 @@ export function App() {
   // Drop files anywhere; over the canvas they land where they were dropped.
   useEffect(() => {
     let depth = 0;
-    const enter = (e: DragEvent) => { if (hasFiles(e)) { depth++; setDropping(true); } };
+    // a built-in scene takes no drawings: no veil invites the drop, and addFiles says why
+    const enter = (e: DragEvent) => { if (hasFiles(e)) { depth++; setDropping(!isBuiltIn(store.getSnapshot().scene)); } };
     const leave = () => { depth = Math.max(0, depth - 1); if (!depth) setDropping(false); };
     const over = (e: DragEvent) => { if (hasFiles(e)) e.preventDefault(); };
     const drop = (e: DragEvent) => {
@@ -85,8 +91,8 @@ export function App() {
   }, []);
 
   const tabs: { id: Tab; label: string; panel: string }[] = [
-    { id: "layers", label: "Layers", panel: "panel-layers" },
-    { id: "inspect", label: sel ? "Drawing" : "Page", panel: "inspector" },
+    { id: "layers", label: locked ? "Links" : "Layers", panel: "panel-layers" },
+    { id: "inspect", label: !sel ? "Page" : locked ? "Link" : "Drawing", panel: "inspector" },
   ];
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") return;
@@ -104,7 +110,9 @@ export function App() {
         <a className="skip" href="#stage">Skip to the canvas</a>
         <a className="skip" href="#inspector">Skip to the inspector</a>
         <TopBar onExport={() => setExportOpen(true)} onImport={() => importInput.current?.click()} onReset={() => setResetOpen(true)} onSetAside={() => setSetAsideOpen(true)} />
-        <LayersPanel hidden={narrow && tab !== "layers"} tabbed={narrow} />
+        {locked
+          ? <LinksPanel hidden={narrow && tab !== "layers"} tabbed={narrow} />
+          : <LayersPanel hidden={narrow && tab !== "layers"} tabbed={narrow} />}
         <Workspace />
         {narrow && view === "edit" ? (
           <div className="tabs" role="tablist" aria-label="Panels" onKeyDown={onTabKey}>
@@ -130,6 +138,7 @@ export function App() {
       <SetAsideDialog open={setAsideOpen} onClose={() => setSetAsideOpen(false)} />
       <ImportErrorsDialog problems={problems} onClose={() => setProblems([])} />
       <FramesChoiceDialog />
+      <ReplaceDialog />
       <Feedback />
     </TooltipProvider>
   );

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Maximize2, RotateCw, Shapes, Trash2 } from "lucide-react";
-import { LIMITS, safeHref, type CommissionStatus, type Layer, type Motion, type SlotKind } from "@scena/scene";
+import { LIMITS, safeHref, type CommissionStatus, type Layer, type LinkContent, type Motion, type ObjectLayer, type SlotKind } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
-import { CANVASES, KIND_LABELS, SURFACES, currentSurface, getLayer, slotOf, type Surface } from "../model.ts";
+import { CANVASES, KIND_LABELS, SURFACES, canTurnOff, currentSurface, defaultLink, getLayer, isBuiltIn, offeredPalettes, slotOf, type Surface } from "../model.ts";
 import { drawingThumb, thumbTheme } from "../thumbs.ts";
 import { assetSummary } from "../describe.ts";
 import * as actions from "../actions.ts";
@@ -17,12 +17,155 @@ const MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator
 
 export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
   const { scene, sel } = useStudio();
-  const layer = getLayer(scene, sel);
+  const locked = isBuiltIn(scene);
+  const picked = getLayer(scene, sel);
+  // a built-in scene offers its links and the page; nothing else on it is there to select
+  const layer = locked && picked?.type !== "object" ? undefined : picked;
+  const label = !layer ? "Page settings" : locked ? "Link settings" : isBackground(scene, layer) ? "Background settings" : "Drawing settings";
   return (
-    <aside className="panel panel-right" id="inspector" tabIndex={-1} aria-label={!layer ? "Page settings" : isBackground(scene, layer) ? "Background settings" : "Drawing settings"} hidden={props.hidden}
+    <aside className="panel panel-right" id="inspector" tabIndex={-1} aria-label={label} hidden={props.hidden}
       {...(props.tabbed ? { role: "tabpanel", "aria-labelledby": "tab-inspect" } : {})}>
-      {!layer ? <PageInspector /> : isBackground(scene, layer) ? <BackgroundInspector key={layer.id} layer={layer} /> : <LayerInspector key={layer.id} layer={layer} />}
+      {!layer ? <PageInspector />
+        : locked && layer.type === "object" ? <SlotInspector key={layer.id} layer={layer} />
+        : isBackground(scene, layer) ? <BackgroundInspector key={layer.id} layer={layer} />
+        : <LayerInspector key={layer.id} layer={layer} />}
     </aside>
+  );
+}
+
+// ------------------------------------------------------------------ a link
+
+/** The words and the address of one link. The same fields serve a drawing of your own and a slot of a built-in scene. */
+function LinkFields({ slotId }: { slotId: string }) {
+  const { page } = useStudio();
+  const link = page.links[slotId];
+  if (!link) return null;
+  const editLink = (fn: (l: LinkContent) => void) => store.change(({ page: p }) => { const l = p.links[slotId]; if (l) fn(l); });
+  return (
+    <>
+      <TitleField slotId={slotId} />
+      <TextField label="Description" value={link.description} max={LIMITS.description} multiline name="link-description" onChange={(v) => editLink((l) => { l.description = v; })} />
+      <TextField label="Button text" value={link.cta} max={40} name="link-cta" onChange={(v) => editLink((l) => { l.cta = v; })} />
+      <UrlField slotId={slotId} />
+      <TextField label="Wording in the plain list" value={link.listLabel || ""} max={60} placeholder={link.title || "Same as the title"}
+        hint="The text-only list under the drawing, for screen readers and quick visitors."
+        onChange={(v) => editLink((l) => { if (v) l.listLabel = v; else delete l.listLabel; })} />
+    </>
+  );
+}
+
+/**
+ * A field whose value in the document has to stay valid, so that saved work always opens.
+ * The field shows what was typed; the document gets a value only when the caller says which
+ * (the typed text when it is valid, something safe otherwise, or nothing, which leaves the
+ * document as it is). When the document changes from elsewhere (undo, a rename, an import)
+ * the field follows it.
+ */
+function useDraft(inDocument: string, write: (v: string) => void): [string, (typed: string, toStore?: string) => void] {
+  const [draft, setDraft] = useState(inDocument);
+  const wrote = useRef(inDocument); // what this field last put in the document
+  useEffect(() => {
+    if (inDocument === wrote.current) return;
+    wrote.current = inDocument;
+    setDraft(inDocument);
+  }, [inDocument]);
+  return [draft, (typed, toStore) => {
+    setDraft(typed);
+    if (toStore === undefined || toStore === inDocument) return;
+    wrote.current = toStore;
+    write(toStore);
+  }];
+}
+
+/** A link needs a title to be on, so an emptied field keeps the last title in the document and says why. */
+function TitleField({ slotId }: { slotId: string }) {
+  const { page } = useStudio();
+  const link = page.links[slotId];
+  const [draft, type] = useDraft(link?.title ?? "", (v) => store.change(({ page: p }) => { const l = p.links[slotId]; if (l) l.title = v; }));
+  if (!link) return null;
+  return (
+    <TextField label="Title" value={draft} max={60} name="link-title"
+      check={(v) => (v.trim() ? null : { level: "error", text: link.title ? `A link needs a title. The page keeps "${link.title}" until you type one.` : "A link needs a title." })}
+      onChange={(v) => type(v, v.trim() ? v : undefined)} />
+  );
+}
+
+/**
+ * The address is stored only when it is one. While it is not, the link has no address: it
+ * does not keep pointing at the one being replaced, and the page stays valid.
+ */
+function UrlField({ slotId }: { slotId: string }) {
+  const { page } = useStudio();
+  const link = page.links[slotId];
+  const [draft, type] = useDraft(link?.url ?? "", (v) => store.change(({ page: p }) => { const l = p.links[slotId]; if (l) l.url = v; }));
+  if (!link) return null;
+  return (
+    <TextField label="URL" value={draft} type="url" inputMode="url" placeholder="https://… or mailto:…" name="url"
+      check={(v) => {
+        if (!v.trim()) return { level: "warn", text: "Add an address so the button goes somewhere." };
+        const s = safeHref(v);
+        if (!s) return { level: "error", text: "Use a web address (https://…) or an email (mailto:…). Until it is one, the link has no address." };
+        if (s !== v.trim()) return { level: "", text: `Will open ${s}` };
+        return null;
+      }}
+      onChange={(v) => type(v, safeHref(v) ? v.trim() : "")} />
+  );
+}
+
+function CommissionFields({ slotId }: { slotId: string }) {
+  const { page } = useStudio();
+  const link = page.links[slotId];
+  if (!link) return null;
+  const editLink = (fn: (l: LinkContent) => void) => store.change(({ page: p }) => { const l = p.links[slotId]; if (l) fn(l); });
+  return (
+    <>
+      <Segmented label="Commission status" full value={link.status || "open"} onChange={(v: CommissionStatus) => editLink((l) => { l.status = v; })}
+        options={[{ value: "open", label: "Open" }, { value: "closed", label: "Closed" }, { value: "waitlist", label: "Waitlist" }]} />
+      <div style={{ marginTop: 12 }}>
+        <TextField label="Note" value={link.statusNote || ""} max={80} placeholder="Booking for spring 2027." name="status-note" onChange={(v) => editLink((l) => { l.statusNote = v; })} />
+      </div>
+    </>
+  );
+}
+
+/**
+ * One slot of a built-in scene: the link's words and address, on or off, and the commission
+ * status where the slot has one. The drawing itself is not editable, so there is no name
+ * field, placement, frames or tap area here (development plan section 2.3).
+ */
+function SlotInspector({ layer }: { layer: ObjectLayer }) {
+  const { scene, page, rev } = useStudio();
+  const slot = slotOf(scene, layer);
+  const theme = thumbTheme(page);
+  const thumb = useMemo(() => drawingThumb(scene, page, layer, `insp-${layer.id}`), [rev, layer.id]); // documents mutate in place
+  if (!slot) return null;
+  const link = page.links[slot.id];
+  const on = link?.enabled !== false;
+  return (
+    <div>
+      <div className="insp-head">
+        <span className="layer-thumb">{thumb ? <span className="stage thumb-scope" data-theme={theme} dangerouslySetInnerHTML={{ __html: thumb }} /> : <Shapes aria-hidden="true" strokeWidth={1.75} />}</span>
+        <div className="insp-name">
+          <h2 className="insp-title" data-ui="slot-title">{slot.label}</h2>
+          <p className="insp-meta">{KIND_LABELS[slot.kind]} link</p>
+        </div>
+      </div>
+      <Section title="Link" action={link && canTurnOff(scene, slot)
+        ? <Switch label={`Show ${slot.label} on the page`} checked={on} onChange={() => actions.toggleHidden(layer.id)} id="slot-on" /> : undefined}>
+        {link ? (
+          <>
+            {on ? null : <p className="section-note first">Off: the drawing and its line in the plain list are left out of the page. What you typed is kept.</p>}
+            <LinkFields slotId={slot.id} />
+          </>
+        ) : (
+          <>
+            <p className="field-hint">This page has nothing for {slot.label} yet.</p>
+            <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => store.change(({ page: p }) => { p.links[slot.id] = defaultLink(slot); })}>Set up this link</button>
+          </>
+        )}
+      </Section>
+      {slot.statusAware && link ? <Section title="Commissions"><CommissionFields slotId={slot.id} /></Section> : null}
+    </div>
   );
 }
 
@@ -41,7 +184,6 @@ function LayerInspector({ layer }: { layer: Layer }) {
   const front = order[order.length - 1]?.id === layer.id, back = order[0]?.id === layer.id;
 
   const edit = (fn: (l: Layer) => void) => store.change(({ scene: s }) => { const l = getLayer(s, layer.id); if (l) fn(l); });
-  const editLink = (fn: (l: NonNullable<typeof link>) => void) => store.change(({ page: p }) => { const l = slot && p.links[slot.id]; if (l) fn(l); });
 
   return (
     <div>
@@ -90,21 +232,7 @@ function LayerInspector({ layer }: { layer: Layer }) {
           <>
             <SelectField label="Kind" value={slot.kind} onChange={(v: SlotKind) => actions.setKind(slot.id, v)}
               options={(Object.entries(KIND_LABELS) as [SlotKind, string][]).map(([value, label]) => ({ value, label }))} />
-            <TextField label="Title" value={link.title} max={60} onChange={(v) => editLink((l) => { l.title = v; })} />
-            <TextField label="Description" value={link.description} max={LIMITS.description} multiline onChange={(v) => editLink((l) => { l.description = v; })} />
-            <TextField label="Button text" value={link.cta} max={40} onChange={(v) => editLink((l) => { l.cta = v; })} />
-            <TextField label="URL" value={link.url} type="url" inputMode="url" placeholder="https://… or mailto:…" name="url"
-              check={(v) => {
-                if (!v.trim()) return { level: "warn", text: "Add an address so the button goes somewhere." };
-                const s = safeHref(v);
-                if (!s) return { level: "error", text: "Use a web address (https://…) or an email (mailto:…)." };
-                if (s !== v.trim()) return { level: "", text: `Will open ${s}` };
-                return null;
-              }}
-              onChange={(v) => editLink((l) => { l.url = v.trim(); })} />
-            <TextField label="Wording in the plain list" value={link.listLabel || ""} max={60} placeholder={link.title || "Same as the title"}
-              hint="The text-only list under the drawing, for screen readers and quick visitors."
-              onChange={(v) => editLink((l) => { if (v) l.listLabel = v; else delete l.listLabel; })} />
+            <LinkFields slotId={slot.id} />
           </>
         ) : (
           <p className="field-hint">Decoration for now: it boils with the rest, but nothing happens on tap. Make it clickable to give it a link, a hover lift, a drawn ring and a line in the plain list.</p>
@@ -112,13 +240,7 @@ function LayerInspector({ layer }: { layer: Layer }) {
       </Section>
 
       {clickable && slot?.statusAware && link ? (
-        <Section title="Commissions">
-          <Segmented label="Commission status" full value={link.status || "open"} onChange={(v: CommissionStatus) => editLink((l) => { l.status = v; })}
-            options={[{ value: "open", label: "Open" }, { value: "closed", label: "Closed" }, { value: "waitlist", label: "Waitlist" }]} />
-          <div style={{ marginTop: 12 }}>
-            <TextField label="Note" value={link.statusNote || ""} max={80} placeholder="Booking for spring 2027." onChange={(v) => editLink((l) => { l.statusNote = v; })} />
-          </div>
-        </Section>
+        <Section title="Commissions"><CommissionFields slotId={slot.id} /></Section>
       ) : null}
 
       {clickable && layer.type === "object" ? (
@@ -150,6 +272,9 @@ function LayerInspector({ layer }: { layer: Layer }) {
 
 function PageInspector() {
   const { scene, page } = useStudio();
+  // A built-in scene leaves the page its words, its palette and its motion. The lettering, the
+  // typeface and the board belong to the scene, so those sections are not shown.
+  const locked = isBuiltIn(scene);
   const pal = scene.theme.palettes.find((p) => p.id === page.theme.palette);
   return (
     <div>
@@ -158,18 +283,17 @@ function PageInspector() {
         <span className="faint num" style={{ fontSize: 12 }}>scena.example/{page.handle}</span>
       </div>
       <Section title="Profile">
-        <TextField label="Name" value={page.profile.displayName} max={LIMITS.displayName} name="display-name"
-          onChange={(v) => store.change(({ page: p }) => { p.profile.displayName = v; p.seo.title = ""; })} />
-        <TextField label="Bio" value={page.profile.bio} max={LIMITS.bio} multiline onChange={(v) => store.change(({ page: p }) => { p.profile.bio = v; })} />
+        <NameField name={page.profile.displayName} />
+        <TextField label="Bio" value={page.profile.bio} max={LIMITS.bio} multiline name="bio" onChange={(v) => store.change(({ page: p }) => { p.profile.bio = v; })} />
         <HandleField handle={page.handle} />
       </Section>
 
-      <LetteringSection />
-      <TypefaceSection />
+      {locked ? null : <LetteringSection />}
+      {locked ? null : <TypefaceSection />}
 
       <Section title="Palette">
         <div className="palettes" role="radiogroup" aria-label="Palette">
-          {scene.theme.palettes.map((p) => (
+          {offeredPalettes(scene).map((p) => (
             <label className="pal" key={p.id} title={p.name || p.id}>
               <input type="radio" name="palette" value={p.id} checked={p.id === page.theme.palette} aria-label={p.name || p.id}
                 onChange={() => store.change(({ page: pg }) => { pg.theme.palette = p.id; })} />
@@ -197,37 +321,57 @@ function PageInspector() {
         <p className="section-note">Auto boils the lines and respects each visitor's reduced-motion setting. Reduced boils slowly. Off keeps every line still.</p>
       </Section>
 
-      <Section title="Canvas">
-        {/* the top bar has no room for the scene name on a phone */}
-        <div className="field show-narrow">
-          <label className="field-label" htmlFor="scene-name-narrow"><span>Scene name</span></label>
-          <SceneNameInput className="input" id="scene-name-narrow" />
-        </div>
-        <SelectField label="Surface" value={currentSurface(scene)} onChange={(v: Surface) => actions.setSurface(v)} options={SURFACES.map((s) => ({ value: s.id, label: s.label }))} />
-        <SelectField label="Size" value={`${scene.canvas.width}x${scene.canvas.height}`} onChange={(v) => actions.setCanvas(v)}
-          options={CANVASES.map((c) => ({ value: c.id, label: c.label }))} />
-      </Section>
+      {locked ? null : (
+        <Section title="Canvas">
+          {/* the top bar has no room for the scene name on a phone */}
+          <div className="field show-narrow">
+            <label className="field-label" htmlFor="scene-name-narrow"><span>Scene name</span></label>
+            <SceneNameInput className="input" id="scene-name-narrow" />
+          </div>
+          <SelectField label="Surface" value={currentSurface(scene)} onChange={(v: Surface) => actions.setSurface(v)} options={SURFACES.map((s) => ({ value: s.id, label: s.label }))} />
+          <SelectField label="Size" value={`${scene.canvas.width}x${scene.canvas.height}`} onChange={(v) => actions.setCanvas(v)}
+            options={CANVASES.map((c) => ({ value: c.id, label: c.label }))} />
+        </Section>
+      )}
 
       <Section title="Words">
-        <TextField label="Prompt under the drawing" value={page.copy?.hint || ""} max={120} placeholder="Tap anything in the drawing."
+        <TextField label="Prompt under the drawing" value={page.copy?.hint || ""} max={120} placeholder={scene.copy?.hint || "Tap anything in the drawing."}
           onChange={(v) => store.change(({ page: p }) => { p.copy = { ...(p.copy || {}), hint: v }; })} />
-        <TextField label="Plain list heading" value={page.fallbackList.heading || ""} max={60} placeholder="Or skip the drawing"
+        <TextField label="Plain list heading" value={page.fallbackList.heading || ""} max={60} placeholder={scene.fallback.heading || "Or skip the drawing"} name="list-heading"
           onChange={(v) => store.change(({ page: p }) => { p.fallbackList.heading = v; })} />
-        <TextField label="Description for screen readers" value={page.copy?.sceneLabel || ""} max={200} multiline placeholder="My desk. Each object opens one of my links."
+        <TextField label="Description for screen readers" value={page.copy?.sceneLabel || ""} max={200} multiline placeholder={scene.copy?.sceneLabel || "My desk. Each object opens one of my links."}
           onChange={(v) => store.change(({ page: p }) => { p.copy = { ...(p.copy || {}), sceneLabel: v }; })} />
       </Section>
 
-      <Section title="Keyboard">
-        <ul className="kbd-list">
-          <li><span>Select a drawing</span><kbd>Tab</kbd></li>
-          <li><span>Nudge</span><kbd>Arrows</kbd></li>
-          <li><span>Rotate</span><kbd>[ ]</kbd></li>
-          <li><span>Resize</span><kbd>− +</kbd></li>
-          <li><span>Undo</span><kbd>{MOD}Z</kbd></li>
-          <li><span>Zoom to fit / 100%</span><kbd>Shift+1 / Shift+0</kbd></li>
-        </ul>
-      </Section>
+      {locked ? (
+        <Section title="Scene">
+          <p className="field-hint" data-ui="scene-note">
+            {scene.name}{scene.author.displayName ? `, drawn by ${scene.author.displayName}` : ""}. A ready-made scene: its drawings stay as they were made, and the links, the words and the colours are yours.
+          </p>
+        </Section>
+      ) : (
+        <Section title="Keyboard">
+          <ul className="kbd-list">
+            <li><span>Select a drawing</span><kbd>Tab</kbd></li>
+            <li><span>Nudge</span><kbd>Arrows</kbd></li>
+            <li><span>Rotate</span><kbd>[ ]</kbd></li>
+            <li><span>Resize</span><kbd>− +</kbd></li>
+            <li><span>Undo</span><kbd>{MOD}Z</kbd></li>
+            <li><span>Zoom to fit / 100%</span><kbd>Shift+1 / Shift+0</kbd></li>
+          </ul>
+        </Section>
+      )}
     </div>
+  );
+}
+
+/** A page needs a name, so an emptied field keeps the last one in the document and says why. */
+function NameField({ name }: { name: string }) {
+  const [draft, type] = useDraft(name, (v) => store.change(({ page: p }) => { p.profile.displayName = v; p.seo.title = ""; }));
+  return (
+    <TextField label="Name" value={draft} max={LIMITS.displayName} name="display-name"
+      check={(v) => (v.trim() ? null : { level: "error", text: `A page needs a name. It keeps "${name}" until you type one.` })}
+      onChange={(v) => type(v, v.trim() ? v : undefined)} />
   );
 }
 

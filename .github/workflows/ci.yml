@@ -46,6 +46,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm parity
+      # The runner's Chrome changes with the runner image, so the log names it.
+      - name: Say which Chrome the checks drive
+        run: google-chrome --version
       - run: pnpm verify:runtime
       - run: pnpm verify:studio
       - name: Keep the studio screenshots when a check fails

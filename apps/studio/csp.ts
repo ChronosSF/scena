@@ -1,6 +1,9 @@
 // The Content Security Policy of the built studio: the parts that read and write the HTML,
 // kept free of Node and Vite so they can be tested (test/csp.test.ts). vite.config.ts runs
-// them on dist/index.html once the app's script has been inlined.
+// them on dist/index.html once the app's script has been inlined. The web app serves the same
+// studio under a policy of its own (apps/web/csp.ts); what the studio needs from either is in
+// @scena/studio/policy.
+import { STUDIO_DIRECTIVES, STUDIO_SOURCES } from "@scena/studio/policy";
 
 export interface ScriptElement {
   /** Everything between "<script" and the ">" of the start tag. */
@@ -69,10 +72,8 @@ export function policyFor(scriptHashes: string[]): string {
   return [
     "default-src 'none'",
     `script-src ${scriptHashes.map((h) => `'sha256-${h}'`).join(" ")}`,
-    "style-src 'unsafe-inline' https://fonts.googleapis.com", // React and the renderer write style attributes and <style>
-    "font-src https://fonts.gstatic.com",
-    "img-src data: blob:", // drawings are data: URLs in the documents and blob: URLs on the stage
-    "connect-src data:", // rasters are read back from their data: URLs to be trimmed and re-encoded
+    // styles, typefaces, images and data: reads, as the studio needs them and no wider
+    ...STUDIO_DIRECTIVES.map((d) => `${d} ${STUDIO_SOURCES[d].join(" ")}`),
     "base-uri 'none'",
     "form-action 'none'",
   ].join("; ");

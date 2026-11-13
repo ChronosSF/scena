@@ -1,31 +1,15 @@
+// The single-file build's entry: the studio from @scena/studio, mounted on this document.
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { renderPage } from "@scena/renderer";
-import { validatePage, validateScene } from "@scena/scene";
-import { App } from "./components/App.tsx";
-import { store } from "./store.ts";
-import { openPicker } from "./ui.ts";
-import { ingestSvg, resanitizeFragment } from "./ingest/svg.ts";
-import { SAMPLES } from "./model.ts";
-import "./studio.css";
+import { Studio, exposeForChecks, showMoreFaces } from "@scena/studio";
+import "@scena/studio/studio.css";
 
-// The typefaces that only the Typeface cards preview load as a print stylesheet, so they never
-// hold up first paint; once loaded they apply to the screen.
-const moreFaces = document.getElementById("more-faces") as HTMLLinkElement | null;
-if (moreFaces) {
-  const apply = () => { moreFaces.media = "all"; };
-  if (moreFaces.sheet) apply(); else moreFaces.addEventListener("load", apply, { once: true });
-}
+showMoreFaces();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <Studio />
   </StrictMode>,
 );
 
-// A handle for debugging and automated checks (tools/verify-studio.ts). openPicker is here
-// so a check can show the picker a scene that is not shipped.
-declare global {
-  interface Window { sceneStudio: unknown }
-}
-window.sceneStudio = { store, renderPage, ingestSvg, resanitizeFragment, SAMPLES, validateScene, validatePage, openPicker };
+exposeForChecks();

@@ -14,6 +14,9 @@ or PNG from Procreate), marks which ones are clickable, attaches links, and expo
 The studio also has the plan's first product in it, a links-only mode: a ready-made scene whose
 drawings are fixed, where a person fills in the links, the words and the colours. The scene is
 chosen in a picker whose cards are the page itself, live, not pictures of it.
+The studio runs in two places from the same code: as one HTML file that opens from disk, for
+pitching, and inside the web app, which is where sign-in, saved drafts and publishing will be
+built. Today the web app is a shell around the studio.
 The product plan is in [docs/development-plan.md](docs/development-plan.md); the work it describes is
 tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/milestones).
 
@@ -22,15 +25,20 @@ tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/
 - TypeScript end to end in a pnpm workspace; Node 24 runs the scripts directly.
 - `@scena/scene`, `@scena/renderer` and `@scena/scenes` are pure TypeScript packages, used as source with no build step.
 - The page runtime is compiled by esbuild and inlined with a CSP hash; it is under 3 KB.
-- The studio is React 19 on Vite 8, built into one HTML file that opens from disk. Its interface
-  uses headless Radix primitives (menus, popovers, tooltips) and Lucide icons, styled by hand;
-  the design system is in [docs/design/studio-ui.md](docs/design/studio-ui.md).
-- The built studio carries a Content Security Policy, written at build time: only the bundled app
-  and the page runtime may run, both named by hash, so markup from a document cannot run script
-  even if a sanitiser misses it. The dev server has no policy; `pnpm verify:studio` checks the build.
+- The studio is a React 19 package, `@scena/studio`. Its interface uses headless Radix primitives
+  (menus, popovers, tooltips) and Lucide icons, styled by hand; the design system is in
+  [docs/design/studio-ui.md](docs/design/studio-ui.md). Two apps mount it:
+  - `apps/studio` builds it with Vite 8 into one HTML file that opens from disk.
+  - `apps/web` is Next.js 16 (App Router). It loads the studio in the browser only, at `/studio`.
+- Both apps carry a Content Security Policy, so markup from a document cannot run script even
+  if a sanitiser misses it. The single-file build names the bundled app and the page runtime by
+  hash, at build time. The web app names its scripts by a nonce made for each request, and the
+  page runtime by hash. The Vite dev server has no policy; `pnpm verify:studio` and
+  `pnpm verify:web` check the builds in a browser.
 - Vitest for tests, `tsc` 7 for type checks, headless Chrome over CDP for end-to-end checks.
 
 Why this and not the plan's full stack yet: [docs/adr/0001-tech-stack.md](docs/adr/0001-tech-stack.md).
+How the studio came to run in two apps: [docs/adr/0004-one-studio-two-apps.md](docs/adr/0004-one-studio-two-apps.md).
 
 ## Commands
 
@@ -39,10 +47,13 @@ Needs Node 24 or later and pnpm 10 (`corepack enable` gets the pinned pnpm).
 ```sh
 pnpm install
 pnpm dev          # the studio with hot reload at http://localhost:5173 (and /demo-desk.html)
-pnpm build        # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
-pnpm preview      # serve the build at http://localhost:4173
-pnpm test         # 139 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, saved work, file sniffing, the build's policy, frames, board and lettering
-pnpm typecheck    # every package, the page runtime, the scripts and the tools
+pnpm dev:web      # the web app with hot reload at http://localhost:3100 (the studio is at /studio)
+pnpm build        # both apps: pnpm build:studio, then pnpm build:web
+pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
+pnpm build:web    # the web app's production build, in apps/web/.next
+pnpm preview      # serve the single-file build at http://localhost:4173
+pnpm test         # 146 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, saved work, file sniffing, both apps' policies, frames, board and lettering
+pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
 pnpm check        # typecheck + test + build
 
 pnpm lint:scene packages/scenes/desk.scene.json packages/scenes/pia.page.json
@@ -58,12 +69,16 @@ Other tools, all optional:
 | `pnpm fixtures` | Regenerates the test drawings in `fixtures/`, including the mug's three SVG frames, a blinking face as a PNG sequence and as an animated PNG, a paper texture, a drawn desk top and a lettered "Pia" (SVG and PNG) |
 | `pnpm parity` | Confirms the renderer reproduces the prototype's `demo-desk.html` (apart from the runtime) |
 | `pnpm verify:studio [url]` | Drives the studio in headless Chrome through real mouse, keyboard and file-chooser input. Default target: the build from file://. Run `pnpm build` first |
+| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview, a reload, and markup that tries to run script. Run `pnpm build` first. With a URL it checks a server that is already running, such as `pnpm dev:web` |
 | `pnpm verify:runtime` | Checks every branch of the boil control (lite mode, slow device, Save-Data, reduced motion, offscreen, hidden, idle) on the built demo page, and that frames flip, hold frame 1 and pause with it on `demo-frames.html` |
 | `pnpm shots [url]` | Retakes the studio screenshots in `docs/design/` (desktop light and dark, 375 px). Default target: the build from file:// |
 | `pnpm measure [--soft]` | Boil frame cost at 375×812 @3x with 1×, 4× and 6× CPU slowdown, against the original prototype; then the desk with three objects flipping frames at 6 fps |
 
 The Chrome-based tools use the installed Chrome or Edge (or set `CHROME_PATH`). They write
 screenshots and exports to `tools/out/`, which git ignores.
+
+Next.js reports anonymous usage to its maker unless `NEXT_TELEMETRY_DISABLED=1` is set in the
+environment. CI sets it, and so does `pnpm verify:web` for the server it starts.
 
 ## Layout
 
@@ -73,8 +88,11 @@ packages/
   renderer/    renderPage, renderParts, CSS, geometry, escaping; runtime/ is the page script
   scenes/      the ready-made scenes and their sample pages (desk.scene.json, pia.page.json) as a list,
                samples.json (the steaming mug), their encoders, and testing/ (a second scene for the checks)
+  studio/      the studio as a React component, with its store, stylesheet and tests;
+               src/ingest/ has the SVG sanitiser and the PNG pipeline
 apps/
-  studio/      the editor (React + Vite); src/ingest/ has the SVG sanitiser and the PNG pipeline
+  studio/      the studio as one HTML file (Vite): the entry point, the build and its policy
+  web/         the web app (Next.js): the studio at /studio, and the policy sent with every page
 fixtures/      test drawings; reference/ has the original prototype and its rendered output
 tools/         lint CLI, fixture generator, parity and headless-Chrome checks
 docs/          development plan, architecture decisions, and design/ (the studio's design system)
@@ -167,7 +185,9 @@ understates a budget Android.
 ## Not built yet
 
 On purpose, for the pitch: accounts, publishing, analytics, billing and custom domains (see the
-plan); the pinboard and the shop window (the scene picker lists the desk alone until they are
+plan). The web app is a shell for them: it has no sign-in, no database and no hosting yet, and
+the studio in it keeps work in the browser, as the single-file build does. Also not built: the
+pinboard and the shop window (the scene picker lists the desk alone until they are
 drawn); keeping a page's links when another scene is chosen (it starts a new page, after
 asking); tapping an object in the preview to open its form; the Open Graph image; the badge
 control in the studio (the renderer
@@ -195,7 +215,7 @@ change to `packages/scenes` alone:
 
 Then `pnpm lint:scene` on the pair, and `pnpm test`: `packages/scenes/test/built-in.test.ts`
 holds every entry of the list to what the picker and the links-only mode rely on, and
-`apps/studio/test/picker.test.ts` renders and opens each one. Nothing in `apps/studio` changes.
+`packages/studio/test/picker.test.ts` renders and opens each one. Nothing in the studio or in either app changes.
 The checks already run on two scenes: the second is `smallDesk()` in
 `packages/scenes/testing`, the desk under another name with three of its links. It is a test
 fixture, and `pnpm verify:studio` checks that the build does not contain it.

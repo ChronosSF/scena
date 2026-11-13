@@ -2,6 +2,9 @@
 // does, spotting what the policy would block, and writing the policy into the document. The
 // built file itself is checked in a real browser by tools/verify-studio.ts.
 import { describe, expect, test } from "vitest";
+import { renderPage, RUNTIME_SHA256 } from "@scena/renderer";
+import { BUILT_IN_SCENES } from "@scena/scenes";
+import { smallDesk } from "@scena/scenes/testing";
 import { inlineHandler, isDataBlock, isExternal, policyFor, scriptElements, withPolicy } from "../csp.ts";
 
 const doc = (body: string) => `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>t</title>\n</head>\n<body>\n${body}\n</body>\n</html>`;
@@ -99,5 +102,29 @@ describe("the policy", () => {
     expect(() => withPolicy("<html><head><title>t</title></head></html>", policy)).toThrow(/charset/);
     expect(() => withPolicy('<html><head><script>early()</script><meta charset="utf-8"></head></html>', policy)).toThrow(/before the charset/);
     expect(() => withPolicy(doc(""), 'default-src "none"')).toThrow(/double quote/);
+  });
+});
+
+// The scene picker shows each ready-made scene as its published page, in a frame made from
+// srcdoc. Such a frame runs under the studio's own policy as well as the page's, and the build
+// names its scripts by hash. So a card works in the built studio only if the one script its
+// page runs is the page runtime, whatever the scene: the ones that ship, and a second that is
+// a test fixture.
+describe("a scene picker card under the policy", () => {
+  /** Base64 SHA-256, as a policy writes it. */
+  const sha256 = async (s: string) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))));
+  const each = [...BUILT_IN_SCENES, smallDesk()].map((e) => [e.scene.name, e] as const);
+
+  test.each(each)("%s: the only script its page runs is the page runtime, which the policy names", async (_name, { scene, sample }) => {
+    const studioPolicy = policyFor(["the-studio-bundle", RUNTIME_SHA256]);
+    for (const forceMotion of [false, true]) {
+      const { html } = renderPage(scene, sample, { demo: true, forceMotion });
+      const scripts = scriptElements(html);
+      expect(scripts.some(isExternal)).toBe(false);
+      const run = scripts.filter((s) => !isDataBlock(s));
+      expect(await Promise.all(run.map((s) => sha256(s.body)))).toEqual([RUNTIME_SHA256]);
+      expect(studioPolicy).toContain(`'sha256-${await sha256(run[0]!.body)}'`);
+      expect(html).toContain(`script-src 'sha256-${RUNTIME_SHA256}'`); // and the page's own policy names it too
+    }
   });
 });

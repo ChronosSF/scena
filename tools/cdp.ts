@@ -49,6 +49,19 @@ export interface Browser {
   close: () => Promise<void>;
 }
 
+/** How long Chrome gets to open its debugging port. A first start on a CI runner can take several seconds. */
+const START_MS = 30_000;
+
+/** Why Chrome did not start, with the last lines it wrote: without them a failure says nothing about its cause. */
+function startFailure(exe: string, port: number, what: string, said: string): string {
+  const lines = said.split("\n").map((l) => l.trim()).filter(Boolean).slice(-12);
+  return [
+    `Chrome did not open its debugging port (${port}): it ${what}.`,
+    `  ${exe}`,
+    ...(lines.length ? ["  Chrome said:", ...lines.map((l) => `    ${l}`)] : ["  Chrome said nothing."]),
+  ].join("\n");
+}
+
 export async function launch({ port = 9333, headed = false, gpu = true, fileAccess = true } = {}): Promise<Browser> {
   const exe = CANDIDATES.find((p) => existsSync(p));
   if (!exe) throw new Error("No Chrome or Edge found; set CHROME_PATH.");
@@ -59,13 +72,45 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
   flags.push(headed ? "--window-position=-2400,0" : "--headless=new");
   if (headed) flags.push("--window-size=420,900");
   if (!gpu) flags.push("--disable-gpu", "--disable-gpu-rasterization", "--disable-gpu-compositing");
-  const proc = spawn(exe, [...flags, "about:blank"], { stdio: "ignore" });
-  let info: Json;
-  for (let i = 0; i < 100 && !info; i++) {
-    try { info = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); } catch { await sleep(100); }
+  const failed = (what: string, said = "") => {
+    try { rmSync(profile, { recursive: true, force: true }); } catch { /* Windows may hold the lock briefly */ }
+    return new Error(startFailure(exe, port, what, said));
+  };
+  // Chrome's own messages are kept: when it does not start, they are the only account of why.
+  // They are read to the end of its life, so it never waits on a full pipe.
+  const proc = (() => {
+    try { return spawn(exe, [...flags, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] }); }
+    catch (e) { throw failed(`could not be started (${(e as Error).message})`); }
+  })();
+  let said = "", ended = "";
+  proc.stderr.setEncoding("utf8");
+  proc.stderr.on("data", (text: string) => { said = (said + text).slice(-6000); });
+  proc.on("error", (e) => { ended = `could not be started (${e.message})`; });
+  proc.on("exit", (code, signal) => { ended = signal ? `was stopped by ${signal}` : `exited with code ${code}`; });
+  // Chrome prints the address of its debugging server once it is up, and that is the address to
+  // use: it may not be 127.0.0.1 (when that port is taken, Chrome listens on the IPv6 loopback
+  // alone). The port is asked as well, for a build that prints nothing. Waiting stops as soon
+  // as Chrome has gone.
+  const asked = async (): Promise<string> => {
+    try { return (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl || ""; } catch { return ""; }
+  };
+  let address = "", from = "";
+  const started = Date.now();
+  while (!address && !ended && Date.now() - started < START_MS) {
+    address = /DevTools listening on (ws:\/\/\S+)/.exec(said)?.[1] || "";
+    from = "printed by Chrome";
+    if (address) break;
+    address = await asked();
+    from = "answered on the port";
+    if (!address) await sleep(100);
   }
-  if (!info) throw new Error("Chrome did not open its debugging port.");
-  const ws = new WebSocket(info.webSocketDebuggerUrl);
+  if (!address) {
+    proc.kill();
+    throw failed(ended || `was still running after ${START_MS / 1000} s`, said);
+  }
+  // On CI the log says how Chrome came up: what a failure there has to be compared with.
+  if (process.env.CI) console.log(`NOTE  Chrome is at ${address} (${from}) after ${Date.now() - started} ms; 127.0.0.1:${port} ${(await asked()) ? "answers" : "does not answer"}`);
+  const ws = new WebSocket(address);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
   let id = 0;
   const pending = new Map<number, { resolve: (v: Json) => void; reject: (e: Error) => void }>();

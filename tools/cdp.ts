@@ -86,7 +86,8 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
   proc.stderr.setEncoding("utf8");
   proc.stderr.on("data", (text: string) => { said = (said + text).slice(-6000); });
   proc.on("error", (e) => { ended = `could not be started (${e.message})`; });
-  proc.on("exit", (code, signal) => { ended = signal ? `was stopped by ${signal}` : `exited with code ${code}`; });
+  // "close", not "exit": it comes once Chrome's last words have been read as well
+  proc.on("close", (code, signal) => { ended = signal ? `was stopped by ${signal}` : `exited with code ${code}`; });
   // Chrome prints the address of its debugging server once it is up, and that is the address to
   // use: it may not be 127.0.0.1 (when that port is taken, Chrome listens on the IPv6 loopback
   // alone). The port is asked as well, for a build that prints nothing. Waiting stops as soon

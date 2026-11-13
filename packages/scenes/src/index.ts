@@ -17,11 +17,7 @@ export interface BuiltInScene {
   scene: SceneDocument;
   /** A finished page on the scene, with every link filled in: what a picker previews it with. */
   sample: PageDocument;
-  /** Who the scene was drawn for, as the scene itself says (`scene.audience`). */
-  audience: readonly string[];
 }
-
-const builtIn = (scene: SceneDocument, sample: PageDocument): BuiltInScene => ({ scene, sample, audience: scene.audience });
 
 /**
  * The ready-made scenes, in the order a picker shows them. Adding one is a change to this
@@ -29,7 +25,7 @@ const builtIn = (scene: SceneDocument, sample: PageDocument): BuiltInScene => ({
  * ready-made scene"). test/built-in.test.ts holds every entry to what a picker relies on.
  */
 export const BUILT_IN_SCENES: readonly BuiltInScene[] = [
-  builtIn(DESK_SCENE, PIA_PAGE),
+  { scene: DESK_SCENE, sample: PIA_PAGE },
 ];
 
 /** A drawing offered on its own: its layer as it sits on a desk, its link slot and its assets. */

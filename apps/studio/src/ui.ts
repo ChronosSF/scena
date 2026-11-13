@@ -15,11 +15,8 @@ export interface UiState {
   ask: { count: number; resolve: (choice: FramesChoice | null) => void } | null;
   /** Opening `what` would replace the work on the canvas: go ahead? */
   replace: { what: string; resolve: (ok: boolean) => void } | null;
-  /**
-   * The scene picker is open, with these scenes to choose from. `returnTo` is where the
-   * keyboard focus goes when it closes, for an opener the browser cannot return to by itself.
-   */
-  picker: { scenes: readonly BuiltInScene[]; returnTo: HTMLElement | null } | null;
+  /** The scene picker is open, with these scenes to choose from. */
+  picker: { scenes: readonly BuiltInScene[] } | null;
 }
 
 let state: UiState = { toast: null, live: { msg: "", n: 0 }, ask: null, replace: null, picker: null };
@@ -57,9 +54,9 @@ export function askReplace(what: string): Promise<boolean> {
  * Opens the scene picker. It offers the ready-made scenes that ship; the automated checks
  * hand it a list of their own, to show it more than one scene before a second is drawn.
  */
-export function openPicker(scenes?: readonly BuiltInScene[], returnTo: HTMLElement | null = null): void {
+export function openPicker(scenes?: readonly BuiltInScene[]): void {
   // anything but a list is the shipped one: a handler may pass its event along
-  emit({ picker: { scenes: Array.isArray(scenes) ? scenes : BUILT_IN_SCENES, returnTo } });
+  emit({ picker: { scenes: Array.isArray(scenes) ? scenes : BUILT_IN_SCENES } });
 }
 export function closePicker(): void {
   if (state.picker) emit({ picker: null });

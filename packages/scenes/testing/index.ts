@@ -50,5 +50,5 @@ export function smallDesk(): BuiltInScene {
   sample.seo = { title: "Ines Duarte, writer" };
   sample.copy = { hint: "Tap anything on my desk.", sceneLabel: "Ines’s desk. Each object opens one of her links." };
 
-  return { scene, sample, audience: scene.audience };
+  return { scene, sample };
 }

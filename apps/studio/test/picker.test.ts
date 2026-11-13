@@ -35,8 +35,8 @@ describe("what a card says", () => {
   });
 
   test("who the scene was drawn for, as a line", () => {
-    expect(audienceWords(desk.audience)).toBe("Drawn for illustrators");
-    expect(audienceWords(small.audience)).toBe("Drawn for writers and poets");
+    expect(audienceWords(desk.scene.audience)).toBe("Drawn for illustrators");
+    expect(audienceWords(small.scene.audience)).toBe("Drawn for writers and poets");
     expect(audienceWords(["musicians", "shops", " tattoo artists "])).toBe("Drawn for musicians, shops and tattoo artists");
     expect(audienceWords([])).toBe("");
     expect(audienceWords(["", "  "])).toBe("");
@@ -166,7 +166,7 @@ describe("the picker and the choice", () => {
   test("it opens with the scenes that ship, or with the list it is given", () => {
     expect(uiSnapshot().picker).toBeNull();
     openPicker();
-    expect(uiSnapshot().picker).toEqual({ scenes: BUILT_IN_SCENES, returnTo: null });
+    expect(uiSnapshot().picker).toEqual({ scenes: BUILT_IN_SCENES });
     expect(uiSnapshot().picker!.scenes).toBe(BUILT_IN_SCENES);
     // a click or a menu handler may pass its event along: that is not a list
     openPicker({ type: "click" } as unknown as BuiltInScene[]);
@@ -192,7 +192,8 @@ describe("the picker and the choice", () => {
   });
 
   test("over work it asks first: no keeps the work and the picker, yes replaces and undo brings the work back", async () => {
-    store.change(() => ({ ...deskDocs(), sel: "cat", stash: {} }), { noHistory: true });
+    // the stash holds what a drawing remembers between toggles: here, a hidden decoration's opacity
+    store.change(() => ({ ...deskDocs(), sel: "cat", stash: { clutter: { opacity: 0.6 } } }), { noHistory: true });
     const mine = JSON.stringify(now());
     openPicker(offered);
 
@@ -210,9 +211,11 @@ describe("the picker and the choice", () => {
     expect(now().scene.id).toBe("small-desk");
     expect(uiSnapshot().picker).toBeNull();
 
+    expect(store.getSnapshot().stash).toEqual({});
     expect(store.undo()).toBe(true);
     expect(now().scene.id).toBe("desk");
     expect(isBuiltIn(now().scene)).toBe(false);
+    expect(store.getSnapshot().stash).toEqual({ clutter: { opacity: 0.6 } }); // undo brings back all of the work, not the documents alone
     expect(JSON.stringify({ scene: now().scene, page: now().page })).toBe(JSON.stringify({ scene: JSON.parse(mine).scene, page: JSON.parse(mine).page }));
   });
 

@@ -160,6 +160,8 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
       if (msg.method === "Target.attachedToTarget" && msg.sessionId === sessionId && msg.params.targetInfo.type === "iframe") {
         frames.push(msg.params.sessionId);
         void send("Runtime.enable", {}, msg.params.sessionId);
+        // what the browser itself reports about the frame, such as a script its policy refused, comes through Log
+        void send("Log.enable", {}, msg.params.sessionId);
         void send("Runtime.runIfWaitingForDebugger", {}, msg.params.sessionId);
       }
       if (msg.method === "Target.detachedFromTarget" && msg.sessionId === sessionId) {

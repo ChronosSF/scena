@@ -224,6 +224,8 @@ the preview only, never to the export.
     content, in a sandboxed frame, as in Preview. The lines boil, and a tap on a drawing opens
     its panel; links say where they would go instead of leaving. The frame is a phone's screen
     (375 × 667) scaled to the card, so the panel a tap opens is in view under the drawing.
+    On a narrow screen, where the cards are one to a row, the page in the frame does not scroll:
+    a swipe that starts on it moves the list of cards.
     Until the page paints, the frame is the colour of the page's paper.
   - Choosing a card opens the scene in the links-only mode, in Edit, with a new page made from
     the scene's own wording, and closes the picker. If there is work on the canvas it asks

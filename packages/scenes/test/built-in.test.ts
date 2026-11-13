@@ -7,12 +7,11 @@ import { BUILT_IN_SCENES, DESK_SCENE, type BuiltInScene } from "../src/index.ts"
 import { SMALL_DESK_LINKS, smallDesk } from "../testing/index.ts";
 
 /** Everything a picker and the links-only mode take for granted about an entry. */
-function problems({ scene, sample, audience }: BuiltInScene): string[] {
+function problems({ scene, sample }: BuiltInScene): string[] {
   const found = [...validateScene(scene).map((e) => `scene: ${e}`), ...validatePage(sample, scene).map((e) => `sample: ${e}`)];
   if (scene.license !== "builtin") found.push(`license is "${scene.license}": a ready-made scene is "builtin", or the studio opens it for editing`);
   if (!lintScene(scene).ok) found.push(`the scene does not pass its lint: ${lintScene(scene).checks.filter((c) => c.level === "error").map((c) => c.detail).join("; ")}`);
-  if (!audience.length || audience.some((a) => !a.trim())) found.push("no audience: the card says who the scene was drawn for");
-  if (audience.join() !== scene.audience.join()) found.push("the entry's audience is not the scene's own");
+  if (!scene.audience.length || scene.audience.some((a) => !a.trim())) found.push("no audience: the card says who the scene was drawn for");
   if (!scene.name.trim()) found.push("no name");
   if (!scene.slots.length) found.push("no slots: there is nothing to fill in");
   for (const slot of scene.slots) {
@@ -42,7 +41,7 @@ describe("the ready-made scenes", () => {
 
   test("the list is data: it holds the scene and the sample page themselves", () => {
     expect(BUILT_IN_SCENES[0]!.scene).toBe(DESK_SCENE);
-    expect(JSON.parse(JSON.stringify(BUILT_IN_SCENES))).toEqual(BUILT_IN_SCENES.map((e) => ({ scene: e.scene, sample: e.sample, audience: e.audience })));
+    expect(JSON.parse(JSON.stringify(BUILT_IN_SCENES))).toEqual(BUILT_IN_SCENES.map((e) => ({ scene: e.scene, sample: e.sample })));
   });
 });
 
@@ -59,7 +58,7 @@ describe("the second scene the checks use", () => {
     expect(small.scene.slots.map((s) => s.id).sort()).toEqual([...SMALL_DESK_LINKS].sort());
     expect(small.scene.slots.length).toBeLessThan(DESK_SCENE.slots.length);
     expect(small.scene.fallback.order).toEqual([...SMALL_DESK_LINKS]);
-    expect(small.audience).not.toEqual(DESK_SCENE.audience);
+    expect(small.scene.audience).not.toEqual(DESK_SCENE.audience);
     // the drawings that went took their art with them
     expect(Object.keys(small.scene.assets).some((id) => id.startsWith("cup-") || id.startsWith("print-"))).toBe(false);
     expect(Object.keys(small.scene.assets).length).toBeLessThan(Object.keys(DESK_SCENE.assets).length);
@@ -78,7 +77,7 @@ describe("the second scene the checks use", () => {
     broken.scene.audience = [];
     delete broken.sample.links.newsletter;
     broken.sample.links.portfolio!.url = "";
-    const found = problems({ ...broken, audience: broken.scene.audience });
+    const found = problems(broken);
     expect(found.some((p) => p.startsWith("license is"))).toBe(true);
     expect(found.some((p) => p.startsWith("no audience"))).toBe(true);
     expect(found).toContain('the sample page leaves "newsletter" out');

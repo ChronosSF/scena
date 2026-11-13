@@ -14,7 +14,8 @@ export const TooltipProvider = RTooltip.Provider;
 export function Tip({ label, shortcut, children, side = "bottom" }: { label: ReactNode; shortcut?: string; children: ReactNode; side?: "top" | "bottom" | "left" | "right" }) {
   return (
     <RTooltip.Root>
-      <RTooltip.Trigger asChild>{children}</RTooltip.Trigger>
+      {/* On focus a tooltip is for the keyboard. Focus handed back by a script, to a button the pointer has left, opens none. */}
+      <RTooltip.Trigger asChild onFocus={(e) => { if (!e.currentTarget.matches(":focus-visible")) e.preventDefault(); }}>{children}</RTooltip.Trigger>
       <RTooltip.Portal>
         <RTooltip.Content className="tooltip" side={side} sideOffset={6} collisionPadding={8}>
           {label}{shortcut ? <kbd>{shortcut}</kbd> : null}
@@ -185,9 +186,27 @@ export function MenuContent({ children, align = "start" }: { children: ReactNode
     </RMenu.Portal>
   );
 }
+// A dialog opened from a menu is modal before the menu has handed the focus back to its
+// button, and the item that had the focus is gone when the dialog closes: the browser has
+// nowhere to return it. So a chosen item notes its menu's button, and the dialog that opens
+// next takes the note (Dialog.tsx) and returns the focus there when it closes.
+let menuButton: { el: HTMLElement; at: number } | null = null;
+/** The button of the menu an item was chosen from a moment ago, once. */
+export function takeMenuButton(): HTMLElement | null {
+  const noted = menuButton;
+  menuButton = null;
+  return noted && performance.now() - noted.at < 500 ? noted.el : null;
+}
+
 export function MenuItem({ icon: Icon, children, onSelect, danger, meta, ...rest }: { icon?: LucideIcon; children: ReactNode; onSelect: () => void; danger?: boolean; meta?: ReactNode; disabled?: boolean } & Record<`data-${string}`, string>) {
+  const select = (e: Event) => {
+    const menu = (e.target as Element | null)?.closest?.('[role="menu"]');
+    const button = menu ? document.getElementById(menu.getAttribute("aria-labelledby") || "") : null;
+    menuButton = button ? { el: button, at: performance.now() } : null;
+    onSelect();
+  };
   return (
-    <RMenu.Item className={`menu-item${danger ? " danger" : ""}`} onSelect={onSelect} {...rest}>
+    <RMenu.Item className={`menu-item${danger ? " danger" : ""}`} onSelect={select} {...rest}>
       {Icon ? <Icon aria-hidden="true" strokeWidth={1.75} /> : null}
       <span className="menu-text">{children}</span>
       {meta ? <span className="menu-meta">{meta}</span> : null}

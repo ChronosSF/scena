@@ -166,9 +166,10 @@ class StudioStore {
     for (const l of this.listeners) l();
   }
 
+  /** An undo step: the documents, and the stash that goes with them (it is replaced when another scene is opened). */
   private snap(): string {
-    const { scene, page, sel } = this.state;
-    return JSON.stringify({ scene, page, sel });
+    const { scene, page, sel, stash } = this.state;
+    return JSON.stringify({ scene, page, sel, stash });
   }
 
   /** Start an undo step now (drags call this on their first movement). */
@@ -249,9 +250,9 @@ class StudioStore {
     const s = from.pop();
     if (!s) return false;
     to.push(this.snap());
-    const d = JSON.parse(s) as Pick<Docs, "scene" | "page" | "sel">;
+    const d = JSON.parse(s) as Docs;
     this.lastEdit = 0;
-    this.emit({ scene: d.scene, page: d.page, sel: d.sel && getLayer(d.scene, d.sel) ? d.sel : null });
+    this.emit({ scene: d.scene, page: d.page, stash: d.stash || {}, sel: d.sel && getLayer(d.scene, d.sel) ? d.sel : null });
     this.save();
     return true;
   }

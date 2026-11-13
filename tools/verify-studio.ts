@@ -69,8 +69,9 @@ const PICKER = `(() => { const d = document.querySelector("dialog.picker[open]")
   return { focus: (a.dataset && a.dataset.ui) || a.id || a.tagName, focusScene: ((a.closest && a.closest("[data-scene]")) || { dataset: {} }).dataset.scene || "",
     cards: [...d.querySelectorAll("[data-scene]")].map((c) => { const f = c.querySelector("iframe"); return { id: c.dataset.scene, name: c.querySelector("h3").textContent,
       audience: (c.querySelector('[data-ui="scene-audience"]') || {}).textContent || "", slots: c.querySelector('[data-ui="scene-slots"]').textContent,
+      count: (c.querySelector('[data-ui="scene-count"]') || {}).textContent || "",
       use: named(c.querySelector('[data-ui="scene-use"]')), sandbox: f.getAttribute("sandbox"), current: !!c.querySelector('[data-ui="scene-current"]') }; }) }; })()`;
-interface PickerState { focus: string; focusScene: string; cards: { id: string; name: string; audience: string; slots: string; use: string; sandbox: string | null; current: boolean }[] }
+interface PickerState { focus: string; focusScene: string; cards: { id: string; name: string; audience: string; slots: string; count: string; use: string; sandbox: string | null; current: boolean }[] }
 const picker = () => page.eval<PickerState | null>(PICKER);
 /** What is open in the studio now, as the links-only mode shows it. */
 const OPENED = `(() => { const s = sceneStudio.store.getSnapshot(); return { picker: !!document.querySelector("dialog.picker[open]"), asked: (document.querySelector("dialog[open] #replace-h") || {}).textContent || "",
@@ -124,6 +125,8 @@ await clickOn('[data-ui="more"]');
 await clickOn('[data-ui="menu-reset"]');
 await clickOn('dialog[open] [data-ui="reset-blank"]');
 await sleep(300);
+const afterMenuDialog = await page.eval<string>(`document.activeElement.getAttribute("data-ui") || document.activeElement.tagName`);
+check("a dialog opened from a menu returns the focus to the menu's button when it closes", afterMenuDialog === "more", afterMenuDialog);
 await clickOn('[data-ui="samples"]');
 await clickOn('[data-sample="cat"]');
 await clickOn('[data-ui="samples"]');
@@ -541,9 +544,13 @@ await pressTab();
 const onUse = await picker();
 await pressTab();
 await pressTab();
-const inFrame = { studio: (await picker())?.focus, frame: await page.frameEval<string>(`document.activeElement.getAttribute("role") || document.activeElement.tagName`) };
+// whichever scenes ship: the studio's focus is on the first card's frame, and in exactly one frame it is on a drawing
+const inCard = await picker();
+const focusedIn = await Promise.all(Array.from({ length: page.frameCount() }, (_, i) => page.frameEval<string>(`document.activeElement.getAttribute("role") || document.activeElement.tagName`, i)));
+const inFrame = { studio: inCard?.focus, card: inCard?.focusScene, frame: focusedIn.filter((role) => role === "button").join() };
 check("Tab goes to Close, to the first card's button, named for its scene, and on into the card's live page",
-  onClose === "picker-close" && onUse?.focus === "scene-use" && onUse.focusScene === shipped[0]!.id && onUse.cards[0]!.use === `Use this scene ${shipped[0]!.name}` && inFrame.studio === "scene-frame" && inFrame.frame === "button",
+  onClose === "picker-close" && onUse?.focus === "scene-use" && onUse.focusScene === shipped[0]!.id && onUse.cards[0]!.use === `Use this scene ${shipped[0]!.name}`
+  && inFrame.studio === "scene-frame" && inFrame.card === shipped[0]!.id && inFrame.frame === "button",
   { onClose, onUse: onUse?.focus, named: onUse?.cards[0]!.use, inFrame });
 for (let i = 0; i < 4 && (await picker())?.focus !== "scene-use"; i++) await pressTab(SHIFT);
 await keyWith("Escape", "Escape", 0, 27);
@@ -559,6 +566,9 @@ await clickOn('dialog[open] [data-ui="replace-cancel"]');
 const afterNo = await picker();
 check("choosing a scene over work asks first, and Cancel leaves the work alone and the picker open", asked === `Open ${shipped[0]!.name}?` && (await sceneJson()) === mine && !!afterNo, { asked, picker: !!afterNo });
 await clickOn('[data-ui="picker-close"]');
+await sleep(300);
+const closedByMouse = await page.eval<any>(`({ focus: document.activeElement.getAttribute("data-ui"), tooltips: document.querySelectorAll(".tooltip").length })`);
+check("closed with the mouse, the picker returns the focus to the More button, and no tooltip opens for it", closedByMouse.focus === "more" && closedByMouse.tooltips === 0, closedByMouse);
 
 // two scenes: the ones that ship and the fixture. Motion is forced, so the frames boil whatever this machine's setting.
 await page.call(`(scenes) => { sceneStudio.store.set({ forceMotion: true }); sceneStudio.openPicker(scenes); }`, twoScenes);
@@ -569,43 +579,45 @@ check("given a second scene, the picker shows a card for each: its name, who it 
   two?.cards.map((c) => c.id).join() === [...shipped.map((sc) => sc.id), second.scene.id].join() && two.cards.every((c) => c.sandbox === "allow-scripts")
   && card("desk")?.name === "Illustrator's desk" && card("desk")?.audience === "Drawn for illustrators" && card("desk")?.slots === "Portfolio, Shop, Commissions, Social, Newsletter"
   && card("small-desk")?.name === "Small desk" && card("small-desk")?.audience === "Drawn for writers and poets" && card("small-desk")?.slots === "Newsletter, Notebook, Commissions"
-  && card("small-desk")?.use === "Use this scene Small desk",
-  two?.cards.map((c) => `${c.name} · ${c.audience} · ${c.slots}`));
+  && card("small-desk")?.use === "Use this scene Small desk"
+  && twoScenes.every((e) => card(e.scene.id)?.count === `${e.scene.slots.length} ${e.scene.slots.length === 1 ? "link" : "links"}`), // the links a page on it gets
+  two?.cards.map((c) => `${c.name} · ${c.audience} · ${c.count}: ${c.slots}`));
 
 // Each card's frame is the published page, running: its script ran under the studio's policy, and
 // its lines boil. The page times its own boil and holds still on a machine too slow for it
 // (tools/verify-runtime.ts checks that rule); a frame that did so is running all the same.
 const LIVE = `new Promise((done) => { const t = document.querySelector("filter.boil feTurbulence"), seen = new Set(); const iv = setInterval(() => seen.add(t && t.getAttribute("seed")), 40);
   setTimeout(() => { clearInterval(iv); const fcp = performance.getEntriesByType("paint").find((e) => e.name === "first-contentful-paint");
-    done({ title: document.title, boil: document.documentElement.dataset.boil, ms: Number(document.documentElement.dataset.boilMs) || 0, seeds: seen.size, objects: document.querySelectorAll(".obj").length, width: innerWidth,
+    done({ name: (document.querySelector(".name") || {}).textContent || "", boil: document.documentElement.dataset.boil, ms: Number(document.documentElement.dataset.boilMs) || 0, seeds: seen.size, objects: document.querySelectorAll(".obj").length, width: innerWidth,
       policy: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]'), painted: fcp ? Math.round(fcp.startTime) : -1 }); }, 900); })`;
-interface Live { title: string; boil?: string; ms: number; seeds: number; objects: number; width: number; policy: boolean; painted: number }
+interface Live { name: string; boil?: string; ms: number; seeds: number; objects: number; width: number; policy: boolean; painted: number }
+/** Which frame is which scene's card, by scene id: a frame is known by the name on its sample page. */
 const frameOf: Record<string, number> = {};
 let live: Live[] = [];
 const boils = (f: Live) => f.boil === "on" && f.seeds > 1, tooSlow = (f: Live) => f.boil === "static" && f.ms > 40 && f.seeds === 1;
-for (let attempt = 0; attempt < 4; attempt++) { // the boil measures itself before it settles, and may try twice
+for (let attempt = 0; attempt < 4; attempt++) { // the frames attach a moment after the cards appear; the boil measures itself before it settles, and may try twice
   live = await Promise.all(Array.from({ length: page.frameCount() }, (_, i) => page.frameEval<Live>(LIVE, i)));
-  if (live.every((f) => boils(f) || tooSlow(f))) break;
+  if (live.length === twoScenes.length && live.every((f) => boils(f) || tooSlow(f))) break;
   await sleep(1200);
 }
-live.forEach((f, i) => { frameOf[f.title] = i; });
-const deskFrame = live[frameOf["Pia Morandi, illustrator"]!], smallFrame = live[frameOf[second.sample.seo.title!]!];
+for (const e of twoScenes) frameOf[e.scene.id] = live.findIndex((f) => f.name.includes(e.sample.profile.displayName));
 check(`each card is the published page in a sandboxed frame, running under the studio's policy: ${live.every(boils) ? "the lines boil" : "its boil timed itself, and holds still on this machine"}`,
-  live.length === 2 && !!deskFrame && !!smallFrame && live.every((f) => (boils(f) || tooSlow(f)) && f.policy && f.painted >= 0 && f.width === 375)
-  && deskFrame.objects === 5 && smallFrame.objects === second.scene.slots.length, live);
+  live.length === twoScenes.length && twoScenes.every((e) => live[frameOf[e.scene.id]!]?.objects === e.scene.slots.length) // a drawing for every link of the sample
+  && live.every((f) => (boils(f) || tooSlow(f)) && f.policy && f.painted >= 0 && f.width === 375), live);
 console.log(`NOTE  the cards painted ${live.map((f) => `${f.painted} ms`).join(" and ")} after their frames were made, on this machine. The plan's target is under a second on a mid-range phone, which this does not measure.`);
 
 // a real tap on a drawing in the second card opens its panel, there and only there
-const tapInCard = async (sceneId: string, title: string, slot: string) => {
+const tapInCard = async (sceneId: string, slot: string) => {
   const frame = await page.call<[number, number, number]>(`(id) => { const f = [...document.querySelectorAll("[data-scene]")].find((c) => c.dataset.scene === id).querySelector("iframe"); f.scrollIntoView({ block: "center" }); const r = f.getBoundingClientRect(); return [r.x, r.y, r.width / f.offsetWidth]; }`, sceneId);
-  const at = await page.frameCall<[number, number]>(frameOf[title], `(k) => { scrollTo(0, 0); const r = [...document.querySelectorAll(".obj")].find((o) => o.getAttribute("data-k") === k).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }`, slot);
+  const at = await page.frameCall<[number, number]>(frameOf[sceneId], `(k) => { scrollTo(0, 0); const r = [...document.querySelectorAll(".obj")].find((o) => o.getAttribute("data-k") === k).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }`, slot);
   await page.click(frame[0] + at[0] * frame[2], frame[1] + at[1] * frame[2]);
   await sleep(600);
 };
 const PANEL = `({ pressed: [...document.querySelectorAll('.obj[aria-pressed="true"]')].map((o) => o.getAttribute("data-k")).join(), title: document.getElementById("tt").textContent })`;
-await tapInCard(second.scene.id, second.sample.seo.title!, "newsletter");
-const tappedCard = { small: await page.frameEval<any>(PANEL, frameOf[second.sample.seo.title!]), desk: await page.frameEval<any>(PANEL, frameOf["Pia Morandi, illustrator"]) };
-check("a tap on a drawing in a card opens its panel, in that card alone", tappedCard.small.pressed === "newsletter" && tappedCard.small.title === second.sample.links.newsletter!.title && tappedCard.desk.pressed === "", tappedCard);
+await tapInCard(second.scene.id, "newsletter");
+const panels = await Promise.all(twoScenes.map((e) => page.frameEval<any>(PANEL, frameOf[e.scene.id])));
+const tappedCard = { tapped: panels[panels.length - 1], others: panels.slice(0, -1).map((p) => p.pressed).join("") }; // the fixture's card is the last
+check("a tap on a drawing in a card opens its panel, in that card alone", tappedCard.tapped.pressed === "newsletter" && tappedCard.tapped.title === second.sample.links.newsletter!.title && tappedCard.others === "", tappedCard);
 writeFileSync(join(out, "studio-picker.png"), await page.screenshot());
 await page.eval(`sceneStudio.store.set({ forceMotion: false })`);
 await sleep(300);
@@ -816,10 +828,23 @@ const narrow = await page.eval<any>(`(() => { const d = document.querySelector("
       return { id: c.dataset.scene, left: Math.round(b.left), right: Math.round(b.right), top: Math.round(b.top), bottom: Math.round(b.bottom), use: [Math.round(u.left), Math.round(u.right), Math.round(u.height)],
         frame: [Math.round(v.left), Math.round(v.right)], phone: f.offsetWidth, current: !!c.querySelector('[data-ui="scene-current"]') }; }) }; })()`);
 check("at 375 px the picker fills the screen, one card to a row, with nothing sideways",
-  narrow.page <= 375 && narrow.dialog.join() === "0,0,375,812" && narrow.sideways <= 0 && narrow.cards.length === 2 && narrow.cards[1].top >= narrow.cards[0].bottom
+  narrow.page <= 375 && narrow.dialog.join() === "0,0,375,812" && narrow.sideways <= 0 && narrow.cards.length === twoScenes.length
+  && narrow.cards.every((c: any, i: number) => i === 0 || c.top >= narrow.cards[i - 1].bottom)
   && narrow.cards.every((c: any) => c.left >= 0 && c.right <= 375 && c.right - c.left >= 300 && c.use[0] >= c.left && c.use[1] <= c.right && c.use[2] >= 24 && c.frame[0] >= c.left && c.frame[1] <= c.right && c.phone === 375)
-  && narrow.cards[0].current === true && narrow.cards[1].current === false, narrow);
+  && narrow.cards.every((c: any) => c.current === (c.id === "desk")), narrow);
 writeFileSync(join(out, "studio-picker-375.png"), await page.screenshot());
+// a finger that starts on a card's page moves the list of cards: the page inside the card stays put
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+const onCard = await page.eval<[number, number]>(`(() => { const r = document.querySelector('dialog.picker [data-ui="scene-frame"]').getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(Math.min(r.bottom, innerHeight) - 60)]; })()`);
+const cardTouch = (type: string, y: number) => page.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: onCard[0], y }] });
+await cardTouch("touchStart", onCard[1]);
+for (let i = 1; i <= 8; i++) { await cardTouch("touchMove", onCard[1] - i * 20); await sleep(16); }
+await cardTouch("touchEnd", 0);
+await sleep(400);
+const cardSwipe = { list: await page.eval<number>(`document.querySelector(".scene-cards").scrollTop`),
+  inside: Math.max(...(await Promise.all(Array.from({ length: page.frameCount() }, (_, i) => page.frameEval<number>(`scrollY`, i))))) };
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+check("on a phone a swipe that starts on a card's page scrolls the list of cards, not the page in the card", cardSwipe.list > 40 && cardSwipe.inside === 0, cardSwipe);
 await clickOn(`dialog.picker [data-scene="${second.scene.id}"] [data-ui="scene-use"]`);
 const askedPhone = await page.eval<string>(`(document.querySelector("dialog[open] #replace-h") || {}).textContent || ""`);
 await clickOn('dialog[open] [data-ui="replace-ok"]');

@@ -29,6 +29,14 @@ export interface Page {
   send: (method: string, params?: Json) => Promise<Json>;
   goto: (url: string, waitMs?: number) => Promise<void>;
   eval: <T = Json>(expression: string, contextId?: number) => Promise<T>;
+  /**
+   * Call a function in the page. `fn` is the source of a function; `args` reach it as values,
+   * through the protocol. Use this, not eval, whenever the page needs data from the tool: data
+   * written into an expression becomes code, and has to be escaped to stay data.
+   */
+  call: <T = Json>(fn: string, ...args: Json[]) => Promise<T>;
+  /** The same, in a child frame chosen as for frameEval (undefined: the most recently attached). */
+  frameCall: <T = Json>(index: number | undefined, fn: string, ...args: Json[]) => Promise<T>;
   screenshot: () => Promise<Buffer>;
   /**
    * Evaluate in a child frame (out-of-process iframes, such as sandboxed srcdoc frames): the
@@ -124,6 +132,18 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
       if (msg.method === "Log.entryAdded") logs.push(`${msg.params.entry.level}: ${msg.params.entry.text}`);
     });
     const mouse = (type: string, x: number, y: number, extra: Json = {}) => s("Input.dispatchMouseEvent", { type, x, y, button: "left", pointerType: "mouse", ...extra });
+    // A function called on the page's global object, its arguments sent as values beside it.
+    const callIn = async (session: string, fn: string, args: Json[]) => {
+      const global = await send("Runtime.evaluate", { expression: "globalThis" }, session);
+      const objectId = global.result.objectId;
+      try {
+        const r = await send("Runtime.callFunctionOn", { functionDeclaration: fn, objectId, arguments: args.map((value) => ({ value })), awaitPromise: true, returnByValue: true }, session);
+        if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+        return r.result.value;
+      } finally {
+        void send("Runtime.releaseObject", { objectId }, session).catch(() => {}); // the page may have gone
+      }
+    };
     return {
       send: s,
       logs,
@@ -143,6 +163,8 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
         if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
         return r.result.value;
       },
+      call: (fn, ...args) => callIn(sessionId, fn, args),
+      frameCall: (index, fn, ...args) => callIn(frame(index), fn, args),
       async frameEval(expression, index) {
         const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, frame(index));
         if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);

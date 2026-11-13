@@ -61,7 +61,8 @@ const setFiles = (selector: string, files: string[]) => page.setFiles(selector, 
 // depends on none of them, it is also given a second scene that is only a test fixture.
 const shipped = BUILT_IN_SCENES.map((e) => e.scene);
 const second = smallDesk();
-const twoScenes = JSON.stringify([...BUILT_IN_SCENES, second]);
+// The page is handed this list as a value (page.call): data from here is never written into code that runs there.
+const twoScenes = [...BUILT_IN_SCENES, second];
 /** The open picker: where the focus is, and what each card says. null when it is closed. */
 const PICKER = `(() => { const d = document.querySelector("dialog.picker[open]"); if (!d) return null; const a = document.activeElement;
   const named = (el) => (el.getAttribute("aria-labelledby") || "").split(" ").map((id) => (document.getElementById(id) || {}).textContent).join(" ");
@@ -560,7 +561,7 @@ check("choosing a scene over work asks first, and Cancel leaves the work alone a
 await clickOn('[data-ui="picker-close"]');
 
 // two scenes: the ones that ship and the fixture. Motion is forced, so the frames boil whatever this machine's setting.
-await page.eval(`sceneStudio.store.set({ forceMotion: true }); sceneStudio.openPicker(${twoScenes})`);
+await page.call(`(scenes) => { sceneStudio.store.set({ forceMotion: true }); sceneStudio.openPicker(scenes); }`, twoScenes);
 await sleep(1500);
 const two = await picker();
 const card = (id: string) => two?.cards.find((c) => c.id === id);
@@ -596,8 +597,8 @@ console.log(`NOTE  the cards painted ${live.map((f) => `${f.painted} ms`).join("
 
 // a real tap on a drawing in the second card opens its panel, there and only there
 const tapInCard = async (sceneId: string, title: string, slot: string) => {
-  const frame = await page.eval<[number, number, number]>(`(() => { const f = document.querySelector('[data-scene="${sceneId}"] iframe'); f.scrollIntoView({ block: "center" }); const r = f.getBoundingClientRect(); return [r.x, r.y, r.width / f.offsetWidth]; })()`);
-  const at = await page.frameEval<[number, number]>(`(() => { scrollTo(0, 0); const r = document.querySelector('.obj[data-k="${slot}"]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`, frameOf[title]);
+  const frame = await page.call<[number, number, number]>(`(id) => { const f = [...document.querySelectorAll("[data-scene]")].find((c) => c.dataset.scene === id).querySelector("iframe"); f.scrollIntoView({ block: "center" }); const r = f.getBoundingClientRect(); return [r.x, r.y, r.width / f.offsetWidth]; }`, sceneId);
+  const at = await page.frameCall<[number, number]>(frameOf[title], `(k) => { scrollTo(0, 0); const r = [...document.querySelectorAll(".obj")].find((o) => o.getAttribute("data-k") === k).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }`, slot);
   await page.click(frame[0] + at[0] * frame[2], frame[1] + at[1] * frame[2]);
   await sleep(600);
 };
@@ -629,7 +630,7 @@ check("chosen with the keyboard, the second scene opens in the links-only mode w
   && chosen.palette === second.scene.theme.defaultPalette && chosen.palettes === 2 && chosen.heading === second.scene.fallback.heading && chosen.errs.length === 0
   && chosen.toast.startsWith(`Opened ${second.scene.name}.`),
   { tabs: tabs + 1, asked: askedSecond.title, id: chosen.id, rows: chosen.rows, titles: chosen.titles, palette: chosen.palette, palettes: chosen.palettes, errs: chosen.errs });
-check("undo brings back the work the scene replaced", await page.eval<boolean>(`(() => { sceneStudio.store.undo(); const was = JSON.stringify(sceneStudio.store.getSnapshot().scene) === ${JSON.stringify(mine)}; sceneStudio.store.redo(); return was; })()`)
+check("undo brings back the work the scene replaced", await page.call<boolean>(`(before) => { sceneStudio.store.undo(); const was = JSON.stringify(sceneStudio.store.getSnapshot().scene) === before; sceneStudio.store.redo(); return was; }`, mine)
   && (await page.eval<string>(`sceneStudio.store.getSnapshot().scene.id`)) === second.scene.id);
 
 // nothing typed on a ready-made scene's page: going to another scene asks nothing
@@ -807,7 +808,7 @@ check("a tap on a drawing picks it", tap.sel === "sketchbook" && tap.title === "
 
 // The scene picker on a phone: it takes the whole screen, one card to a row, and nothing goes
 // sideways. The desk is open, with links typed, so its card says so and another scene asks first.
-await page.eval(`sceneStudio.openPicker(${twoScenes})`);
+await page.call(`(scenes) => { sceneStudio.openPicker(scenes); }`, twoScenes);
 await sleep(1200);
 const narrow = await page.eval<any>(`(() => { const d = document.querySelector("dialog.picker[open]"), r = d.getBoundingClientRect(), ul = d.querySelector(".scene-cards");
   return { page: document.documentElement.scrollWidth, dialog: [r.x, r.y, r.width, r.height].map(Math.round), sideways: ul.scrollWidth - ul.clientWidth,

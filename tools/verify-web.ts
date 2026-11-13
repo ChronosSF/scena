@@ -247,8 +247,11 @@ const added = await page.eval<{ inline: boolean; refused: string[] }>(`new Promi
   document.body.append(inline, away);
   setTimeout(() => { document.removeEventListener("securitypolicyviolation", listen); inline.remove(); away.remove(); done({ inline: !!window.__cspInline, refused }); }, 500);
 })`);
+// What was refused is compared by its parsed origin, not by how its text begins: a longer host
+// name begins the same way.
+const originOf = (u: string): string => { try { return new URL(u).origin; } catch { return ""; } };
 check("a script added through the DOM runs only from this origin: not inline, and not from another host",
-  added.inline === false && added.refused.includes("inline") && added.refused.some((u) => u.startsWith("https://scripts.example")), added);
+  added.inline === false && added.refused.includes("inline") && added.refused.some((u) => originOf(u) === "https://scripts.example"), added);
 
 // The home page, fresh: it fills the window and does not scroll, on its own styles. The
 // studio's stylesheet is global and stays loaded after a visit, so it is measured again then.

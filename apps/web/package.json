@@ -1,0 +1,25 @@
+{
+  "name": "@scena/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The web app: where sign-in, saved drafts and publishing will live. Today it runs the studio.",
+  "scripts": {
+    "dev": "next dev --port 3100",
+    "build": "next build",
+    "start": "next start --port 3100",
+    "typecheck": "next typegen && tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@scena/renderer": "workspace:*",
+    "@scena/studio": "workspace:*",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
+  }
+}

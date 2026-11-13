@@ -1,0 +1,40 @@
+/* The placeholder home page. A CSS module, so nothing here reaches the studio. The studio's
+   stylesheet is global and stays loaded after a visit to it, so everything it sets on the
+   body that would show here is set here too: the page looks the same before and after. */
+.home {
+  min-height: 100dvh;
+  margin: 0;
+  padding: 4rem 1.5rem;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1rem;
+  text-align: center;
+  background: #fafaf9;
+  color: #18181b;
+  font: 400 1rem / 1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-feature-settings: normal;
+  -webkit-font-smoothing: auto;
+}
+.home p { margin: 0; }
+.name { margin: 0; font-size: 2.25rem; font-weight: 650; letter-spacing: -0.02em; }
+.line { margin: 0; max-width: 32rem; color: #3f3f46; }
+.open {
+  display: inline-block;
+  padding: 0.625rem 1.125rem;
+  border-radius: 0.5rem;
+  background: #1f6feb;
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.open:hover { background: #1a5fd0; }
+.open:focus-visible { outline: 2px solid #18181b; outline-offset: 2px; }
+.note { margin: 0; max-width: 32rem; font-size: 0.875rem; color: #52525b; }
+
+@media (prefers-color-scheme: dark) {
+  .home { background: #18181b; color: #fafaf9; }
+  .line { color: #d4d4d8; }
+  .note { color: #a1a1aa; }
+  .open:focus-visible { outline-color: #fafaf9; }
+}

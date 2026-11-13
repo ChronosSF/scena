@@ -1,6 +1,6 @@
 // Last line of defence for documents that arrive from outside the sanitiser
 // (imported JSON, hand-edited files). The real sanitiser runs at upload time in
-// the studio (apps/studio/src/ingest/svg.ts); these checks run in the pure
+// the studio (packages/studio/src/ingest/svg.ts); these checks run in the pure
 // renderer and the validator, where no DOM parser exists.
 
 // Everything in this file has to run in linear time: the input is untrusted, and a pattern

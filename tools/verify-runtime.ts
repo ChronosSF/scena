@@ -7,12 +7,12 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { launch, sleep, type Page } from "./cdp.ts";
+import { checks } from "./checks.ts";
 
 const dist = (f: string) => pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "apps/studio/dist", f)).href;
 const url = dist("demo-desk.html"), framesUrl = dist("demo-frames.html");
 const chrome = await launch({ port: 9336, fileAccess: false });
-let failures = 0;
-const check = (label: string, ok: boolean, detail: unknown) => { console.log(`${ok ? "PASS" : "FAIL"}  ${label}  ${JSON.stringify(detail)}`); if (!ok) failures++; };
+const { check, failed } = checks();
 interface State { boil?: string; ms?: string; lite?: string; octaves: string; seed: string }
 const STATE = `(() => { const d = document.documentElement.dataset, t = [...document.querySelectorAll("filter.boil feTurbulence")];
   return { boil: d.boil, ms: d.boilMs, lite: d.lite, octaves: t[0].getAttribute("numOctaves"), seed: t[0].getAttribute("seed") }; })()`;
@@ -135,4 +135,4 @@ check("frames pause after 45 s without interaction, and resume on pointer", fIdl
 await p.close();
 
 await chrome.close();
-process.exit(failures ? 1 : 0);
+process.exit(failed() ? 1 : 0);

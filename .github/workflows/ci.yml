@@ -1,8 +1,9 @@
 # The gate for every push to master and every pull request. Two jobs run in parallel:
-#   check   pnpm check: typecheck, the vitest suite and the studio build
-#   chrome  the build opened from file:// in the runner's Google Chrome, driven through
-#           the DevTools protocol (tools/cdp.ts): parity with the prototype, the page
-#           runtime's boil control, and the studio end to end
+#   check   pnpm check: typecheck, the vitest suite, and the build of both apps
+#   chrome  both builds in the runner's Google Chrome, driven through the DevTools protocol
+#           (tools/cdp.ts). The single-file studio is opened from file://: parity with the
+#           prototype, the page runtime's boil control, and the studio end to end. The web
+#           app is served by its own server: the studio inside it, under its policy.
 name: CI
 
 on:
@@ -16,6 +17,10 @@ concurrency:
 
 permissions:
   contents: read
+
+env:
+  # Next.js would otherwise report anonymous usage from the runner
+  NEXT_TELEMETRY_DISABLED: 1
 
 jobs:
   check:
@@ -51,7 +56,8 @@ jobs:
         run: google-chrome --version
       - run: pnpm verify:runtime
       - run: pnpm verify:studio
-      - name: Keep the studio screenshots when a check fails
+      - run: pnpm verify:web
+      - name: Keep the screenshots when a check fails
         if: failure()
         uses: actions/upload-artifact@v7
         with:

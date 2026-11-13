@@ -15,7 +15,9 @@ import { resolve } from "node:path";
 import { renderPage } from "@scena/renderer";
 import { DESK_SCENE, PIA_PAGE, framesDemo } from "@scena/scenes";
 import { buildRuntime, RUNTIME_ENTRY } from "@scena/renderer/build-runtime";
-import { inlineHandler, isDataBlock, isExternal, policyFor, scriptElements, withPolicy } from "./csp.ts";
+import { FIRST_FACES_HREF, MORE_FACES_HREF } from "@scena/studio/fonts";
+import { isDataBlock, isExternal, scriptElements } from "@scena/studio/policy";
+import { inlineHandler, policyFor, withPolicy } from "./csp.ts";
 
 function runtime(): Plugin {
   return {
@@ -62,6 +64,23 @@ function demoDesk(): Plugin {
       const frames = framesDemo();
       this.emitFile({ type: "asset", fileName: "demo-frames.html", source: renderPage(frames.scene, frames.page, { demo: true }).html });
     },
+  };
+}
+
+/**
+ * The document's typeface stylesheets, written from the addresses the studio names
+ * (@scena/studio/fonts). The web app links the same two, so there is one source for both.
+ * The second set is only previewed in the Typeface cards: it loads as a print stylesheet, so
+ * it never holds up first paint, and main.tsx switches it to the screen (an inline onload
+ * would be blocked by the build's policy).
+ */
+function typefaces(): Plugin {
+  return {
+    name: "scena-typefaces",
+    transformIndexHtml: () => [
+      { tag: "link", attrs: { href: FIRST_FACES_HREF, rel: "stylesheet" }, injectTo: "head" },
+      { tag: "link", attrs: { id: "more-faces", href: MORE_FACES_HREF, rel: "stylesheet", media: "print" }, injectTo: "head" },
+    ],
   };
 }
 
@@ -113,7 +132,7 @@ function contentSecurityPolicy(): Plugin {
 
 export default defineConfig({
   base: "./",
-  plugins: [runtime(), react(), viteSingleFile(), demoDesk(), contentSecurityPolicy()],
+  plugins: [runtime(), react(), typefaces(), viteSingleFile(), demoDesk(), contentSecurityPolicy()],
   server: { port: 5173, strictPort: true },
   preview: { port: 4173, strictPort: true },
   build: { target: "es2022", reportCompressedSize: true },

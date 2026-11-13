@@ -1,0 +1,6 @@
+/* What every page of the app starts from. The studio's stylesheet sets the same things for
+   itself (packages/studio/src/studio.css), and it stays loaded once the studio has been
+   visited, so a page of the app must not depend on whether it is there. */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }

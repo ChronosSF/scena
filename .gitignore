@@ -1,5 +1,12 @@
 node_modules/
 dist/
+# the web app (Next.js): its build, and the types it generates
+.next/
+next-env.d.ts
+# keys for hosted services, once the web app has any: never in git
+.env
+.env.*
+!.env.example
 *.tsbuildinfo
 .vite/
 coverage/

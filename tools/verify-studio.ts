@@ -11,42 +11,29 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { BUILT_IN_SCENES } from "@scena/scenes";
 import { smallDesk } from "@scena/scenes/testing";
-import { fixture, launch, sleep, type Page } from "./cdp.ts";
+import { FIRST_FACES_HREF, MORE_FACES_HREF } from "@scena/studio/fonts";
+import { fixture, launch, sleep } from "./cdp.ts";
+import { checks, input } from "./checks.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "tools", "out");
 mkdirSync(out, { recursive: true });
 const target = process.argv[2] || pathToFileURL(join(root, "apps/studio/dist/index.html")).href;
 
-let failures = 0;
-const check = (label: string, ok: boolean, detail: unknown = "") => {
-  console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail !== "" ? `  ${typeof detail === "string" ? detail : JSON.stringify(detail)}` : ""}`);
-  if (!ok) failures++;
-};
+const { check, failed } = checks();
 
 const chrome = await launch({ port: 9341, fileAccess: false });
 const page = await chrome.newPage();
 await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "light" }] });
 
-const center = (p: Page, selector: string) => p.eval<[number, number] | null>(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: "center" }); const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
-async function clickOn(selector: string) {
-  const c = await center(page, selector);
-  if (!c) throw new Error(`Nothing matches ${selector}`);
-  await page.click(c[0], c[1]);
-  await sleep(250);
-}
+const { center, clickOn, keyWith, typeInto } = input(page);
 /** Opening another scene asks first when there is work on the canvas: agree. */
 async function confirmReplace() {
   if (await page.eval<boolean>(`!!document.querySelector('dialog[open] [data-ui="replace-ok"]')`)) await clickOn('dialog[open] [data-ui="replace-ok"]');
 }
 const state = () => page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); return { layers: s.scene.layers.map((l) => l.id + ":" + l.type), sel: s.sel, links: s.page.links, palette: s.page.theme.palette, mode: s.page.theme.mode, view: s.view }; })()`);
 const layer = (id: string) => page.eval<any>(`sceneStudio.store.getSnapshot().scene.layers.find((l) => l.id === ${JSON.stringify(id)})`);
-async function keyWith(key: string, code: string, modifiers: number, vk = 0) {
-  await page.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, modifiers, windowsVirtualKeyCode: vk });
-  await page.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, modifiers, windowsVirtualKeyCode: vk });
-  await sleep(250);
-}
 const ALT = 1, CTRL = 2, SHIFT = 8;
 /** Enter as a keyboard sends it: with its character, which is what presses a focused button. */
 async function pressEnter() {
@@ -105,6 +92,11 @@ await page.goto(target, 1200);
 await page.eval(`localStorage.clear()`);
 await page.goto(target, 1500);
 check("studio boots", await page.eval(`!!window.sceneStudio && !!document.querySelector("#stage .st-svg svg")`), target);
+// the build writes the typeface links from the addresses the studio names (vite.config.ts); the
+// second set carries the id the studio looks for when it switches it on
+const faces = await page.eval<{ first: (string | null)[]; more: string | null }>(`({ first: [...document.head.querySelectorAll('link[rel="stylesheet"]:not([id])')].map((l) => l.getAttribute("href")),
+  more: document.getElementById("more-faces") && document.getElementById("more-faces").getAttribute("href") })`);
+check("the document links the typefaces the studio names", faces.first.includes(FIRST_FACES_HREF) && faces.more === MORE_FACES_HREF, { first: faces.first.length, more: !!faces.more });
 
 // samples
 check("empty state offers upload and samples", await page.eval(`!!document.querySelector('[data-ui="empty"]')`));
@@ -135,8 +127,8 @@ let s = await state();
 check("two sample drawings added from the samples menu", s.layers.join(",") === "mat:background,grid:background,cat:decor,envelope:decor", s.layers);
 
 // layer order: drag a row in the Layers panel, then Alt+arrow on the focused row
-const catRow = await center(page, '[data-layer-row="cat"]');
-const envRow = await center(page, '[data-layer-row="envelope"]');
+const catRow = await center('[data-layer-row="cat"]');
+const envRow = await center('[data-layer-row="envelope"]');
 await page.drag(catRow!, [envRow![0], envRow![1] - 14], 10);
 await sleep(300);
 s = await state();
@@ -177,17 +169,17 @@ check("PNG trimmed to the drawing", plant.kind === "raster" && plant.w === 525 &
 // direct manipulation with the mouse on the plant
 await clickOn('[data-layer-button="plant-procreate"]');
 const t0 = (await layer("plant-procreate")).transform;
-const p = await center(page, '#stage [data-layer="plant-procreate"]');
+const p = await center('#stage [data-layer="plant-procreate"]');
 await page.drag(p!, [p![0] + 60, p![1] - 40]);
 await sleep(300);
 const t1 = (await layer("plant-procreate")).transform;
 check("drag moves the drawing", Math.abs(t1.x - t0.x) > 20 && Math.abs(t1.y - t0.y) > 10, { t0, t1 });
-const scaleKnob = await center(page, '#stage .ov .ov-h.se .ov-knob');
+const scaleKnob = await center('#stage .ov .ov-h.se .ov-knob');
 await page.drag(scaleKnob!, [scaleKnob![0] + 30, scaleKnob![1] + 30]);
 await sleep(300);
 const t2 = (await layer("plant-procreate")).transform;
 check("corner handle resizes", (t2.scale ?? 1) > (t1.scale ?? 1), { before: t1.scale, after: t2.scale });
-const rotKnob = await center(page, '#stage .ov [data-h="rotate"] .ov-knob');
+const rotKnob = await center('#stage .ov [data-h="rotate"] .ov-knob');
 await page.drag(rotKnob!, [rotKnob![0] + 60, rotKnob![1] + 10]);
 await sleep(300);
 const t3 = (await layer("plant-procreate")).transform;
@@ -298,7 +290,7 @@ await setFiles("#frame-file", [fixture("blink-2.png")]);
 await sleep(1500);
 const blink = await page.eval<any>(FRAMES_STATE);
 check("a PNG frame added later registers with the first (same crop, same size)", blink.counts[0] === 2 && blink.oneBox && !blink.errs.length, blink);
-const section = await center(page, '[data-ui="frames"] [data-ui="add-frames"]');
+const section = await center('[data-ui="frames"] [data-ui="add-frames"]');
 const dropData = { items: [], files: [fixture("blink-animated.png")], dragOperationsMask: 1 };
 for (const type of ["dragEnter", "dragOver", "drop"]) await page.send("Input.dispatchDragEvent", { type, x: section![0], y: section![1], data: dropData });
 await sleep(2000);
@@ -670,7 +662,7 @@ check("a ready-made scene opens in the links-only mode, with a new page to fill 
   mode.license === "builtin" && mode.panel === "Links" && mode.rows === "portfolio,shop,commissions,social,newsletter" && !mode.upload && !mode.nameField
   && mode.editorMarkup === 0 && mode.objects === 5 && mode.urls === "" && mode.errs.length === 0, mode);
 
-const catAt = await center(page, '#stage g[data-k="newsletter"]');
+const catAt = await center('#stage g[data-k="newsletter"]');
 await page.drag(catAt!, [catAt![0] + 70, catAt![1] - 50]);
 await sleep(300);
 const dragged = await page.eval<any>(`({ sel: sceneStudio.store.getSnapshot().sel, handles: document.querySelectorAll("#stage .ov *, #stage .ov-tools").length })`);
@@ -701,12 +693,6 @@ const forced = await page.eval<any>(`(() => {
 check("a change to the scene made in code is undone as a whole", forced.ok === false && forced.name !== "Changed with it" && (await sceneJson()) === builtIn0, forced);
 
 // the link's form: what is typed reaches the canvas and the preview, within the limits
-const typeInto = async (selector: string, text: string) => {
-  await clickOn(selector);
-  await keyWith("a", "KeyA", CTRL, 65);
-  if (text) await page.send("Input.insertText", { text }); else await keyWith("Backspace", "Backspace", 0, 8); // the key code is what deletes
-  await sleep(250);
-};
 await typeInto('#inspector [name="link-title"]', "Letters from my desk");
 await typeInto('#inspector [name="url"]', "example.com/letter");
 const typed = await page.eval<any>(`(() => { const l = sceneStudio.store.getSnapshot().page.links.newsletter; const f = (n) => document.querySelector('#inspector [name="' + n + '"]'); return {
@@ -900,5 +886,5 @@ const gone = await page.eval<any>(`({ kept: localStorage.getItem("scene-studio/v
 check("discarding removes the copy and the menu entry", gone.kept === null && gone.dialog === false && gone.offered === false, gone);
 
 await chrome.close();
-console.log(failures ? `\n${failures} check(s) failed` : "\nall checks passed");
-process.exit(failures ? 1 : 0);
+console.log(failed() ? `\n${failed()} check(s) failed` : "\nall checks passed");
+process.exit(failed() ? 1 : 0);

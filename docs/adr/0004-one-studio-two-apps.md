@@ -43,10 +43,12 @@ The package says what it gives and what it needs from the page that mounts it:
 | `@scena/studio` | `Studio` (the component), `showMoreFaces()`, `exposeForChecks()` |
 | `@scena/studio/studio.css` | the stylesheet; the app imports it, so no module of the studio imports CSS |
 | `@scena/studio/fonts` | the two Google Fonts stylesheet addresses the document links |
-| `@scena/studio/policy` | the sources the studio needs a Content Security Policy to allow |
+| `@scena/studio/policy` | the sources the studio needs a Content Security Policy to allow, and how to find the scripts of a document |
 
-`@scena/studio/fonts` and `@scena/studio/policy` are plain constants, so a server, a build
-script or a test can import them without loading the studio.
+`@scena/studio/fonts` and `@scena/studio/policy` need no DOM, so a server, a build script or a
+test can import them without loading the studio. Both apps do: each writes its policy from the
+one list of sources, and each links the typefaces from the one pair of addresses. The
+single-file build writes its two `<link>` elements from them as it builds.
 
 The other way, mounting without a package, was one of two things. Importing `apps/studio/src`
 from `apps/web` makes one app depend on the inside of another. Showing the built single file in
@@ -58,13 +60,15 @@ Details:
 
 - The name `@scena/studio` now belongs to the package, so the app in `apps/studio` is
   `@scena/studio-app`. Its folder and its output are unchanged.
-- React is a peer dependency of the package, pinned to the same exact version in the package
-  and both apps, so there is one copy.
+- React is a peer dependency of the package, as a range (`^19.3.1`). Both apps and the
+  package's own development copy pin the same exact version, so there is one copy, and the
+  range does not go stale when that version is raised.
 - The test that a scene picker card runs only the page runtime moved from the picker's tests to
   the policy's tests in `apps/studio`, because it is about that app's policy.
+- Neither app's tests or checks read the other app. What both need is in the package.
 
-The single-file build behaves as before: all 101 checks of `pnpm verify:studio` pass unchanged,
-and the file grew by 338 bytes.
+The single-file build behaves as before: every check of `pnpm verify:studio` that was there
+passes unchanged, one was added for the typeface links, and the file grew by 263 bytes.
 
 ## Decision 2: `apps/web` is Next.js 16 with the App Router, and the studio loads in the browser only
 
@@ -100,7 +104,7 @@ the scripts it renders:
 
 ```
 default-src 'none';
-script-src 'nonce-…' 'strict-dynamic' 'sha256-<the page runtime>';
+script-src 'nonce-…' 'self' 'sha256-<the page runtime>';
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
 font-src 'self' https://fonts.gstatic.com;
 img-src 'self' data: blob:;
@@ -112,15 +116,24 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   page in a frame made from `srcdoc`. Such a frame runs under this policy as well as the page's
   own, and its script carries no nonce.
 - The style, font, image and connect sources are `'self'` plus `STUDIO_SOURCES` from
-  `@scena/studio/policy`. `apps/studio/csp.ts` builds its policy from the same list, and a test
-  compares the two policies, so they cannot drift apart.
+  `@scena/studio/policy`. `apps/studio/csp.ts` builds its policy from the same list, and each
+  app's test holds its own policy to that list, so the two cannot drift apart.
 - `frame-ancestors 'none'` is new. A header can say it; the `<meta>` of the single-file build
   cannot.
 - The dev server adds `'unsafe-eval'`, which React needs there to rebuild server error stacks.
   The production build does not have it, and the check fails if it does.
-- `'strict-dynamic'` trusts a script that a trusted script adds through the DOM. It does not
-  trust markup: an inline handler does not run, and a script in a frame made from markup runs
-  only if the policy names it. `tools/verify-web.ts` injects both and checks.
+- **`'self'`, and no `'strict-dynamic'`.** Next.js loads its further script files by adding
+  script elements, and `'self'` lets those through because they are this origin's files.
+  `'strict-dynamic'`, which the Next.js guide suggests, would let through any script that
+  running code adds, inline or from any host. The single-file build's policy allows neither, so
+  this one does not. The price is a line to add here if the app's files ever come from another
+  host. `tools/verify-web.ts` adds both kinds of script and checks that neither runs.
+- **The policy goes out with every page, whatever the request says about itself.** The Next.js
+  guide leaves out requests that carry a prefetch header. Such a request is still answered
+  with the document, and a browser may show it, so `proxy.ts` leaves nothing out but static
+  files.
+- The policy does not trust markup: an inline handler does not run, and a script in a frame
+  made from markup runs only if the policy names it. `tools/verify-web.ts` injects both.
 
 **The cost: every page is rendered for its request.** A nonce exists only per request, so
 `app/layout.tsx` waits for the request (`connection()`), and nothing in this app is built ahead
@@ -131,19 +144,22 @@ because it is experimental.
 
 ## Checks
 
-- `pnpm check` covers both apps: every package and both apps type-check, 146 tests pass, and
+- `pnpm check` covers both apps: every package and both apps type-check, 145 tests pass, and
   both apps build. From a clean checkout it takes about 20 seconds on this machine.
-- `pnpm verify:web` (`tools/verify-web.ts`) starts the built app's own server and drives it in
-  headless Chrome, 18 checks:
+- `pnpm verify:web` (`tools/verify-web.ts`) starts the built app's own server, waits for that
+  server to say it is ready, and drives it in headless Chrome, 22 checks:
   - what the server sends: the policy, a nonce of its own on every request and on every script,
-    none of the studio in the HTML, a 404 under the policy too;
+    the same for a request that calls itself a prefetch, none of the studio in the HTML, a 404
+    under the policy too;
   - the studio in the browser: it loads with its stylesheet and typefaces, the scene picker
     opens from the empty canvas and its card runs the page runtime, choosing the desk opens it
     with its default texts, a link is filled in by typing, a real tap in the preview opens the
     panel, a reload brings the work back, the console stays clean;
-  - the policy as the browser enforces it: an injected handler does not run, and a frame's
-    script runs only when named;
-  - the home page's link opens the studio in place, and the studio fits a 375 px screen.
+  - the policy as the browser enforces it: an injected handler does not run, a frame's script
+    runs only when named, and a script added through the DOM runs neither inline nor from
+    another host;
+  - the home page fills the window without scrolling, its link opens the studio in place, it
+    looks the same after that visit, and the studio fits a 375 px screen.
 - The check was run once against a policy that leaves the page runtime out. Four checks failed,
   as they should.
 - CI keeps its two required jobs under the same names. "Parity and headless Chrome" builds both
@@ -183,9 +199,10 @@ None of these can be done without an account or a decision that is the founder's
 - `pnpm build` builds two apps, and the Chrome job in CI runs one more check.
 - No page of the web app is prerendered (Decision 3).
 - The studio's stylesheet is global: it styles `body`. It loads with the studio route, and it
-  may stay loaded when someone goes back to another page of the app without a new document.
-  With one placeholder page that has its own CSS module this does not show. When the app gets
-  screens of its own, scope the studio's rules under one root class.
+  stays loaded when someone goes back to another page of the app without a new document. The
+  app's own `global.css` sets the same resets for every page, the placeholder sets everything
+  else that would show, and `pnpm verify:web` measures it before and after a visit. When the
+  app gets screens of its own, scope the studio's rules under one root class.
 - Saved work is per origin. The file opened from disk and the web app each keep their own
   autosave; export and import carry work between them.
 - The debugging handle `window.sceneStudio` is on the web app's studio route too. It exposes

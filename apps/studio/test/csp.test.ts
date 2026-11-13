@@ -1,61 +1,15 @@
-// The build's Content Security Policy (csp.ts): finding the script elements the way a browser
-// does, spotting what the policy would block, and writing the policy into the document. The
-// built file itself is checked in a real browser by tools/verify-studio.ts.
+// The build's Content Security Policy (csp.ts): spotting what the policy would block, and
+// writing the policy into the document. Finding the script elements is the studio package's
+// (packages/studio/test/policy.test.ts). The built file itself is checked in a real browser by
+// tools/verify-studio.ts.
 import { describe, expect, test } from "vitest";
 import { renderPage, RUNTIME_SHA256 } from "@scena/renderer";
 import { BUILT_IN_SCENES } from "@scena/scenes";
 import { smallDesk } from "@scena/scenes/testing";
-import { inlineHandler, isDataBlock, isExternal, policyFor, scriptElements, withPolicy } from "../csp.ts";
+import { STUDIO_SOURCES, isDataBlock, isExternal, scriptElements } from "@scena/studio/policy";
+import { inlineHandler, policyFor, withPolicy } from "../csp.ts";
 
 const doc = (body: string) => `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>t</title>\n</head>\n<body>\n${body}\n</body>\n</html>`;
-
-describe("finding script elements", () => {
-  test("the body is exactly the text between the tags, and the offsets cover the element", () => {
-    const html = doc('<div id="root"></div>\n<script type="module" crossorigin>const a = 1;\nboot(a);</script>');
-    const [s, ...rest] = scriptElements(html);
-    expect(rest).toEqual([]);
-    expect(s!.attrs).toBe(' type="module" crossorigin');
-    expect(s!.body).toBe("const a = 1;\nboot(a);");
-    expect(html.slice(s!.start, s!.end)).toBe('<script type="module" crossorigin>const a = 1;\nboot(a);</script>');
-  });
-
-  test("end tags are found however a browser accepts them", () => {
-    for (const end of ["</script>", "</script >", "</SCRIPT>", "</script\n>", "</script\t\n bar>", '</script foo="bar">', "</script/>"]) {
-      const html = doc(`<script>one()${end}<p>between</p><script>two()</script>`);
-      expect(scriptElements(html).map((s) => s.body), end).toEqual(["one()", "two()"]);
-    }
-  });
-
-  test("start tags are found however a browser accepts them, and near misses are not scripts", () => {
-    for (const start of ["<script>", "<SCRIPT>", "<script >", "<script\n>", '<script type="module">', "<script/>", "<Script async>"]) {
-      expect(scriptElements(doc(`${start}run()</script>`)).map((s) => s.body), start).toEqual(["run()"]);
-    }
-    for (const not of ["<scripted>x</scripted>", "<script-x>x</script-x>", "<noscript>x</noscript>", "&lt;script&gt;x&lt;/script&gt;"]) {
-      expect(scriptElements(doc(not)), not).toEqual([]);
-    }
-  });
-
-  test("an end tag escaped inside the code does not end the script", () => {
-    const code = 'const page = "<script>" + runtime + "<\\/script>"; const more = "</scripted>";';
-    expect(scriptElements(doc(`<script>${code}</script>`)).map((s) => s.body)).toEqual([code]);
-  });
-
-  test("a script that is never closed is an error, not a guess", () => {
-    expect(() => scriptElements(doc("<script>run()"))).toThrow(/never closed/);
-  });
-
-  test("external scripts and data blocks are told apart from inline code", () => {
-    const [inline, external, json, quoted, ld] = scriptElements(doc(
-      '<script type="module">a()</script><script src="./assets/app.js"></script><script type="application/json" id="sd">{"a":1}</script>' +
-      "<script async src=x.js></script><script type='application/ld+json'>{}</script>"));
-    expect([inline, external, json, quoted, ld].map((s) => isExternal(s!))).toEqual([false, true, false, true, false]);
-    expect([inline, external, json, quoted, ld].map((s) => isDataBlock(s!))).toEqual([false, false, true, false, true]);
-    // an attribute that only ends in "src", or a type that only mentions json, changes nothing
-    const [odd] = scriptElements(doc('<script data-src="x" type="module" data-kind="application/json">a()</script>'));
-    expect(isExternal(odd!)).toBe(false);
-    expect(isDataBlock(odd!)).toBe(false);
-  });
-});
 
 describe("inline event handlers", () => {
   test("one in the markup is found after a space, a slash or a quote", () => {
@@ -83,6 +37,10 @@ describe("the policy", () => {
     expect(directives["form-action"]).toEqual(["'none'"]);
     expect(directives["img-src"]).toEqual(["data:", "blob:"]);
     expect(directives["connect-src"]).toEqual(["data:"]);
+    // What loads is exactly what the studio says it needs. The web app's policy is held to the
+    // same list (apps/web/test/csp.test.ts), so the two allow the same things.
+    for (const [name, sources] of Object.entries(STUDIO_SOURCES)) expect(directives[name], name).toEqual([...sources]);
+    expect(Object.keys(directives)).toEqual(["default-src", "script-src", ...Object.keys(STUDIO_SOURCES), "base-uri", "form-action"]);
     // 'unsafe-inline' is for styles only; nowhere is anything evaluated or loaded from an arbitrary host
     expect(policy.match(/'unsafe-inline'/g)).toHaveLength(1);
     expect(directives["style-src"]).toContain("'unsafe-inline'");

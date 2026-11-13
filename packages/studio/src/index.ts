@@ -8,5 +8,5 @@
 // The studio reads localStorage and the document, so it renders in a browser only. An app that
 // renders on a server has to load this module on the client (apps/web/app/studio).
 export { App as Studio } from "./components/App.tsx";
-export { FIRST_FACES_HREF, MORE_FACES_HREF, showMoreFaces } from "./fonts.ts";
+export { showMoreFaces } from "./more-faces.ts";
 export { exposeForChecks } from "./handle.ts";

@@ -1,10 +1,10 @@
-// The web app's Content Security Policy (csp.ts): what it lets run and load, and how it differs
-// from the single-file build's policy (apps/studio/csp.ts). The policy as a browser enforces it
-// is checked by tools/verify-web.ts.
+// The web app's Content Security Policy (csp.ts): what it lets run and load. The single-file
+// build's policy (apps/studio/csp.ts) is held to the same list of sources by its own test, so
+// the two allow the same things without either app's test reading the other app. The policy as
+// a browser enforces it is checked by tools/verify-web.ts.
 import { describe, expect, test } from "vitest";
 import { RUNTIME_SHA256 } from "@scena/renderer";
 import { STUDIO_SOURCES } from "@scena/studio/policy";
-import { policyFor as buildPolicyFor } from "../../studio/csp.ts";
 import { newNonce, policyFor } from "../csp.ts";
 
 const NONCE = "MDEyMzQ1Njc4OWFiY2RlZg==";
@@ -16,14 +16,15 @@ describe("the policy", () => {
 
   test("names the scripts of a request by its nonce, the page runtime by hash, and allows nothing inline or evaluated", () => {
     expect(d["default-src"]).toEqual(["'none'"]);
-    expect(d["script-src"]).toEqual([`'nonce-${NONCE}'`, "'strict-dynamic'", `'sha256-${RUNTIME_SHA256}'`]);
+    // this origin's script files, and nothing a running script adds from elsewhere or inline: no 'strict-dynamic'
+    expect(d["script-src"]).toEqual([`'nonce-${NONCE}'`, "'self'", `'sha256-${RUNTIME_SHA256}'`]);
     expect(d["base-uri"]).toEqual(["'none'"]);
     expect(d["form-action"]).toEqual(["'none'"]);
     expect(d["frame-ancestors"]).toEqual(["'none'"]);
     // 'unsafe-inline' is for styles only; nothing is evaluated, and no host is named but the typefaces'
     expect(policy.match(/'unsafe-inline'/g)).toHaveLength(1);
     expect(d["style-src"]).toContain("'unsafe-inline'");
-    expect(policy).not.toMatch(/unsafe-eval|unsafe-hashes|\*|https?:(?!\/\/fonts\.g(oogleapis|static)\.com)/);
+    expect(policy).not.toMatch(/strict-dynamic|unsafe-eval|unsafe-hashes|\*|https?:(?!\/\/fonts\.g(oogleapis|static)\.com)/);
   });
 
   test("only the dev server may evaluate, and nothing else changes there", () => {
@@ -34,18 +35,8 @@ describe("the policy", () => {
 
   test("loads what the studio needs, and this origin's own files, and no more", () => {
     for (const [name, sources] of Object.entries(STUDIO_SOURCES)) expect(d[name], name).toEqual(["'self'", ...sources]);
-  });
-
-  test("allows what the single-file build's policy allows, apart from how each names its own scripts", () => {
-    const build = directives(buildPolicyFor(["the-studio-bundle", RUNTIME_SHA256]));
-    for (const name of Object.keys(build)) {
-      if (name === "script-src") continue;
-      expect(d[name]!.filter((s) => s !== "'self'"), name).toEqual(build[name]);
-    }
-    // the preview and the picker's cards run the page runtime in a frame, under either policy
-    expect(build["script-src"]).toContain(`'sha256-${RUNTIME_SHA256}'`);
-    expect(d["script-src"]).toContain(`'sha256-${RUNTIME_SHA256}'`);
-    expect(Object.keys(d).filter((name) => !(name in build))).toEqual(["frame-ancestors"]); // a header can say it; a <meta> cannot
+    // frame-ancestors is the one directive the single-file build's <meta> cannot carry
+    expect(Object.keys(d)).toEqual(["default-src", "script-src", ...Object.keys(STUDIO_SOURCES), "base-uri", "form-action", "frame-ancestors"]);
   });
 
   test("refuses a nonce or a hash that could end the quotes it is written in", () => {

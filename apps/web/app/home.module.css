@@ -1,5 +1,6 @@
-/* The placeholder home page. A CSS module, so nothing here reaches the studio and the studio's
-   own stylesheet decides nothing here but the box model. */
+/* The placeholder home page. A CSS module, so nothing here reaches the studio. The studio's
+   stylesheet is global and stays loaded after a visit to it, so everything it sets on the
+   body that would show here is set here too: the page looks the same before and after. */
 .home {
   min-height: 100dvh;
   margin: 0;
@@ -12,7 +13,10 @@
   background: #fafaf9;
   color: #18181b;
   font: 400 1rem / 1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-feature-settings: normal;
+  -webkit-font-smoothing: auto;
 }
+.home p { margin: 0; }
 .name { margin: 0; font-size: 2.25rem; font-weight: 650; letter-spacing: -0.02em; }
 .line { margin: 0; max-width: 32rem; color: #3f3f46; }
 .open {

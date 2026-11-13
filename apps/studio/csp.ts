@@ -1,51 +1,9 @@
 // The Content Security Policy of the built studio: the parts that read and write the HTML,
 // kept free of Node and Vite so they can be tested (test/csp.test.ts). vite.config.ts runs
 // them on dist/index.html once the app's script has been inlined. The web app serves the same
-// studio under a policy of its own (apps/web/csp.ts); what the studio needs from either is in
-// @scena/studio/policy.
-import { STUDIO_DIRECTIVES, STUDIO_SOURCES } from "@scena/studio/policy";
-
-export interface ScriptElement {
-  /** Everything between "<script" and the ">" of the start tag. */
-  attrs: string;
-  /** The text the browser hashes: everything between the start tag and the end tag. */
-  body: string;
-  /** Where the element starts and ends in the document. */
-  start: number;
-  end: number;
-}
-
-/**
- * The script elements of an HTML document, found the way a browser finds them. A start tag is
- * "<script" followed by whitespace, "/" or ">". The element runs to the next end tag, which is
- * "</script" followed by the same, and may carry whitespace or attributes before its ">". Case
- * does not matter. If this disagreed with the browser about where a script ends, the hash in
- * the policy would be of the wrong text and the script would not run.
- */
-export function scriptElements(html: string): ScriptElement[] {
-  const found: ScriptElement[] = [];
-  const open = /<script(?=[\s/>])([^>]*)>/gi, close = /<\/script(?=[\s/>])[^>]*>/gi;
-  for (let tag = open.exec(html); tag; tag = open.exec(html)) {
-    const bodyStart = open.lastIndex;
-    close.lastIndex = bodyStart;
-    const end = close.exec(html);
-    if (!end) throw new Error("a <script> is never closed");
-    found.push({ attrs: tag[1]!, body: html.slice(bodyStart, end.index), start: tag.index, end: close.lastIndex });
-    open.lastIndex = close.lastIndex;
-  }
-  return found;
-}
-
-const attribute = (s: ScriptElement, name: string): string | null => {
-  const m = new RegExp(`(?:^|[\\s/"'])${name}(?:\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>]*)))?(?=[\\s/>]|$)`, "i").exec(s.attrs);
-  return m ? m[1] ?? m[2] ?? m[3] ?? "" : null;
-};
-
-/** A script the browser fetches instead of reading inline. The policy names scripts by hash, so there must be none. */
-export const isExternal = (s: ScriptElement): boolean => attribute(s, "src") !== null;
-
-/** A data block, such as application/json: the browser never runs it, so it needs no hash. */
-export const isDataBlock = (s: ScriptElement): boolean => /^application\/(?:ld\+)?json$/i.test((attribute(s, "type") || "").trim());
+// studio under a policy of its own (apps/web/csp.ts). What both need is in @scena/studio/policy:
+// the sources the studio needs, and how to find the scripts of a document.
+import { STUDIO_DIRECTIVES, STUDIO_SOURCES, scriptElements, type ScriptElement } from "@scena/studio/policy";
 
 /**
  * The first inline event handler in the markup outside the scripts, or "" when there is none.

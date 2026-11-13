@@ -11,9 +11,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FIRST_FACES_HREF, MORE_FACES_HREF } from "@scena/studio/fonts";
+import { isDataBlock, scriptElements } from "@scena/studio/policy";
 import { RUNTIME_SHA256 } from "@scena/renderer";
-import { isDataBlock, scriptElements } from "../apps/studio/csp.ts";
 import { launch, repoRoot, sleep } from "./cdp.ts";
+import { checks, input } from "./checks.ts";
 
 const web = join(repoRoot, "apps", "web");
 const out = join(repoRoot, "tools", "out");
@@ -23,11 +24,7 @@ const given = process.argv[2];
 const PORT = 3190;
 const origin = (given || `http://localhost:${PORT}`).replace(/\/+$/, "");
 
-let failures = 0;
-const check = (label: string, ok: boolean, detail: unknown = "") => {
-  console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail !== "" ? `  ${typeof detail === "string" ? detail : JSON.stringify(detail)}` : ""}`);
-  if (!ok) failures++;
-};
+const { check, failed } = checks();
 
 // ── the server ──────────────────────────────────────────────────────────────────────────
 let server: ChildProcess | null = null;
@@ -53,26 +50,28 @@ process.on("exit", stop);
 const answers = async (): Promise<boolean> => {
   try { return (await fetch(`${origin}/`, { signal: AbortSignal.timeout(2000) })).ok; } catch { return false; }
 };
+// The server this check started says "Ready" once it is listening, and only then is an answer
+// on the port its answer. If the port is taken, whatever holds it answers at once, with some
+// other build, while this server is still on its way to failing: its own word is what ties
+// the checks to this build. A server that was given has no word to wait for.
+const itSaysReady = () => /\bReady\b/.test(said);
 const started = Date.now();
 let up = false;
 while (!up && !ended && Date.now() - started < 30_000) {
-  up = await answers();
+  up = (!server || itSaysReady()) && (await answers());
   if (!up) await sleep(200);
 }
-// If the port was taken, something else may be answering there while the server this check
-// started has gone: a moment later that shows, and its answers are not the build's.
-if (up && server) await sleep(300);
 if (!up || (server && ended)) {
   const lines = said.split("\n").map((l) => l.trim()).filter(Boolean).slice(-12);
-  const why = given ? "nothing is listening there" : ended ? `its server ${ended}${up ? ", and something else answers on that port" : ""}` : "its server was still starting after 30 s";
+  const why = given ? "nothing is listening there" : ended ? `its server ${ended}` : `its server ${itSaysReady() ? "said it was ready and did not answer" : "had not said it was ready"} after 30 s`;
   console.error([`The web app is not being served at ${origin}: ${why}.`, ...(lines.length ? ["  It said:", ...lines.map((l) => `    ${l}`)] : [])].join("\n"));
   stop();
   process.exit(1);
 }
 
 // ── what the server sends ───────────────────────────────────────────────────────────────
-const get = async (path: string) => {
-  const r = await fetch(origin + path);
+const get = async (path: string, headers: Record<string, string> = {}) => {
+  const r = await fetch(origin + path, { headers });
   return { status: r.status, policy: r.headers.get("content-security-policy") || "", powered: r.headers.get("x-powered-by"), html: await r.text() };
 };
 const nonceOf = (policy: string) => /'nonce-([^']+)'/.exec(policy)?.[1] || "";
@@ -85,16 +84,29 @@ const scriptSrc = directive(first.policy, "script-src");
 const evaluates = /'unsafe-eval'/.test(scriptSrc);
 if (given) console.log(`NOTE  ${origin} ${evaluates ? "may evaluate code, as a dev server does" : "may not evaluate code, as a production build"}`);
 check("the studio route answers under a policy that names its scripts by a nonce and the page runtime by hash",
-  first.status === 200 && directive(first.policy, "default-src") === "default-src 'none'" && /'nonce-[A-Za-z0-9+/=]{22,}' 'strict-dynamic'/.test(scriptSrc)
-  && scriptSrc.includes(`'sha256-${RUNTIME_SHA256}'`) && !/'unsafe-inline'|\*|https?:/.test(scriptSrc) && (!!given || !evaluates)
+  first.status === 200 && directive(first.policy, "default-src") === "default-src 'none'" && /^script-src 'nonce-[A-Za-z0-9+/=]{22,}' 'self' /.test(scriptSrc)
+  && scriptSrc.includes(`'sha256-${RUNTIME_SHA256}'`) && !/'unsafe-inline'|'strict-dynamic'|\*|https?:/.test(scriptSrc) && (!!given || !evaluates)
   && directive(first.policy, "frame-ancestors") === "frame-ancestors 'none'" && first.powered === null,
   { status: first.status, policy: first.policy.replace(nonceOf(first.policy), "…").slice(0, 200) });
 check("every request gets a nonce of its own", nonceOf(first.policy).length >= 22 && nonceOf(again.policy).length >= 22 && nonceOf(first.policy) !== nonceOf(again.policy));
 
-const scripts = scriptElements(first.html).filter((s) => !isDataBlock(s));
-const unnamed = scripts.filter((s) => !s.attrs.includes(`nonce="${nonceOf(first.policy)}"`));
-check("every script the server sends carries the nonce of its request", scripts.length > 0 && unnamed.length === 0,
-  { scripts: scripts.length, without: unnamed.map((s) => (s.attrs + s.body).slice(0, 80)) });
+/** The scripts of a document the server sent, and the ones that do not carry the nonce of its policy. */
+const scriptsOf = (r: { html: string; policy: string }) => {
+  const all = scriptElements(r.html).filter((s) => !isDataBlock(s));
+  return { all, unnamed: all.filter((s) => !nonceOf(r.policy) || !s.attrs.includes(`nonce="${nonceOf(r.policy)}"`)) };
+};
+const scripts = scriptsOf(first);
+check("every script the server sends carries the nonce of its request", scripts.all.length > 0 && scripts.unnamed.length === 0,
+  { scripts: scripts.all.length, without: scripts.unnamed.map((s) => (s.attrs + s.body).slice(0, 80)) });
+// What a request says about itself changes nothing. One that calls itself a prefetch is still
+// answered with the document, and a browser may go on to show that document.
+const saysPrefetch: Record<string, string>[] = [{ purpose: "prefetch" }, { "sec-purpose": "prefetch;prerender" }, { "next-router-prefetch": "1" }];
+const marked = await Promise.all(saysPrefetch.map(async (headers) => {
+  const r = await get("/studio", headers);
+  return { sent: Object.keys(headers)[0], status: r.status, policy: nonceOf(r.policy).length >= 22, scripts: scriptsOf(r).all.length, unnamed: scriptsOf(r).unnamed.length };
+}));
+check("a request that calls itself a prefetch is answered under the policy like any other",
+  marked.every((r) => r.status === 200 && r.policy && r.scripts > 0 && r.unnamed === 0), marked);
 check("the server sends none of the studio: it is loaded in the browser",
   first.html.includes("Opening the studio") && !/data-ui="more"|id="stage"|id="panel-layers"/.test(first.html) && first.html.includes('id="root"'));
 check("the document links the studio's first typefaces", first.html.includes(FIRST_FACES_HREF.replace(/&/g, "&amp;")));
@@ -111,21 +123,7 @@ const page = await chrome.newPage();
 await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "light" }] });
 
-// the selector reaches the page as a value (page.call), never written into code that runs there
-const center = (selector: string) => page.call<[number, number] | null>(`(selector) => { const el = document.querySelector(selector); if (!el) return null; el.scrollIntoView({ block: "center" }); const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }`, selector);
-async function clickOn(selector: string) {
-  const c = await center(selector);
-  if (!c) throw new Error(`Nothing matches ${selector}`);
-  await page.click(c[0], c[1]);
-  await sleep(250);
-}
-async function typeInto(selector: string, text: string) {
-  await clickOn(selector);
-  await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 2, windowsVirtualKeyCode: 65 });
-  await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2, windowsVirtualKeyCode: 65 });
-  await page.send("Input.insertText", { text });
-  await sleep(250);
-}
+const { clickOn, typeInto } = input(page);
 /** The studio is there once its module has loaded and its top bar is on screen. */
 async function studioLoaded(): Promise<boolean> {
   for (let i = 0; i < 150; i++) {
@@ -235,10 +233,35 @@ const framed = await page.eval<{ named: boolean; unnamed: boolean }>(`new Promis
   setTimeout(() => { removeEventListener("message", listen); frames.forEach((f) => f.remove()); done({ named: heard.has("csp-probe:named"), unnamed: heard.has("csp-probe:unnamed") }); }, 1000);
 })`);
 check("in a frame made from markup, a script the policy does not name does not run", framed.named === true && framed.unnamed === false, framed);
+// A script that running code adds through the DOM gets nothing for that: its inline text does
+// not run without the nonce, and a file on another host is refused before it is asked for. The
+// single-file build's policy allows neither, and the app's own files load from this origin.
+const added = await page.eval<{ inline: boolean; refused: string[] }>(`new Promise((done) => {
+  const refused = [];
+  const listen = (e) => { refused.push(e.blockedURI); };
+  document.addEventListener("securitypolicyviolation", listen);
+  const inline = document.createElement("script");
+  inline.textContent = "window.__cspInline = 1";
+  const away = document.createElement("script");
+  away.src = "https://scripts.example/probe.js";
+  document.body.append(inline, away);
+  setTimeout(() => { document.removeEventListener("securitypolicyviolation", listen); inline.remove(); away.remove(); done({ inline: !!window.__cspInline, refused }); }, 500);
+})`);
+check("a script added through the DOM runs only from this origin: not inline, and not from another host",
+  added.inline === false && added.refused.includes("inline") && added.refused.some((u) => u.startsWith("https://scripts.example")), added);
 
-// from the home page, by its link: the studio arrives without a new document
+// The home page, fresh: it fills the window and does not scroll, on its own styles. The
+// studio's stylesheet is global and stays loaded after a visit, so it is measured again then.
+const HOME = `(() => { const m = document.querySelector("main"); if (!m) return null; const r = m.getBoundingClientRect(), s = getComputedStyle(m);
+  return { box: [r.x, r.y, r.width, r.height].map(Math.round).join(" "), scrolls: document.documentElement.scrollHeight > innerHeight || document.documentElement.scrollWidth > innerWidth,
+    font: s.fontFamily, features: s.fontFeatureSettings, smoothing: s.webkitFontSmoothing, color: s.color, background: s.backgroundColor,
+    inside: [...m.children].map((c) => { const b = c.getBoundingClientRect(); return Math.round(b.y) + ":" + Math.round(b.height); }).join(" ") }; })()`;
 const homeFrom = page.logs.length;
 await page.goto(`${origin}/`);
+const homeFresh = await page.eval<any>(HOME);
+check("the home page fills the window and does not scroll", !!homeFresh && homeFresh.box === "0 0 1440 900" && homeFresh.scrolls === false, homeFresh);
+
+// from the home page, by its link: the studio arrives without a new document
 await page.eval(`window.__sameDocument = true`);
 await clickOn('a[href="/studio"]');
 const arrived = await studioLoaded();
@@ -247,6 +270,15 @@ const after = await page.eval<any>(`({ path: location.pathname, same: window.__s
 check("the home page's link opens the studio in place, with the saved work",
   arrived && after.path === "/studio" && after.same === true && after.root === "contents" && after.scene === "desk" && after.title === "Scena Studio" && errorsSince(homeFrom).length === 0,
   { ...after, errors: errorsSince(homeFrom).join(" | ").slice(0, 300) });
+
+// and back, still in the same document, with the studio's stylesheet now loaded
+await page.eval(`history.back()`);
+let homeAgain: any = null;
+for (let i = 0; i < 50 && !homeAgain; i++) { await sleep(100); homeAgain = await page.eval<any>(HOME); }
+await sleep(300);
+homeAgain = await page.eval<any>(HOME);
+const stillSame = await page.eval<boolean>(`window.__sameDocument === true && document.styleSheets.length > 1`);
+check("the home page looks the same after a visit to the studio", stillSame && JSON.stringify(homeAgain) === JSON.stringify(homeFresh), { fresh: homeFresh, again: homeAgain });
 
 // a phone
 await page.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
@@ -258,5 +290,5 @@ writeFileSync(join(out, "web-studio-375.png"), await page.screenshot());
 
 await chrome.close();
 stop();
-console.log(failures ? `\n${failures} check(s) failed` : "\nall checks passed");
-process.exit(failures ? 1 : 0);
+console.log(failed() ? `\n${failed()} check(s) failed` : "\nall checks passed");
+process.exit(failed() ? 1 : 0);

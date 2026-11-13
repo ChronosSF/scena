@@ -52,7 +52,7 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 146 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, saved work, file sniffing, both apps' policies, frames, board and lettering
+pnpm test         # 145 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, saved work, file sniffing, both apps' policies, frames, board and lettering
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
 pnpm check        # typecheck + test + build
 
@@ -69,7 +69,7 @@ Other tools, all optional:
 | `pnpm fixtures` | Regenerates the test drawings in `fixtures/`, including the mug's three SVG frames, a blinking face as a PNG sequence and as an animated PNG, a paper texture, a drawn desk top and a lettered "Pia" (SVG and PNG) |
 | `pnpm parity` | Confirms the renderer reproduces the prototype's `demo-desk.html` (apart from the runtime) |
 | `pnpm verify:studio [url]` | Drives the studio in headless Chrome through real mouse, keyboard and file-chooser input. Default target: the build from file://. Run `pnpm build` first |
-| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview, a reload, and markup that tries to run script. Run `pnpm build` first. With a URL it checks a server that is already running, such as `pnpm dev:web` |
+| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends with every page, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview, a reload, markup and added scripts that try to run, and the home page before and after a visit to the studio. Run `pnpm build` first. With a URL it checks a server that is already running, such as `pnpm dev:web` |
 | `pnpm verify:runtime` | Checks every branch of the boil control (lite mode, slow device, Save-Data, reduced motion, offscreen, hidden, idle) on the built demo page, and that frames flip, hold frame 1 and pause with it on `demo-frames.html` |
 | `pnpm shots [url]` | Retakes the studio screenshots in `docs/design/` (desktop light and dark, 375 px). Default target: the build from file:// |
 | `pnpm measure [--soft]` | Boil frame cost at 375×812 @3x with 1×, 4× and 6× CPU slowdown, against the original prototype; then the desk with three objects flipping frames at 6 fps |

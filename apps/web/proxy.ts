@@ -3,7 +3,8 @@
 // puts it on the scripts it renders, which is why every page is rendered for its request
 // (app/layout.tsx).
 import { NextResponse, type NextRequest } from "next/server";
-import { RUNTIME_SHA256 } from "@scena/renderer";
+// the generated module alone: this file runs in front of every request, and needs one constant of the renderer
+import { RUNTIME_SHA256 } from "@scena/renderer/runtime";
 import { newNonce, policyFor } from "./csp.ts";
 
 export function proxy(request: NextRequest) {
@@ -21,15 +22,8 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    {
-      // Pages only. Files under _next/static and the icon are not documents, and a prefetch
-      // is not rendered into one.
-      source: "/((?!_next/static|_next/image|icon.svg).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
-    },
-  ],
+  // Everything but the files under _next/static and the icon, which are not documents. No
+  // request is let through on what its headers say it is: one that calls itself a prefetch
+  // is still answered with a document, and a document without the policy can be shown.
+  matcher: ["/((?!_next/static|_next/image|icon\\.svg).*)"],
 };

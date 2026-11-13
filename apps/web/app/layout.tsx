@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
 import type { ReactNode } from "react";
+import "./global.css";
 
 export const metadata: Metadata = {
   title: "Scena",

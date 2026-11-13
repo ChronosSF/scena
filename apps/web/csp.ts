@@ -25,10 +25,14 @@ export interface PolicyInput {
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 /**
- * The policy for one request. Only the scripts Next.js rendered for it run, and what those
- * load ('strict-dynamic'); the page runtime runs in a frame. No inline handlers, no
- * javascript: URLs and, outside the dev server, no eval. Nothing loads from anywhere but this
- * origin and the places the studio needs.
+ * The policy for one request. The scripts that run are the ones Next.js rendered for it, which
+ * carry the nonce, and this origin's own script files, which those load ('self'); the page
+ * runtime runs in a frame. No inline handlers, no javascript: URLs and, outside the dev server,
+ * no eval. Nothing loads from anywhere but this origin and the places the studio needs.
+ *
+ * There is no 'strict-dynamic'. It would let any script that running code adds through the DOM
+ * run, inline or from any host, and the single-file build's policy allows neither. If the
+ * app's files ever come from another host (an asset prefix), that host is named here.
  */
 export function policyFor({ nonce, pageRuntimeSha256, dev = false }: PolicyInput): string {
   // a nonce or a hash is written inside quotes in a header: nothing but base64 may get there
@@ -36,7 +40,7 @@ export function policyFor({ nonce, pageRuntimeSha256, dev = false }: PolicyInput
   if (!BASE64.test(pageRuntimeSha256)) throw new Error("the page runtime's hash must be base64");
   return [
     "default-src 'none'",
-    `script-src 'nonce-${nonce}' 'strict-dynamic' 'sha256-${pageRuntimeSha256}'${dev ? " 'unsafe-eval'" : ""}`,
+    `script-src 'nonce-${nonce}' 'self' 'sha256-${pageRuntimeSha256}'${dev ? " 'unsafe-eval'" : ""}`,
     // this origin's own stylesheets, typefaces, images and requests, and what the studio needs
     ...STUDIO_DIRECTIVES.map((d) => `${d} 'self' ${STUDIO_SOURCES[d].join(" ")}`),
     "base-uri 'none'",

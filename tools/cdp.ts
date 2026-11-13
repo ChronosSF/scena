@@ -92,7 +92,8 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
   // alone). The port is asked as well, for a build that prints nothing. Waiting stops as soon
   // as Chrome has gone.
   const asked = async (): Promise<string> => {
-    try { return (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl || ""; } catch { return ""; }
+    // a second at most: whatever holds the port may accept the question and never answer it
+    try { return (await (await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1000) })).json()).webSocketDebuggerUrl || ""; } catch { return ""; }
   };
   let address = "", from = "";
   const started = Date.now();

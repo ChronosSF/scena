@@ -68,7 +68,9 @@ and the file grew by 338 bytes.
 
 ## Decision 2: `apps/web` is Next.js 16 with the App Router, and the studio loads in the browser only
 
-- **Next.js 16.4.6**, pinned exactly, with React 19.3.1 as in the studio. `transpilePackages`
+- **Next.js 16.4.5**, pinned exactly, with React 19.3.1 as in the studio. It is the newest
+  release that had been public for a week, the rule `.github/dependabot.yml` sets for version
+  updates; 16.4.6 was four days old, and no advisory separates the two. `transpilePackages`
   lists the four workspace packages, and Turbopack compiles their TypeScript source, `.ts`
   extensions included.
 - **`/studio`** is a server component that holds only what a server can know: the title, the
@@ -77,7 +79,7 @@ and the file grew by 338 bytes.
   its markup is in the HTML the server sends. `tools/verify-web.ts` checks both.
 - **`/`** is a placeholder with a link to the studio, until sign-in and the dashboard exist.
 - **TypeScript 7 needs no exception.** ADR 0001 allowed pinning TypeScript 6 for a tool that
-  needs the old compiler API. Next.js 16.4.6 runs its own type check with TypeScript 7, and the
+  needs the old compiler API. Next.js 16.4.5 runs its own type check with TypeScript 7, and the
   app is also checked by `pnpm typecheck` like every package. That script runs `next typegen`
   first, because `next-env.d.ts` and the route types are generated and git ignores them.
 - **No Tailwind yet.** The issue lists it. The studio is styled by its own stylesheet and is not

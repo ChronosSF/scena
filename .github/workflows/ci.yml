@@ -48,9 +48,7 @@ jobs:
       - run: pnpm parity
       # The runner's Chrome changes with the runner image, so the log names it.
       - name: Say which Chrome the checks drive
-        run: |
-          google-chrome --version
-          sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone || true
+        run: google-chrome --version
       - run: pnpm verify:runtime
       - run: pnpm verify:studio
       - name: Keep the studio screenshots when a check fails

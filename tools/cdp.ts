@@ -98,7 +98,8 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
   let address = "";
   const started = Date.now();
   while (!address && !ended && Date.now() - started < START_MS) {
-    address = /DevTools listening on (ws:\/\/\S+)/.exec(said)?.[1] || (await asked());
+    // the space after it shows the address has arrived whole: a pipe may deliver a line in pieces
+    address = /DevTools listening on (ws:\/\/\S+)\s/.exec(said)?.[1] || (await asked());
     if (!address) await sleep(100);
   }
   if (!address) {

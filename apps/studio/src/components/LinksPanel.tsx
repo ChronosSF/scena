@@ -55,7 +55,7 @@ export function LinksPanel(props: { hidden?: boolean; tabbed?: boolean }) {
         {rows.map(({ slot, layer }) => <LinkRow key={slot.id} slot={slot} layer={layer} />)}
       </ol>
       <div className="panel-foot">
-        The drawings in a ready-made scene stay as they were made. To use your own, choose Start over… in the More menu.
+        The drawings in a ready-made scene stay as they were made. To choose another scene, or to start over with drawings of your own, open the More menu.
       </div>
     </aside>
   );

@@ -29,11 +29,25 @@ export interface Page {
   send: (method: string, params?: Json) => Promise<Json>;
   goto: (url: string, waitMs?: number) => Promise<void>;
   eval: <T = Json>(expression: string, contextId?: number) => Promise<T>;
+  /**
+   * Call a function in the page. `fn` is the source of a function; `args` reach it as values,
+   * through the protocol. Use this, not eval, whenever the page needs data from the tool: data
+   * written into an expression becomes code, and has to be escaped to stay data.
+   */
+  call: <T = Json>(fn: string, ...args: Json[]) => Promise<T>;
+  /** The same, in a child frame chosen as for frameEval (undefined: the most recently attached). */
+  frameCall: <T = Json>(index: number | undefined, fn: string, ...args: Json[]) => Promise<T>;
   screenshot: () => Promise<Buffer>;
-  /** Evaluate in the most recently attached child frame (out-of-process iframes, such as sandboxed srcdoc frames). */
-  frameEval: <T = Json>(expression: string) => Promise<T>;
-  /** Send a command to the most recently attached child frame (emulation does not reach out-of-process frames). */
-  frameSend: (method: string, params?: Json) => Promise<Json>;
+  /**
+   * Evaluate in a child frame (out-of-process iframes, such as sandboxed srcdoc frames): the
+   * most recently attached one, or the one at `index`, counting the frames still attached in
+   * the order they appeared.
+   */
+  frameEval: <T = Json>(expression: string, index?: number) => Promise<T>;
+  /** Send a command to a child frame, chosen as for frameEval (emulation does not reach out-of-process frames). */
+  frameSend: (method: string, params?: Json, index?: number) => Promise<Json>;
+  /** How many child frames are attached now. A frame that has gone (a closed dialog, a view left) is not counted. */
+  frameCount: () => number;
   click: (x: number, y: number) => Promise<void>;
   drag: (from: [number, number], to: [number, number], steps?: number) => Promise<void>;
   key: (key: string, code?: string) => Promise<void>;
@@ -146,9 +160,20 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
       if (msg.method === "Target.attachedToTarget" && msg.sessionId === sessionId && msg.params.targetInfo.type === "iframe") {
         frames.push(msg.params.sessionId);
         void send("Runtime.enable", {}, msg.params.sessionId);
+        // what the browser itself reports about the frame, such as a script its policy refused, comes through Log
+        void send("Log.enable", {}, msg.params.sessionId);
         void send("Runtime.runIfWaitingForDebugger", {}, msg.params.sessionId);
       }
+      if (msg.method === "Target.detachedFromTarget" && msg.sessionId === sessionId) {
+        const at = frames.indexOf(msg.params.sessionId);
+        if (at >= 0) frames.splice(at, 1);
+      }
     });
+    const frame = (index = -1): string => {
+      const fs = frames.at(index);
+      if (!fs) throw new Error(index === -1 ? "No child frame is attached." : `No child frame at ${index}: ${frames.length} attached.`);
+      return fs;
+    };
     await s("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
     const logs: string[] = [];
     listeners.push((msg) => {
@@ -158,6 +183,18 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
       if (msg.method === "Log.entryAdded") logs.push(`${msg.params.entry.level}: ${msg.params.entry.text}`);
     });
     const mouse = (type: string, x: number, y: number, extra: Json = {}) => s("Input.dispatchMouseEvent", { type, x, y, button: "left", pointerType: "mouse", ...extra });
+    // A function called on the page's global object, its arguments sent as values beside it.
+    const callIn = async (session: string, fn: string, args: Json[]) => {
+      const global = await send("Runtime.evaluate", { expression: "globalThis" }, session);
+      const objectId = global.result.objectId;
+      try {
+        const r = await send("Runtime.callFunctionOn", { functionDeclaration: fn, objectId, arguments: args.map((value) => ({ value })), awaitPromise: true, returnByValue: true }, session);
+        if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+        return r.result.value;
+      } finally {
+        void send("Runtime.releaseObject", { objectId }, session).catch(() => {}); // the page may have gone
+      }
+    };
     return {
       send: s,
       logs,
@@ -177,18 +214,15 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
         if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
         return r.result.value;
       },
-      async frameEval(expression) {
-        const fs = frames.at(-1);
-        if (!fs) throw new Error("No child frame is attached.");
-        const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, fs);
+      call: (fn, ...args) => callIn(sessionId, fn, args),
+      frameCall: (index, fn, ...args) => callIn(frame(index), fn, args),
+      async frameEval(expression, index) {
+        const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, frame(index));
         if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
         return r.result.value;
       },
-      async frameSend(method, params = {}) {
-        const fs = frames.at(-1);
-        if (!fs) throw new Error("No child frame is attached.");
-        return send(method, params, fs);
-      },
+      frameSend: (method, params = {}, index) => send(method, params, frame(index)),
+      frameCount: () => frames.length,
       async click(x, y) {
         await mouse("mouseMoved", x, y);
         await mouse("mousePressed", x, y, { clickCount: 1, buttons: 1 });

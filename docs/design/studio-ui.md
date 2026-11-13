@@ -20,7 +20,8 @@ Principles:
 ![Desktop, dark](studio-dark.png)
 <img src="studio-375.png" alt="Phone, 375 px" width="300">
 
-The screenshots come from `pnpm shots` (headless Chrome, Pia's desk with the envelope selected).
+The screenshots come from `pnpm shots` (headless Chrome, Pia's desk with the envelope selected;
+then the scene picker over it).
 
 ## Tokens
 
@@ -142,8 +143,8 @@ the preview only, never to the export.
   - the autosave indicator, a quiet check, or a warning when the work is too big for browser
     storage;
   - Import, and Export (the one primary button);
-  - an overflow menu with Import, "Fill in a ready-made scene: the desk", "Open Pia's finished
-    desk" and "Start over…". When saved work
+  - an overflow menu with Import, "Choose a ready-made scene…" (the scene picker), "Open Pia's
+    finished desk" and "Start over…". When saved work
     could not be opened it also has "Saved work that did not open…": a dialog that gives the
     reasons, offers the work as files in the export dialog's rows, and can discard it. The same
     dialog opens by itself once, on the load where the work was set aside.
@@ -204,8 +205,37 @@ the preview only, never to the export.
   - Palette swatches, light or dark, motion, canvas surface and size, the words around the
     drawing, and the keyboard shortcuts.
 - **Empty state.** A card centred on the empty mat: "Add your first drawing", with Upload and Add
-  a sample, and under them one quiet line for the other way to a page: "Fill in a ready-made
-  scene". It is chrome, so it sits outside the page's CSS and does not scale with the zoom.
+  a sample, and under them one quiet line for the other way to a page: "Choose a ready-made
+  scene", which opens the scene picker. It is chrome, so it sits outside the page's CSS and does
+  not scale with the zoom.
+- **Scene picker** (the plan's section 2.2). A dialog, "Choose a scene", with one card per
+  ready-made scene. It is as wide as its cards, up to three in a row; on a phone it takes the
+  whole screen, one card to a row.
+
+  <img src="studio-picker.png" alt="The scene picker, with the one scene that ships" width="560">
+
+  - A card's head has the scene's name, who it was drawn for ("Drawn for illustrators", from
+    the scene's `audience`), and the one primary button, "Use this scene".
+  - Under it, what the scene has room for, in plain words: "5 links: Portfolio, Shop,
+    Commissions, Social, Newsletter". The words are the slots' kinds, in the order of the plain
+    list; a slot of the kind "custom" is listed by its label. The card of the scene that is
+    open says "Open now".
+  - Then the scene itself, not a picture of it: the published page with the scene's sample
+    content, in a sandboxed frame, as in Preview. The lines boil, and a tap on a drawing opens
+    its panel; links say where they would go instead of leaving. The frame is a phone's screen
+    (375 × 667) scaled to the card, so the panel a tap opens is in view under the drawing.
+    On a narrow screen, where the cards are one to a row, the page in the frame does not scroll:
+    a swipe that starts on it moves the list of cards.
+    Until the page paints, the frame is the colour of the page's paper.
+  - Choosing a card opens the scene in the links-only mode, in Edit, with a new page made from
+    the scene's own wording, and closes the picker. If there is work on the canvas it asks
+    first (see "Opening another scene"); the picker stays open behind the question.
+  - Keyboard. The heading takes the focus when the picker opens, not the first button, so a
+    key held on the way in cannot choose a scene. Tab goes to Close, then through each card:
+    its button first, then the page in its frame, drawing by drawing. Escape, Close or a press
+    outside closes it, and the focus returns to where the picker was opened from.
+  - The cards come from a list (`BUILT_IN_SCENES` in `@scena/scenes`); the picker names no
+    scene. The README's "Adding a ready-made scene" says which files a new one touches.
 - **Links-only mode** (a scene with `license: "builtin"`; the plan's phase 1). The scene is
   filled in, not designed, so the tool takes away everything that changes a drawing and keeps
   the same places for what is left:
@@ -227,8 +257,8 @@ the preview only, never to the export.
   - The scene name in the bar is text, not a field.
   - On a phone the tabs read Links, and Link or Page, and a link's row opens its form.
 
-  The mode is entered from the More menu ("Fill in a ready-made scene: the desk") or the empty
-  state. It opens the desk with a new page made from the slots' own wording, not Pia's page.
+  The mode is entered by choosing a scene in the scene picker. The scene opens with a new page
+  made from its slots' own wording, not the sample page the picker showed it with.
 - **Fields the page depends on.** A link needs a title, a page needs a name, and an address
   has to be one. Each of these fields keeps what was typed and says what is wrong under it,
   while the document holds something valid: the last title or name, or no address at all (a
@@ -238,10 +268,12 @@ the preview only, never to the export.
   written over work that does: the indicator in the bar turns to a warning that says so, and the
   last saved work stays. Work saved under older rules is brought in line when it is opened, so
   it is not turned away for something the studio itself allowed.
-- **Opening another scene.** "Fill in a ready-made scene" and "Open Pia's finished desk"
+- **Opening another scene.** A scene chosen in the picker and "Open Pia's finished desk"
   replace what is on the canvas, so when there is work there (a drawing, a background,
   lettering, or words typed on the page) a small dialog asks first, with Cancel and "Open it".
-  On an empty, untouched canvas they open at once.
+  On an empty, untouched canvas they open at once. The drawings of a ready-made scene are not
+  the user's work: with nothing typed on its page, going on to another scene asks nothing, so
+  scenes can be tried one after another. Links typed on one scene are not carried to the next.
 - **Frames** ([ADR 0002](../adr/0002-frame-animation.md)). A collapsible section under Placement.
   - Before a drawing has frames, the section shows one line of explanation and a dashed "Add
     frames" target. Choose files, or drop them on the section.
@@ -320,7 +352,16 @@ framework: the chrome is one hand-written stylesheet on custom properties.
    illustrators.
 2. **Fit never goes above 100%.** That keeps PNG drawings sharp and shows the page at its true
    size, but on a large monitor the page sits small in the workspace until you zoom in.
-3. **Hide means "not published".** Visibility uses fields the format already has. A hidden link
+3. **The picker's frames are in the tab order.** A card's page can be tried by keyboard as it
+   can by touch, which is the point of a live card, but it puts every drawing and link of one
+   card between its button and the next card's: about a dozen presses of Tab per scene. With
+   three scenes that is tolerable; with a shelf of them the cards would want arrow keys, or
+   frames that are entered on purpose. Also, while the focus is inside a frame, Escape goes to
+   the page in it and does not close the picker.
+4. **A scene's links are listed by kind.** "Portfolio, Shop, Commissions" says what a scene is
+   for; the slots' labels ("Sketchbook, Framed print, Envelope") say what is drawn, which the
+   card already shows. A scene with several slots of one kind reads "Social ×2".
+5. **Hide means "not published".** Visibility uses fields the format already has. A hidden link
    is turned off, so the renderer leaves it out. A hidden decoration gets opacity 0 and still
    ships in the file, so it still counts toward the page weight. Showing it again restores its
    previous opacity from the studio's stash, which is not exported. This needs no format change.

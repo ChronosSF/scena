@@ -9,6 +9,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
+import { BUILT_IN_SCENES } from "@scena/scenes";
+import { smallDesk } from "@scena/scenes/testing";
 import { fixture, launch, sleep, type Page } from "./cdp.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -46,7 +48,38 @@ async function keyWith(key: string, code: string, modifiers: number, vk = 0) {
   await sleep(250);
 }
 const ALT = 1, CTRL = 2, SHIFT = 8;
+/** Enter as a keyboard sends it: with its character, which is what presses a focused button. */
+async function pressEnter() {
+  await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+  await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await sleep(250);
+}
+const pressTab = (modifiers = 0) => keyWith("Tab", "Tab", modifiers, 9);
 const setFiles = (selector: string, files: string[]) => page.setFiles(selector, files);
+
+// The scene picker (issue 12). The build offers the scenes that ship. To show that the picker
+// depends on none of them, it is also given a second scene that is only a test fixture.
+const shipped = BUILT_IN_SCENES.map((e) => e.scene);
+const second = smallDesk();
+// The page is handed this list as a value (page.call): data from here is never written into code that runs there.
+const twoScenes = [...BUILT_IN_SCENES, second];
+/** The open picker: where the focus is, and what each card says. null when it is closed. */
+const PICKER = `(() => { const d = document.querySelector("dialog.picker[open]"); if (!d) return null; const a = document.activeElement;
+  const named = (el) => (el.getAttribute("aria-labelledby") || "").split(" ").map((id) => (document.getElementById(id) || {}).textContent).join(" ");
+  return { focus: (a.dataset && a.dataset.ui) || a.id || a.tagName, focusScene: ((a.closest && a.closest("[data-scene]")) || { dataset: {} }).dataset.scene || "",
+    cards: [...d.querySelectorAll("[data-scene]")].map((c) => { const f = c.querySelector("iframe"); return { id: c.dataset.scene, name: c.querySelector("h3").textContent,
+      audience: (c.querySelector('[data-ui="scene-audience"]') || {}).textContent || "", slots: c.querySelector('[data-ui="scene-slots"]').textContent,
+      count: (c.querySelector('[data-ui="scene-count"]') || {}).textContent || "",
+      use: named(c.querySelector('[data-ui="scene-use"]')), sandbox: f.getAttribute("sandbox"), current: !!c.querySelector('[data-ui="scene-current"]') }; }) }; })()`;
+interface PickerState { focus: string; focusScene: string; cards: { id: string; name: string; audience: string; slots: string; count: string; use: string; sandbox: string | null; current: boolean }[] }
+const picker = () => page.eval<PickerState | null>(PICKER);
+/** What is open in the studio now, as the links-only mode shows it. */
+const OPENED = `(() => { const s = sceneStudio.store.getSnapshot(); return { picker: !!document.querySelector("dialog.picker[open]"), asked: (document.querySelector("dialog[open] #replace-h") || {}).textContent || "",
+  id: s.scene.id, license: s.scene.license, view: s.view, panel: document.getElementById("panel-layers").getAttribute("aria-label"), name: (document.querySelector('[data-ui="scene-name"]') || {}).textContent,
+  rows: [...document.querySelectorAll("[data-link-row]")].map((r) => r.getAttribute("data-link-row")).join(","), titles: Object.values(s.page.links).map((l) => l.title).join("|"),
+  urls: Object.values(s.page.links).map((l) => l.url).join(""), palette: s.page.theme.palette, heading: s.page.fallbackList.heading, palettes: document.querySelectorAll('#inspector input[name="palette"]').length,
+  toast: (document.getElementById("toast") || {}).textContent || "", errs: [...sceneStudio.validateScene(s.scene), ...sceneStudio.validatePage(s.page, s.scene)] }; })()`;
+const defaultTitles = (scene: (typeof shipped)[number]) => scene.slots.map((s) => s.defaults.title || s.label).join("|");
 /**
  * Intercepts download links so their files can be read back with `downloads()`. It keeps the Blob
  * behind each blob: URL and reads that, because the build's Content Security Policy does not let
@@ -75,6 +108,25 @@ check("studio boots", await page.eval(`!!window.sceneStudio && !!document.queryS
 
 // samples
 check("empty state offers upload and samples", await page.eval(`!!document.querySelector('[data-ui="empty"]')`));
+
+// the other way to a page: the empty state opens the scene picker, and with nothing on the
+// canvas the chosen scene opens at once, as a new page with the scene's own wording
+await clickOn('[data-ui="empty-scenes"]');
+await sleep(400);
+const fromEmpty = await picker();
+await clickOn(`dialog.picker [data-scene="${shipped[0]!.id}"] [data-ui="scene-use"]`);
+await sleep(400);
+const atOnce = await page.eval<any>(OPENED);
+check("the empty state opens the scene picker, and on an untouched canvas the chosen scene opens at once with its defaults",
+  fromEmpty?.cards.map((c) => c.id).join() === shipped.map((sc) => sc.id).join() && atOnce.asked === "" && atOnce.picker === false && atOnce.id === shipped[0]!.id && atOnce.license === "builtin"
+  && atOnce.view === "edit" && atOnce.panel === "Links" && atOnce.titles === defaultTitles(shipped[0]!) && atOnce.urls === "" && atOnce.errs.length === 0,
+  { listed: fromEmpty?.cards.map((c) => c.id), opened: atOnce.id, titles: atOnce.titles });
+await clickOn('[data-ui="more"]');
+await clickOn('[data-ui="menu-reset"]');
+await clickOn('dialog[open] [data-ui="reset-blank"]');
+await sleep(300);
+const afterMenuDialog = await page.eval<string>(`document.activeElement.getAttribute("data-ui") || document.activeElement.tagName`);
+check("a dialog opened from a menu returns the focus to the menu's button when it closes", afterMenuDialog === "more", afterMenuDialog);
 await clickOn('[data-ui="samples"]');
 await clickOn('[data-sample="cat"]');
 await clickOn('[data-ui="samples"]');
@@ -465,22 +517,147 @@ else {
   check("markup injected into the studio cannot run script", probe.ran === false && probe.blocked.startsWith("script-src"), probe);
 }
 
-// Links-only mode (issue 13): a built-in scene is filled in, not designed. The canvas only
-// selects; the drawings cannot be changed by mouse, keyboard, a dropped file or code; and
-// what is typed in a link's form reaches the page.
+// The scene picker (issue 12), with work on the canvas: Pia's desk with a background and lettering.
 await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 await sleep(300);
 const sceneJson = () => page.eval<string>(`JSON.stringify(sceneStudio.store.getSnapshot().scene)`);
 const mine = await sceneJson();
+const pickerFrom = page.logs.length;
+
+// by keyboard: the More menu, down to the picker's entry, Enter
+await page.eval(`document.querySelector('[data-ui="more"]').focus()`);
+await pressEnter();
+for (let i = 0; i < 6 && (await page.eval<string>(`document.activeElement.getAttribute("data-ui") || ""`)) !== "menu-scenes"; i++) await keyWith("ArrowDown", "ArrowDown", 0, 40);
+await pressEnter();
+await sleep(500);
+const byKeyboard = await picker();
+check("the keyboard opens the scene picker from the More menu, with the focus on its heading; it lists the scenes that ship",
+  byKeyboard?.focus === "picker-h" && byKeyboard.cards.map((c) => c.id).join() === shipped.map((sc) => sc.id).join() && byKeyboard.cards.every((c, i) => c.name === shipped[i]!.name && c.sandbox === "allow-scripts"),
+  { focus: byKeyboard?.focus, listed: byKeyboard?.cards.map((c) => c.name) });
+if (!process.argv[2]) {
+  const built = readFileSync(join(root, "apps/studio/dist/index.html"), "utf8");
+  check("the second scene is a test fixture: the build does not contain it", !built.includes(`"${second.scene.id}"`) && !built.includes(second.scene.name) && !built.includes(second.sample.profile.displayName), second.scene.name);
+}
+await pressTab();
+const onClose = (await picker())?.focus;
+await pressTab();
+const onUse = await picker();
+await pressTab();
+await pressTab();
+// whichever scenes ship: the studio's focus is on the first card's frame, and in exactly one frame it is on a drawing
+const inCard = await picker();
+const focusedIn = await Promise.all(Array.from({ length: page.frameCount() }, (_, i) => page.frameEval<string>(`document.activeElement.getAttribute("role") || document.activeElement.tagName`, i)));
+const inFrame = { studio: inCard?.focus, card: inCard?.focusScene, frame: focusedIn.filter((role) => role === "button").join() };
+check("Tab goes to Close, to the first card's button, named for its scene, and on into the card's live page",
+  onClose === "picker-close" && onUse?.focus === "scene-use" && onUse.focusScene === shipped[0]!.id && onUse.cards[0]!.use === `Use this scene ${shipped[0]!.name}`
+  && inFrame.studio === "scene-frame" && inFrame.card === shipped[0]!.id && inFrame.frame === "button",
+  { onClose, onUse: onUse?.focus, named: onUse?.cards[0]!.use, inFrame });
+for (let i = 0; i < 4 && (await picker())?.focus !== "scene-use"; i++) await pressTab(SHIFT);
+await keyWith("Escape", "Escape", 0, 27);
+const escaped = await page.eval<any>(`({ open: !!document.querySelector("dialog.picker[open]"), focus: document.activeElement.getAttribute("data-ui") })`);
+check("Escape closes the picker, its frames go with it, and the focus returns to the More button", escaped.open === false && escaped.focus === "more" && page.frameCount() === 0 && (await sceneJson()) === mine, { ...escaped, frames: page.frameCount() });
+
+// the question before work is replaced: No keeps the work, and the picker stays to choose again
 await clickOn('[data-ui="more"]');
-await clickOn('[data-ui="menu-builtin"]');
+await clickOn('[data-ui="menu-scenes"]');
+await clickOn(`dialog.picker [data-scene="${shipped[0]!.id}"] [data-ui="scene-use"]`);
 const asked = await page.eval<string>(`(document.querySelector("dialog[open] #replace-h") || {}).textContent || ""`);
 await clickOn('dialog[open] [data-ui="replace-cancel"]');
-check("opening the ready-made desk over work asks first, and Cancel leaves the work alone", asked === "Open the ready-made desk?" && (await sceneJson()) === mine, { asked });
-await clickOn('[data-ui="more"]');
-await clickOn('[data-ui="menu-builtin"]');
-await clickOn('dialog[open] [data-ui="replace-ok"]');
+const afterNo = await picker();
+check("choosing a scene over work asks first, and Cancel leaves the work alone and the picker open", asked === `Open ${shipped[0]!.name}?` && (await sceneJson()) === mine && !!afterNo, { asked, picker: !!afterNo });
+await clickOn('[data-ui="picker-close"]');
+await sleep(300);
+const closedByMouse = await page.eval<any>(`({ focus: document.activeElement.getAttribute("data-ui"), tooltips: document.querySelectorAll(".tooltip").length })`);
+check("closed with the mouse, the picker returns the focus to the More button, and no tooltip opens for it", closedByMouse.focus === "more" && closedByMouse.tooltips === 0, closedByMouse);
+
+// two scenes: the ones that ship and the fixture. Motion is forced, so the frames boil whatever this machine's setting.
+await page.call(`(scenes) => { sceneStudio.store.set({ forceMotion: true }); sceneStudio.openPicker(scenes); }`, twoScenes);
+await sleep(1500);
+const two = await picker();
+const card = (id: string) => two?.cards.find((c) => c.id === id);
+check("given a second scene, the picker shows a card for each: its name, who it was drawn for and its links in plain words",
+  two?.cards.map((c) => c.id).join() === [...shipped.map((sc) => sc.id), second.scene.id].join() && two.cards.every((c) => c.sandbox === "allow-scripts")
+  && card("desk")?.name === "Illustrator's desk" && card("desk")?.audience === "Drawn for illustrators" && card("desk")?.slots === "Portfolio, Shop, Commissions, Social, Newsletter"
+  && card("small-desk")?.name === "Small desk" && card("small-desk")?.audience === "Drawn for writers and poets" && card("small-desk")?.slots === "Newsletter, Notebook, Commissions"
+  && card("small-desk")?.use === "Use this scene Small desk"
+  && twoScenes.every((e) => card(e.scene.id)?.count === `${e.scene.slots.length} ${e.scene.slots.length === 1 ? "link" : "links"}`), // the links a page on it gets
+  two?.cards.map((c) => `${c.name} · ${c.audience} · ${c.count}: ${c.slots}`));
+
+// Each card's frame is the published page, running: its script ran under the studio's policy, and
+// its lines boil. The page times its own boil and holds still on a machine too slow for it
+// (tools/verify-runtime.ts checks that rule); a frame that did so is running all the same.
+const LIVE = `new Promise((done) => { const t = document.querySelector("filter.boil feTurbulence"), seen = new Set(); const iv = setInterval(() => seen.add(t && t.getAttribute("seed")), 40);
+  setTimeout(() => { clearInterval(iv); const fcp = performance.getEntriesByType("paint").find((e) => e.name === "first-contentful-paint");
+    done({ name: (document.querySelector(".name") || {}).textContent || "", boil: document.documentElement.dataset.boil, ms: Number(document.documentElement.dataset.boilMs) || 0, seeds: seen.size, objects: document.querySelectorAll(".obj").length, width: innerWidth,
+      policy: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]'), painted: fcp ? Math.round(fcp.startTime) : -1 }); }, 900); })`;
+interface Live { name: string; boil?: string; ms: number; seeds: number; objects: number; width: number; policy: boolean; painted: number }
+/** Which frame is which scene's card, by scene id: a frame is known by the name on its sample page. */
+const frameOf: Record<string, number> = {};
+let live: Live[] = [];
+const boils = (f: Live) => f.boil === "on" && f.seeds > 1, tooSlow = (f: Live) => f.boil === "static" && f.ms > 40 && f.seeds === 1;
+for (let attempt = 0; attempt < 4; attempt++) { // the frames attach a moment after the cards appear; the boil measures itself before it settles, and may try twice
+  live = await Promise.all(Array.from({ length: page.frameCount() }, (_, i) => page.frameEval<Live>(LIVE, i)));
+  if (live.length === twoScenes.length && live.every((f) => boils(f) || tooSlow(f))) break;
+  await sleep(1200);
+}
+for (const e of twoScenes) frameOf[e.scene.id] = live.findIndex((f) => f.name.includes(e.sample.profile.displayName));
+check(`each card is the published page in a sandboxed frame, running under the studio's policy: ${live.every(boils) ? "the lines boil" : "its boil timed itself, and holds still on this machine"}`,
+  live.length === twoScenes.length && twoScenes.every((e) => live[frameOf[e.scene.id]!]?.objects === e.scene.slots.length) // a drawing for every link of the sample
+  && live.every((f) => (boils(f) || tooSlow(f)) && f.policy && f.painted >= 0 && f.width === 375), live);
+console.log(`NOTE  the cards painted ${live.map((f) => `${f.painted} ms`).join(" and ")} after their frames were made, on this machine. The plan's target is under a second on a mid-range phone, which this does not measure.`);
+
+// a real tap on a drawing in the second card opens its panel, there and only there
+const tapInCard = async (sceneId: string, slot: string) => {
+  const frame = await page.call<[number, number, number]>(`(id) => { const f = [...document.querySelectorAll("[data-scene]")].find((c) => c.dataset.scene === id).querySelector("iframe"); f.scrollIntoView({ block: "center" }); const r = f.getBoundingClientRect(); return [r.x, r.y, r.width / f.offsetWidth]; }`, sceneId);
+  const at = await page.frameCall<[number, number]>(frameOf[sceneId], `(k) => { scrollTo(0, 0); const r = [...document.querySelectorAll(".obj")].find((o) => o.getAttribute("data-k") === k).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }`, slot);
+  await page.click(frame[0] + at[0] * frame[2], frame[1] + at[1] * frame[2]);
+  await sleep(600);
+};
+const PANEL = `({ pressed: [...document.querySelectorAll('.obj[aria-pressed="true"]')].map((o) => o.getAttribute("data-k")).join(), title: document.getElementById("tt").textContent })`;
+await tapInCard(second.scene.id, "newsletter");
+const panels = await Promise.all(twoScenes.map((e) => page.frameEval<any>(PANEL, frameOf[e.scene.id])));
+const tappedCard = { tapped: panels[panels.length - 1], others: panels.slice(0, -1).map((p) => p.pressed).join("") }; // the fixture's card is the last
+check("a tap on a drawing in a card opens its panel, in that card alone", tappedCard.tapped.pressed === "newsletter" && tappedCard.tapped.title === second.sample.links.newsletter!.title && tappedCard.others === "", tappedCard);
+writeFileSync(join(out, "studio-picker.png"), await page.screenshot());
+await page.eval(`sceneStudio.store.set({ forceMotion: false })`);
+await sleep(300);
+
+// by keyboard to the second card, through the first card's page, and Enter; then the question, answered by keyboard
+await page.eval(`document.getElementById("picker-h").focus()`);
+let tabs = 0;
+for (; tabs < 60; tabs++) {
+  await pressTab();
+  const at = await picker();
+  if (at?.focus === "scene-use" && at.focusScene === second.scene.id) break;
+}
+await pressEnter();
+const askedSecond = await page.eval<any>(`({ title: (document.querySelector("dialog[open] #replace-h") || {}).textContent || "", focus: document.activeElement.getAttribute("data-ui") })`);
+for (let i = 0; i < 3 && (await page.eval<string>(`document.activeElement.getAttribute("data-ui") || ""`)) !== "replace-ok"; i++) await pressTab();
+await pressEnter();
 await sleep(400);
+const chosen = await page.eval<any>(OPENED);
+check("chosen with the keyboard, the second scene opens in the links-only mode with its own defaults",
+  tabs < 60 && askedSecond.title === `Open ${second.scene.name}?` && chosen.picker === false && chosen.id === second.scene.id && chosen.license === "builtin" && chosen.view === "edit"
+  && chosen.panel === "Links" && chosen.name === second.scene.name && chosen.rows === second.scene.fallback.order.join() && chosen.titles === defaultTitles(second.scene) && chosen.urls === ""
+  && chosen.palette === second.scene.theme.defaultPalette && chosen.palettes === 2 && chosen.heading === second.scene.fallback.heading && chosen.errs.length === 0
+  && chosen.toast.startsWith(`Opened ${second.scene.name}.`),
+  { tabs: tabs + 1, asked: askedSecond.title, id: chosen.id, rows: chosen.rows, titles: chosen.titles, palette: chosen.palette, palettes: chosen.palettes, errs: chosen.errs });
+check("undo brings back the work the scene replaced", await page.call<boolean>(`(before) => { sceneStudio.store.undo(); const was = JSON.stringify(sceneStudio.store.getSnapshot().scene) === before; sceneStudio.store.redo(); return was; }`, mine)
+  && (await page.eval<string>(`sceneStudio.store.getSnapshot().scene.id`)) === second.scene.id);
+
+// nothing typed on a ready-made scene's page: going to another scene asks nothing
+await clickOn('[data-ui="more"]');
+await clickOn('[data-ui="menu-scenes"]');
+await clickOn('dialog.picker [data-scene="desk"] [data-ui="scene-use"]');
+await sleep(400);
+const switched = await page.eval<any>(OPENED);
+check("from a ready-made scene with nothing typed, another opens without a question", switched.asked === "" && switched.picker === false && switched.id === "desk", { asked: switched.asked, id: switched.id });
+const pickerErrors = page.logs.slice(pickerFrom).filter((l) => /^(error|exception|console\.error)/i.test(l) && !/fonts\.g/.test(l));
+check("the console stayed clean through the picker: no script of a card was refused", pickerErrors.length === 0, pickerErrors.join(" | ").slice(0, 600));
+
+// Links-only mode (issue 13): a built-in scene is filled in, not designed. The canvas only
+// selects; the drawings cannot be changed by mouse, keyboard, a dropped file or code; and
+// what is typed in a link's form reaches the page.
 const builtIn0 = await sceneJson();
 const mode = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(); return {
   license: s.scene.license, panel: document.getElementById("panel-layers").getAttribute("aria-label"),
@@ -640,6 +817,42 @@ await sleep(400);
 const tap = await page.eval<any>(`({ sel: sceneStudio.store.getSnapshot().sel, title: (document.querySelector('[data-ui="slot-title"]') || {}).textContent })`);
 await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 check("a tap on a drawing picks it", tap.sel === "sketchbook" && tap.title === "Sketchbook", tap);
+
+// The scene picker on a phone: it takes the whole screen, one card to a row, and nothing goes
+// sideways. The desk is open, with links typed, so its card says so and another scene asks first.
+await page.call(`(scenes) => { sceneStudio.openPicker(scenes); }`, twoScenes);
+await sleep(1200);
+const narrow = await page.eval<any>(`(() => { const d = document.querySelector("dialog.picker[open]"), r = d.getBoundingClientRect(), ul = d.querySelector(".scene-cards");
+  return { page: document.documentElement.scrollWidth, dialog: [r.x, r.y, r.width, r.height].map(Math.round), sideways: ul.scrollWidth - ul.clientWidth,
+    cards: [...d.querySelectorAll("[data-scene]")].map((c) => { const b = c.getBoundingClientRect(), u = c.querySelector('[data-ui="scene-use"]').getBoundingClientRect(), f = c.querySelector("iframe"), v = f.getBoundingClientRect();
+      return { id: c.dataset.scene, left: Math.round(b.left), right: Math.round(b.right), top: Math.round(b.top), bottom: Math.round(b.bottom), use: [Math.round(u.left), Math.round(u.right), Math.round(u.height)],
+        frame: [Math.round(v.left), Math.round(v.right)], phone: f.offsetWidth, current: !!c.querySelector('[data-ui="scene-current"]') }; }) }; })()`);
+check("at 375 px the picker fills the screen, one card to a row, with nothing sideways",
+  narrow.page <= 375 && narrow.dialog.join() === "0,0,375,812" && narrow.sideways <= 0 && narrow.cards.length === twoScenes.length
+  && narrow.cards.every((c: any, i: number) => i === 0 || c.top >= narrow.cards[i - 1].bottom)
+  && narrow.cards.every((c: any) => c.left >= 0 && c.right <= 375 && c.right - c.left >= 300 && c.use[0] >= c.left && c.use[1] <= c.right && c.use[2] >= 24 && c.frame[0] >= c.left && c.frame[1] <= c.right && c.phone === 375)
+  && narrow.cards.every((c: any) => c.current === (c.id === "desk")), narrow);
+writeFileSync(join(out, "studio-picker-375.png"), await page.screenshot());
+// a finger that starts on a card's page moves the list of cards: the page inside the card stays put
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+const onCard = await page.eval<[number, number]>(`(() => { const r = document.querySelector('dialog.picker [data-ui="scene-frame"]').getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(Math.min(r.bottom, innerHeight) - 60)]; })()`);
+const cardTouch = (type: string, y: number) => page.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: onCard[0], y }] });
+await cardTouch("touchStart", onCard[1]);
+for (let i = 1; i <= 8; i++) { await cardTouch("touchMove", onCard[1] - i * 20); await sleep(16); }
+await cardTouch("touchEnd", 0);
+await sleep(400);
+const cardSwipe = { list: await page.eval<number>(`document.querySelector(".scene-cards").scrollTop`),
+  inside: Math.max(...(await Promise.all(Array.from({ length: page.frameCount() }, (_, i) => page.frameEval<number>(`scrollY`, i))))) };
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+check("on a phone a swipe that starts on a card's page scrolls the list of cards, not the page in the card", cardSwipe.list > 40 && cardSwipe.inside === 0, cardSwipe);
+await clickOn(`dialog.picker [data-scene="${second.scene.id}"] [data-ui="scene-use"]`);
+const askedPhone = await page.eval<string>(`(document.querySelector("dialog[open] #replace-h") || {}).textContent || ""`);
+await clickOn('dialog[open] [data-ui="replace-ok"]');
+await sleep(400);
+const onPhone = await page.eval<any>(`({ ...${OPENED}, scroll: document.documentElement.scrollWidth, tabs: [...document.querySelectorAll(".tabs .tab")].map((t) => t.textContent).join(","), tab: sceneStudio.store.getSnapshot().tab })`);
+check("on a phone a chosen scene replaces typed links only after asking, and opens on its list of links",
+  askedPhone === `Open ${second.scene.name}?` && onPhone.picker === false && onPhone.id === second.scene.id && onPhone.rows === second.scene.fallback.order.join() && onPhone.urls === ""
+  && onPhone.tabs === "Links,Page" && onPhone.tab === "layers" && onPhone.scroll <= 375 && onPhone.errs.length === 0, { asked: askedPhone, id: onPhone.id, rows: onPhone.rows, tabs: onPhone.tabs, scroll: onPhone.scroll });
 
 // Saved work this build cannot open (a check got stricter since it was saved) is set aside,
 // not dropped: the studio starts fresh, says so at once, and autosave does not write over it.

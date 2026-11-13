@@ -3,12 +3,16 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { lintScene, validatePage, validateScene, type ObjectLayer } from "@scena/scene";
 import {
-  FIXED_SCENE, addSample, builtInDeskDocs, canTurnOff, defaultLink, deskDocs, getLayer, isBuiltIn, makeDecor, moveDrawing, offeredPalettes, pageFor, reconcile, removeLayer,
+  FIXED_SCENE, addSample, builtInDocs, canTurnOff, defaultLink, deskDocs, getLayer, isBuiltIn, makeDecor, moveDrawing, offeredPalettes, pageFor, reconcile, removeLayer,
   reorder, setCanvas, setKind, setSurface, slotRows, toggleHidden,
 } from "../src/model.ts";
 import { removeLettering, setTypeface } from "../src/board.ts";
 import { store } from "../src/store.ts";
 import { uiSnapshot } from "../src/ui.ts";
+import { DESK_SCENE } from "@scena/scenes";
+
+/** The desk as the ready-made scene it ships as, with a new page (picker.test.ts covers the others). */
+const builtInDeskDocs = () => builtInDocs(DESK_SCENE);
 
 describe("a built-in scene and its new page", () => {
   test("the desk opens as it ships, with a page made from the slots' own wording", () => {

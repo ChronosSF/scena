@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { ThemeMode } from "@scena/scene";
 import { store, useStudio, type StudioState } from "../store.ts";
 import { isBuiltIn } from "../model.ts";
+import { openPicker } from "../ui.ts";
 import * as actions from "../actions.ts";
 import { BudgetPill } from "./BudgetPopover.tsx";
 import { Button, IconButton, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Segmented, Tip } from "./ui.tsx";
@@ -99,7 +100,7 @@ export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: 
           </Tip>
           <MenuContent align="end">
             <MenuItem icon={Import} onSelect={onImport} data-ui="menu-import">Import scene or page…</MenuItem>
-            <MenuItem icon={LayoutTemplate} onSelect={() => void actions.openBuiltInDesk()} data-ui="menu-builtin">Fill in a ready-made scene: the desk</MenuItem>
+            <MenuItem icon={LayoutTemplate} onSelect={() => openPicker()} data-ui="menu-scenes">Choose a ready-made scene…</MenuItem>
             <MenuItem icon={BookOpen} onSelect={() => void actions.openDesk()} data-ui="menu-desk">Open Pia's finished desk</MenuItem>
             {setAside ? <MenuItem icon={FileWarning} onSelect={onSetAside} data-ui="menu-aside">Saved work that did not open…</MenuItem> : null}
             <MenuSeparator />

@@ -78,7 +78,8 @@ export function FramesChoiceDialog() {
 
 /**
  * Opening another scene replaces the one on the canvas, and autosave follows at once, so the
- * studio asks first when there is work there (actions.ts, openDesk and openBuiltInDesk).
+ * studio asks first when there is work there (actions.ts, openDesk and openBuiltIn). It can
+ * open over the scene picker, which stays where it was if the answer is no.
  */
 export function ReplaceDialog() {
   const { replace } = useUi();

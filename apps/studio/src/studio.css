@@ -567,6 +567,28 @@ dialog::backdrop { background: rgba(9, 9, 11, 0.4); }
 .dl-sub { font-size: var(--ui-sm); line-height: var(--ui-sm-lh); color: var(--ui-text-3); }
 .dl-item > .lucide { width: 16px; height: 16px; color: var(--ui-text-3); transition: color var(--ui-fast) var(--ui-ease); }
 .dl-item:hover > .lucide { color: var(--ui-text); }
+.dlg-title:focus { outline: none; } /* a heading that takes the focus when its dialog opens; it is not a control */
+
+/* the scene picker: a dialog as wide as its cards, each card a live page in a frame */
+/* a card is 300 wide, which keeps it and its phone-shaped frame within a 900 px screen; the
+   width leaves room for the list's scrollbar, so the cards stay in one row */
+dialog.picker { width: min(calc(var(--cards, 1) * 316px + 40px), calc(100% - 48px)); max-width: none; max-height: calc(100dvh - 48px); overflow: hidden; }
+dialog.picker[open] { display: flex; flex-direction: column; }
+.picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ui-3); padding: var(--ui-5) var(--ui-4) var(--ui-4) var(--ui-5); border-bottom: 1px solid var(--ui-line); }
+.scene-cards { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: var(--ui-4); min-height: 0; margin: 0; padding: var(--ui-5); list-style: none; overflow: auto; overscroll-behavior: contain; background: var(--ui-workspace); }
+.scene-card { flex: 0 1 300px; min-width: min(280px, 100%); border-radius: var(--ui-r-lg); background: var(--ui-panel); box-shadow: var(--ui-shadow-page); overflow: hidden; }
+.scene-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ui-3); padding: var(--ui-3) var(--ui-3) 0 var(--ui-4); }
+.scene-card-what { min-width: 0; }
+.scene-card-name { font-size: var(--ui-md); line-height: var(--ui-md-lh); font-weight: 600; }
+.scene-card-for { color: var(--ui-text-2); font-size: var(--ui-sm); line-height: var(--ui-sm-lh); }
+.scene-card-head .btn { flex: none; }
+/* room for two lines, so the frames of cards side by side start level */
+.scene-card-slots { box-sizing: content-box; min-height: 36px; padding: var(--ui-2) var(--ui-4) var(--ui-3); color: var(--ui-text-2); font-size: var(--ui-sm); line-height: 18px; }
+.scene-card-slots .layer-badge { margin-left: var(--ui-2); vertical-align: 1px; }
+.scene-card-view { position: relative; overflow: hidden; border-top: 1px solid var(--ui-line); border-bottom: 1px solid var(--ui-line); }
+.scene-card-frame { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; }
+.scene-card-note { padding: var(--ui-2) var(--ui-4) var(--ui-3); color: var(--ui-text-3); font-size: var(--ui-sm); line-height: var(--ui-sm-lh); }
+
 .errors { margin: var(--ui-3) 0 0; padding-left: var(--ui-5); max-height: 220px; overflow: auto; color: var(--ui-danger); font-size: var(--ui-sm); line-height: 18px; }
 
 /* toast */
@@ -607,6 +629,11 @@ dialog::backdrop { background: rgba(9, 9, 11, 0.4); }
   .bar-center { justify-content: center; }
   .hide-narrow { display: none !important; }
   .preview { padding: var(--ui-4) var(--ui-3); }
+  /* the picker takes the whole screen, one card to a row on a phone */
+  dialog.picker { width: 100%; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
+  .picker-head { padding: var(--ui-4) var(--ui-3) var(--ui-3) var(--ui-4); }
+  .scene-cards { flex: 1; padding: var(--ui-4); }
+  .scene-card { flex-grow: 1; max-width: 343px; }
 }
 @media (min-width: 900px) { .show-narrow { display: none !important; } }
 /* preview adds two controls to the bar's centre; on mid-size screens the labels on the right give way */

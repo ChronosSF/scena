@@ -12,7 +12,8 @@ This repository holds the scene format, the renderer that turns a scene and a pa
 self-contained HTML file, and the **studio**: an illustrator drops in their own drawings (SVG,
 or PNG from Procreate), marks which ones are clickable, attaches links, and exports the page.
 The studio also has the plan's first product in it, a links-only mode: a ready-made scene whose
-drawings are fixed, where a person fills in the links, the words and the colours.
+drawings are fixed, where a person fills in the links, the words and the colours. The scene is
+chosen in a picker whose cards are the page itself, live, not pictures of it.
 The product plan is in [docs/development-plan.md](docs/development-plan.md); the work it describes is
 tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/milestones).
 
@@ -40,7 +41,7 @@ pnpm install
 pnpm dev          # the studio with hot reload at http://localhost:5173 (and /demo-desk.html)
 pnpm build        # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm preview      # serve the build at http://localhost:4173
-pnpm test         # 113 tests: renderer snapshots and parity, scene model, lint and safety checks, studio editing operations, the links-only mode, saved work, file sniffing, the build's policy, frames, board and lettering
+pnpm test         # 139 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, saved work, file sniffing, the build's policy, frames, board and lettering
 pnpm typecheck    # every package, the page runtime, the scripts and the tools
 pnpm check        # typecheck + test + build
 
@@ -70,7 +71,8 @@ screenshots and exports to `tools/out/`, which git ignores.
 packages/
   scene/       SceneDocument and PageDocument types, validateScene / validatePage / migrate, lintScene
   renderer/    renderPage, renderParts, CSS, geometry, escaping; runtime/ is the page script
-  scenes/      desk.scene.json, pia.page.json and samples.json (the steaming mug), and their encoders
+  scenes/      the ready-made scenes and their sample pages (desk.scene.json, pia.page.json) as a list,
+               samples.json (the steaming mug), their encoders, and testing/ (a second scene for the checks)
 apps/
   studio/      the editor (React + Vite); src/ingest/ has the SVG sanitiser and the PNG pipeline
 fixtures/      test drawings; reference/ has the original prototype and its rendered output
@@ -129,10 +131,12 @@ The preview takes two to four seconds to paint the first time (web font plus the
 - **2:45** Export: one HTML file of about 20 KB with no outside scripts. Then "Open Pia's finished
   desk": "Her whole page is the same format your drawings just became."
 
-If someone asks "what if I can't draw?", open the More menu and choose "Fill in a ready-made
-scene: the desk". The panels change to a list of five links and a form: tap the cat, type a
-title and an address, turn the envelope off and on, pick a palette. Nothing on the canvas moves.
-That is the plan's first product, the page for people who use a scene somebody else drew.
+If someone asks "what if I can't draw?", open the More menu and choose "Choose a ready-made
+scene…". The picker shows the desk as a card: the page itself, live, with Pia's content as a
+sample. Tap the cat in the card, then "Use this scene". The panels change to a list of five
+links and a form: tap the cat, type a title and an address, turn the envelope off and on, pick a
+palette. Nothing on the canvas moves. That is the plan's first product, the page for people who
+use a scene somebody else drew.
 
 ## Studio design
 
@@ -163,12 +167,38 @@ understates a budget Android.
 ## Not built yet
 
 On purpose, for the pitch: accounts, publishing, analytics, billing and custom domains (see the
-plan); a scene picker (the desk is the one ready-made scene) and tapping an object in the preview
-to open its form; the Open Graph image; the badge control in the studio (the renderer
+plan); the pinboard and the shop window (the scene picker lists the desk alone until they are
+drawn); keeping a page's links when another scene is chosen (it starts a new page, after
+asking); tapping an object in the preview to open its form; the Open Graph image; the badge
+control in the studio (the renderer
 supports it); drawing a custom tap-area shape (the format supports it); gradients painted with
 the sentinel colours; `<symbol>` in uploaded SVG; and, for frame animation, motion presets (float,
 sway, blink), path motion and Lottie- or Rive-style runtimes, which are out of scope. Touch input uses pointer events, but only
 mouse input has been automated.
+
+## Adding a ready-made scene
+
+The scene picker and the links-only mode read a scene; neither names one. A new preset is a
+change to `packages/scenes` alone:
+
+1. `packages/scenes/<name>.scene.json`: the scene, with `license: "builtin"`. The picker's card
+   is made from it: `name`, `audience` ("Drawn for illustrators"), and each slot's `kind`, which
+   is the plain word the card lists ("Portfolio", "Shop"); a slot of the kind `custom` is listed
+   by its `label`. `fallback.order` is the order of that list and of the links in the studio.
+   Each slot's `defaults` are what a new page starts with, and `editable` says which palettes a
+   page may pick and whether links may be turned off. The desk's file is written by an encoder
+   (`scripts/encode-desk.ts`, `pnpm encode:desk`); a new scene can have one of its own.
+2. `packages/scenes/<name>.page.json`: a sample page on that scene, finished, with every link
+   filled in. The card shows the scene with it.
+3. `packages/scenes/src/index.ts`: import the two and add one line to `BUILT_IN_SCENES`. The
+   list's order is the picker's order.
+
+Then `pnpm lint:scene` on the pair, and `pnpm test`: `packages/scenes/test/built-in.test.ts`
+holds every entry of the list to what the picker and the links-only mode rely on, and
+`apps/studio/test/picker.test.ts` renders and opens each one. Nothing in `apps/studio` changes.
+The checks already run on two scenes: the second is `smallDesk()` in
+`packages/scenes/testing`, the desk under another name with three of its links. It is a test
+fixture, and `pnpm verify:studio` checks that the build does not contain it.
 
 ## Format notes beyond the plan
 

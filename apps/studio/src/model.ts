@@ -152,10 +152,22 @@ export function reconcile(scene: SceneDocument, page: PageDocument): void {
   if (!String(page.profile.displayName ?? "").trim()) page.profile.displayName = "Your Name";
 }
 
-/** The desk as the built-in scene it ships as, with a new page to fill in. */
-export function builtInDeskDocs(): { scene: SceneDocument; page: PageDocument } {
-  const scene = clone(DESK_SCENE);
+/** A ready-made scene as it ships, with a new page to fill in. The copies are the studio's own to hold. */
+export function builtInDocs(builtIn: SceneDocument): { scene: SceneDocument; page: PageDocument } {
+  const scene = clone(builtIn);
   return { scene, page: pageFor(scene) };
+}
+
+/**
+ * Whether opening another scene would replace something of the user's. In a scene of their
+ * own that is a drawing, a background, lettering, or words typed on the page. The drawings of
+ * a ready-made scene are not theirs, so there it is what they typed: a page still as pageFor
+ * made it holds no work, and trying one scene after another asks nothing.
+ */
+export function hasWork(scene: SceneDocument, page: PageDocument): boolean {
+  if (isBuiltIn(scene)) return JSON.stringify(page) !== JSON.stringify(pageFor(scene));
+  return scene.layers.some((l) => l.type !== "background" || isUploadedBackground(scene, l)) || !!scene.header?.lettering
+    || JSON.stringify(page) !== JSON.stringify(blankPage(scene));
 }
 
 /** A scene's slots with the drawings that stand for them, in the order of the plain list. */
@@ -168,6 +180,29 @@ export function slotRows(scene: SceneDocument): { slot: Slot; layer: ObjectLayer
     if (slot && layer) rows.push({ slot, layer });
   }
   return rows;
+}
+
+/**
+ * A slot in a plain word: the kind of link it is for. The kind "custom" says nothing, so
+ * there the slot's own label stands in.
+ */
+export const slotWord = (slot: Slot): string => (slot.kind === "custom" ? slot.label : KIND_LABELS[slot.kind]);
+
+/**
+ * What a scene has room for, in plain words and in the order of its plain list: "Portfolio",
+ * "Shop", "Commissions". A word that comes more than once is said once, with how many.
+ */
+export function slotWords(scene: SceneDocument): string[] {
+  const counts = new Map<string, number>();
+  for (const { slot } of slotRows(scene)) counts.set(slotWord(slot), (counts.get(slotWord(slot)) || 0) + 1);
+  return [...counts].map(([word, n]) => (n > 1 ? `${word} ×${n}` : word));
+}
+
+/** Who a scene was drawn for, as a line: "Drawn for illustrators". Empty when the scene names no one. */
+export function audienceWords(audience: readonly string[]): string {
+  const who = audience.map((a) => a.trim()).filter(Boolean);
+  if (!who.length) return "";
+  return `Drawn for ${who.length === 1 ? who[0] : `${who.slice(0, -1).join(", ")} and ${who[who.length - 1]}`}`;
 }
 
 /** The palettes a page on this scene may pick from. */

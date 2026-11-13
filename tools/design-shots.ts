@@ -3,7 +3,8 @@
 //   node tools/design-shots.ts http://localhost:5173/   the dev server
 // Pia's desk is opened with a paper texture under it and her lettered name in the header
 // (fixtures/), and the envelope selected, so the inspector, the selection handles, the
-// layer list and its Background group all show.
+// layer list and its Background group all show. The last shot is the scene picker, opened
+// over that, with the scenes that ship.
 
 import { writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -51,5 +52,11 @@ await page.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812,
 await sleep(400);
 await page.eval(`document.querySelector(".workspace-scroll").scrollTop = 0`); // the lettered name, then the desk
 await shot("studio-375.png");
+
+await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+await sleep(400);
+await page.eval(`sceneStudio.openPicker()`);
+await sleep(2500); // the cards' pages load their typeface, then paint
+await shot("studio-picker.png");
 
 await chrome.close();

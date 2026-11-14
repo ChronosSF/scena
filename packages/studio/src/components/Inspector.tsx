@@ -29,7 +29,7 @@ export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
 
   // A drawing tapped in the preview asks for its link's title (actions.editLink). The field takes
   // the focus and is scrolled into this panel. On a narrow screen it goes to the top of the form,
-  // right under the pinned preview, so it stays above the on-screen keyboard that the focus
+  // right under the Page settings row, so it stays above the on-screen keyboard that the focus
   // raises. A link the page has nothing for yet has no field: the panel takes the focus. A request
   // made before this panel was on screen (the web app mounts the studio again on the way back to
   // it) is not acted on.
@@ -48,7 +48,9 @@ export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
   // press on the empty workspace, Escape on a drawing) and, on a phone, the tabs. Preview has
   // neither: on a phone the page fills its pane edge to edge, and on a wide screen a press around
   // the page is for a pointer only. The panel then takes the focus, at its top: not the Name
-  // field, which would raise a phone's keyboard for what is only a change of panel.
+  // field, which would raise a phone's keyboard for what is only a change of panel. Its row stays
+  // at the top of the panel while the form scrolls under it, and says which drawing the form is
+  // for: a tap in the preview scrolls the form to the Title, past the drawing's own heading.
   const toPage = () => {
     store.select(null);
     requestAnimationFrame(() => {
@@ -65,6 +67,8 @@ export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
       {view === "preview" && layer ? (
         <div className="insp-back">
           <Button variant="ghost" icon={ArrowLeft} onClick={toPage} data-ui="to-page">Page settings</Button>
+          {/* the heading below says it to a screen reader */}
+          <span className="insp-back-name" aria-hidden="true">{layer.name || layer.id}</span>
         </div>
       ) : null}
       {!layer ? <PageInspector />

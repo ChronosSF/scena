@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { renderPage } from "@scena/renderer";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import { launch, sleep, type Page } from "./cdp.ts";
-import { checks } from "./checks.ts";
+import { checks, drawingInFrame } from "./checks.ts";
 
 const distPath = (f: string) => join(dirname(fileURLToPath(import.meta.url)), "..", "apps/studio/dist", f);
 const dist = (f: string) => pathToFileURL(distPath(f)).href;
@@ -177,7 +177,7 @@ const { page: framer, index: frameIndex } = await framing(framedPages, 812);
 p = framer;
 for (const name of Object.keys(framedPages)) {
   const box = await p.call<[number, number]>(`(id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.x, r.y]; }`, name);
-  const at = await p.frameCall<[number, number]>(frameIndex[name], `(k) => { const o = [...document.querySelectorAll(".obj")].find((x) => x.getAttribute("data-k") === k); const r = o.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }`, "commissions");
+  const at = (await drawingInFrame(p, "commissions", { index: frameIndex[name], scroll: false }))!;
   await p.click(box[0] + at[0], box[1] + at[1]);
   await sleep(300);
 }
@@ -190,13 +190,14 @@ check("a published page in a frame posts nothing to its parent when a drawing is
   { opened, heard, logs: embedLogs });
 await p.close();
 
-// After an edit the studio renders its preview with the tapped drawing selected, and that page
-// brings its open panel into view as it loads, in a pane too short to show it. Only the editor
+// After an edit the studio renders its preview with the tapped drawing selected, and that page,
+// with no place of its own to go back to yet, brings its open panel into view as it loads, in a
+// pane too short to show it (tools/verify-studio.ts checks the place it keeps after that). Only the editor
 // flag does that: the same page rendered selected without it stays at its top, as does the demo
 // page. All three are in frames as short as the studio's pinned preview on a phone.
 const scrolling = { published, selected: renderPage(DESK_SCENE, PIA_PAGE, { demo: true, selected: "commissions" }).html,
   preview: renderPage(DESK_SCENE, PIA_PAGE, { demo: true, selected: "commissions", editorPreview: true }).html };
-const { page: shortFrames, index: shortIndex } = await framing(scrolling, 357);
+const { page: shortFrames, index: shortIndex } = await framing(scrolling, 325);
 p = shortFrames;
 await sleep(1200); // the typeface arrives, and the editor's page puts its panel back in view once more
 const PLACE = `({ scrolled: Math.round(scrollY), panel: (() => { const r = document.querySelector(".tag").getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), innerHeight]; })(),

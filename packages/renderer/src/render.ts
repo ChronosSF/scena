@@ -42,8 +42,9 @@ export interface RenderOptions {
   /**
    * The studio's Preview only: when a drawing is activated, the runtime posts its slot id to the
    * frame's parent, so the studio can bring up that link's form; and a page rendered with a
-   * drawing `selected` brings its open panel into view as it loads. Never used for export, the
-   * scene picker's cards or a published page, which post nothing and never scroll themselves.
+   * drawing `selected` keeps its place as it loads: where it was last scrolled to, or its open
+   * panel in view right after a tap. Never used for export, the scene picker's cards or a
+   * published page, which post nothing and never scroll themselves.
    */
   editorPreview?: boolean;
 }

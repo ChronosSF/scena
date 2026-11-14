@@ -321,23 +321,31 @@ the preview only, never to the export.
     drawing picked on the canvas: "Envelope selected. Its link is in the panel."
   - What is typed reaches the page a moment later, and shows where it was tapped. An edit
     renders the page again and the frame reloads; after a tap, the page is rendered with that
-    drawing selected, so it comes back with the same panel open and the new words in it, and the
-    page brings that panel into view. The form keeps the focus throughout. A tap alone does not
-    reload the frame: the page is rendered again only when the documents change (the store's
-    `docRev`), never for the selection. The Preview opens as a visitor first sees the page, with
-    nothing selected, and forgets the tapped drawing as soon as the selection changes any other
-    way.
+    drawing selected, so it comes back with the same panel open and the new words in it. The
+    form keeps the focus throughout. A tap alone does not reload the frame: the page is rendered
+    again only when the documents change (the store's `docRev`), never for the selection. A
+    change of device or of screen width puts a new frame in the document, so the page is
+    rendered again for that too, with the selection as it then is. The Preview opens as a
+    visitor first sees the page, with nothing selected, and forgets the tapped drawing as soon
+    as the selection changes any other way.
+  - The page keeps its place through those reloads. The first one after a tap brings the open
+    panel into view. After that the page comes back where it was last scrolled to, by itself or
+    by the person: someone who has scrolled on to the plain list to watch its wording change
+    stays there. A frame keeps its name when its document is replaced, and the page notes its
+    scroll position in it.
   - With a drawing selected, the inspector starts with **Page settings** (a ghost button with a
-    left arrow): it clears the selection, and the panel takes the focus at its top, not the Name
-    field, so a phone's keyboard does not come up for a change of panel. It is there in Preview
-    at every width: on a phone the page fills its pane edge to edge and there are no tabs, and on
-    a wide screen the other way, a press on the workspace around the page (as on the canvas), is
-    for a pointer only.
+    left arrow), and the drawing's name beside it. The row stays at the top of the panel while
+    the form scrolls under it, so the way back and the name of the drawing are in view after a
+    tap has scrolled the form to the Title. The button clears the selection, and the panel takes
+    the focus at its top, not the Name field, so a phone's keyboard does not come up for a
+    change of panel. It is there in Preview at every width: on a phone the page fills its pane
+    edge to edge and there are no tabs, and on a wide screen the other way, a press with the
+    main button on the workspace around the page (as on the canvas), is for a pointer only.
   - How the page says which drawing was tapped. Only the Preview renders the page with
     `editorPreview`, which adds `"ed":1` to its runtime data. The runtime's code for it is one
     block behind that flag: it posts `{ type: "scena:tap", slot: "<slot id>" }` to its parent
-    when a drawing is activated, and it brings an open panel into view, without animation, when
-    the page arrives selected. An exported page, a published page and the picker's cards post
+    when a drawing is activated, and it keeps the page's place, without animation, when the page
+    arrives selected. An exported page, a published page and the picker's cards post
     nothing and never scroll themselves. The frame shows documents a person supplied, so the
     studio acts on a message only when it comes from the Preview frame's own window, from the
     opaque origin such a frame has (`"null"`), in exactly that shape, and names a slot of the
@@ -353,15 +361,16 @@ the preview only, never to the export.
   their accessible names. There is no horizontal scrolling at 375 px.
 
   In Preview there are no tabs. The page is pinned on top, at the screen's own width with no
-  device around it, in a pane 44% of the height (the share the sheet has in Edit, the other way
-  round), and the inspector scrolls under it. The page scrolls inside its pane. The Device
-  control is not shown: the screen is the phone. A tap on a drawing puts its Title field at the
-  top of the form, just under the page. The focus raises the on-screen keyboard, which on a
+  device around it, in a pane 40% of the height, and the inspector scrolls under it. The page
+  scrolls inside its pane. The Device control is not shown: the screen is the phone. A tap on a
+  drawing puts its Title field at the top of the form, just under the Page settings row, which
+  stays in view with the drawing's name. The focus raises the on-screen keyboard, which on a
   phone covers roughly the bottom 40% of the screen, so the field and the page above it stay in
-  view: on a 375 × 812 screen the field ends at about 470 px. The drawing and its panel are
-  usually below the pane's fold, so after each edit the page scrolls itself back to the open
-  panel rather than starting at its top. Page settings, at the top of the form, is the way back
-  to the page's own settings.
+  view: on a 375 × 812 screen the field ends at about 473 px. The pane is 40% and not the 44%
+  the sheet has in Edit because that row takes its height from the form. The drawing and its
+  panel are usually below the pane's fold, so the first edit after a tap brings the open panel
+  into view, and the page then stays where it is scrolled to rather than starting at its top.
+  Page settings is the way back to the page's own settings.
 
 ## Components
 
@@ -428,10 +437,10 @@ framework: the chrome is one hand-written stylesheet on custom properties.
    right. The inspector is on the right in Edit, so it stays there: switching views does not
    move the form. On a phone the plan's order holds: the page on top, the form under it.
 8. **The preview reloads on every edit.** The page is rendered again and the frame reloads after
-   each pause in typing. After a tap it is rendered with that drawing selected and brings its
-   panel back into view, so what is typed shows where it was tapped, but the reload itself
-   remains: the boil starts over, a once-on-tap animation plays again, and the page's own scroll
-   position is set by the page, not kept. Updating the page in place, by message, would keep all
-   of that, but it would make the frame trust more of what the studio sends, and the preview
-   would no longer be the exported file. The frame is only rendered again when the documents
-   change, and a tap alone never reloads it.
+   each pause in typing. After a tap it is rendered with that drawing selected and keeps its
+   place, so what is typed shows where it was tapped, but the reload itself remains: the boil
+   starts over and a once-on-tap animation plays again. A page with nothing selected still
+   starts at its top after an edit. Updating the page in place, by message, would avoid all of
+   that, but it would make the frame trust more of what the studio sends, and the preview would
+   no longer be the exported file. The frame is only rendered again when the documents change
+   or a new frame takes its place, and a tap alone never reloads it.

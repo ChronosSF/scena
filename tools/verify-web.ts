@@ -14,7 +14,7 @@ import { FIRST_FACES_HREF, MORE_FACES_HREF } from "@scena/studio/fonts";
 import { isDataBlock, scriptElements } from "@scena/studio/policy";
 import { RUNTIME_SHA256 } from "@scena/renderer";
 import { launch, repoRoot, sleep } from "./cdp.ts";
-import { checks, input } from "./checks.ts";
+import { checks, drawingInFrame, input, settled } from "./checks.ts";
 
 const web = join(repoRoot, "apps", "web");
 const out = join(repoRoot, "tools", "out");
@@ -181,12 +181,8 @@ check("typing a link's title and address fills the page",
 // the preview is the exported page in a sandboxed frame: a real tap inside it
 await clickOn('[data-ui="view-preview"]');
 await sleep(1500);
-// the tap waits for the page's runtime, whose script waits for the typeface's stylesheet, and for
-// the typeface, which moves the drawing when it arrives: a fixed wait was once too short
-const at = await page.frameEval<[number, number] | null>(`(async () => {
-  for (let i = 0; i < 100 && !document.documentElement.dataset.boil; i++) await new Promise((r) => setTimeout(r, 100));
-  await document.fonts.ready;
-  const o = document.querySelector('.obj[data-k="newsletter"]'); if (!o) return null; const r = o.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+// the tap waits for the page's runtime and its typeface (drawingInFrame): a fixed wait was once too short
+const at = await drawingInFrame(page, "newsletter", { scroll: false });
 const frame = await page.eval<[number, number]>(`(() => { const r = document.getElementById("preview").getBoundingClientRect(); return [r.x, r.y]; })()`);
 if (at) await page.click(frame[0] + at[0], frame[1] + at[1]);
 await sleep(600);
@@ -196,14 +192,12 @@ check("the preview runs the page under the policy: a tap on a drawing opens its 
   tapped.pressed === "true" && tapped.title === "Letters from my desk" && tapped.boil !== "" && tapped.own === true, tapped);
 // tap to focus (issue 14): the page's message reaches the studio under this policy, and a tap on
 // the envelope brings up the commissions link beside the preview, with the focus in its title
-const envelope = await page.frameEval<[number, number] | null>(`(async () => {
-  for (let i = 0; i < 100 && !document.documentElement.dataset.boil; i++) await new Promise((r) => setTimeout(r, 100)); // the runtime has run
-  await document.fonts.ready; // the typeface moves the drawing when it arrives
-  const o = document.querySelector('.obj[data-k="commissions"]'); if (!o) return null; o.scrollIntoView({ block: "center" }); const r = o.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+const envelope = await drawingInFrame(page, "commissions");
 if (envelope) await page.click(frame[0] + envelope[0], frame[1] + envelope[1]);
-await sleep(800);
-const focused = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(), a = document.activeElement;
-  return { sel: s.sel, field: a.closest && a.closest("#inspector") ? a.getAttribute("name") : a.id || a.tagName, value: "value" in a ? a.value : null, title: s.page.links.commissions.title }; })()`);
+// asked until the focus has arrived: the message, the selection and the focus each take a moment
+const focused = await settled(() => page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(), a = document.activeElement;
+  return { sel: s.sel, field: a.closest && a.closest("#inspector") ? a.getAttribute("name") : a.id || a.tagName, value: "value" in a ? a.value : null, title: s.page.links.commissions.title }; })()`),
+  (f) => f.sel === "envelope" && f.field === "link-title");
 check("a tap on a drawing in the preview brings up its link beside it, with the focus in its Title field",
   !!envelope && focused.sel === "envelope" && focused.field === "link-title" && focused.value === focused.title, focused);
 writeFileSync(join(out, "web-studio-preview.png"), await page.screenshot());

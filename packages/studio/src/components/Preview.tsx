@@ -27,11 +27,14 @@ export function Preview() {
   // The page is rendered again only when the documents change (documents are mutated in place, so
   // their settled revision is the dependency) or motion is forced, never for the selection alone:
   // a tap does not reload the frame. The tapped drawing is read here, as the page is rendered.
+  // A change of device or of screen width puts a new frame in the document, which loads the page
+  // afresh: it is rendered again for that too, so the new frame shows the selection as it is now
+  // and not as it was at the last edit.
   const settled = useDebounced(docRev, 120);
   const html = useMemo(() => {
     const kept = tapped.current && tapped.current.layer === store.getSnapshot().sel ? tapped.current.slot : undefined;
     return renderPage(scene, page, { demo: true, forceMotion, editorPreview: true, ...(kept ? { selected: kept } : {}) }).html;
-  }, [settled, forceMotion]);
+  }, [settled, forceMotion, narrow, phone]);
 
   // The page in the frame says which drawing was tapped. The frame shows documents a person
   // supplied, so the message is checked first (preview-message.ts): it has to come from this

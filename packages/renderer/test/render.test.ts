@@ -261,16 +261,9 @@ describe("rendering features", () => {
     const preview = renderPage(desk, pia, { demo: true, editorPreview: true }).html;
     expect(JSON.parse(data(preview))).toEqual({ ...JSON.parse(data(html)), ed: 1 });
     expect(preview.replace(data(preview), "")).toBe(html.replace(data(html), ""));
-    // the runtime's editor-only code is one block behind that flag, at its end: the flag is read
-    // once, and the message to the studio and the scroll back to the open panel are only in there
-    expect(RUNTIME_JS.match(/\.ed\b/g)).toHaveLength(1);
-    expect(RUNTIME_JS).toMatch(/if\(\w+\.ed\)\{/);
-    const block = RUNTIME_JS.slice(RUNTIME_JS.search(/if\(\w+\.ed\)\{/));
-    expect(block).toContain('parent.postMessage({type:"scena:tap",slot:');
-    for (const call of ["postMessage", "scrollIntoView"]) {
-      expect(RUNTIME_JS.split(call), call).toHaveLength(2);
-      expect(block, call).toContain(call);
-    }
+    // What the runtime does with the flag is checked in a browser, where it runs: a page without
+    // it posts nothing and does not scroll itself (tools/verify-runtime.ts). Nothing here reads
+    // the minified text, which is the minifier's to write as it likes.
   });
 });
 

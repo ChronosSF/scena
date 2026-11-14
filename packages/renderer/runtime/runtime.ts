@@ -11,7 +11,7 @@ interface Data {
   demo: boolean;
   /** studio preview only: ignore the OS reduced-motion setting */
   force?: 1;
-  /** the studio's Preview only: tell the studio which drawing was activated, and bring an open panel into view on load */
+  /** the studio's Preview only: tell the studio which drawing was activated, and keep the page's place when it is rendered again */
   ed?: 1;
 }
 type Nav = Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
@@ -180,15 +180,26 @@ type Nav = Navigator & { deviceMemory?: number; connection?: { saveData?: boolea
     sel = (k) => {
       pick(k);
       const o = d.querySelector<HTMLElement>(".obj.selected");
-      if (o && o.dataset.k == k) parent.postMessage({ type: "scena:tap", slot: o.dataset.k }, "*");
+      if (o && o.dataset.k == k) {
+        W.name = ""; // a drawing was just activated: the page that follows shows its panel
+        parent.postMessage({ type: "scena:tap", slot: o.dataset.k }, "*");
+      }
     };
     // After an edit the studio renders the page again with the tapped drawing selected, and the
-    // frame starts again at its top: bring the open panel back into view at once, and again when
-    // the typeface has arrived and moved it.
+    // frame starts again at its top. A frame keeps its name across that, so the place the page was
+    // last scrolled to is kept in it and put back: the page does not move under a person who has
+    // scrolled it, to the plain list for one. Right after a tap there is no such place yet. Then
+    // the open panel is brought into view, and once more when the typeface has arrived and moved
+    // it, unless the page has been scrolled in between.
+    W.addEventListener("scroll", () => { W.name = "" + W.scrollY; }, { passive: true });
     if (!body.hidden) {
-      const back = () => body.parentElement!.scrollIntoView({ block: "nearest" });
-      back();
-      d.fonts.ready.then(back);
+      if (W.name) W.scrollTo(0, +W.name);
+      else {
+        const back = () => body.parentElement!.scrollIntoView({ block: "nearest" });
+        back();
+        const y = W.scrollY;
+        d.fonts.ready.then(() => { if (W.scrollY == y) back(); });
+      }
     }
   }
 })();

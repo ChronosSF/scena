@@ -4,12 +4,16 @@
 // and the 45 s idle pause. Then demo-frames.html for frame-flip animation (ADR 0002): frames
 // flip, hold frame 1 for reduced motion and Save-Data, and pause with the boil. Run `pnpm build` first.
 //   pnpm verify:runtime
+import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
+import { renderPage } from "@scena/renderer";
+import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import { launch, sleep, type Page } from "./cdp.ts";
 import { checks } from "./checks.ts";
 
-const dist = (f: string) => pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "apps/studio/dist", f)).href;
+const distPath = (f: string) => join(dirname(fileURLToPath(import.meta.url)), "..", "apps/studio/dist", f);
+const dist = (f: string) => pathToFileURL(distPath(f)).href;
 const url = dist("demo-desk.html"), framesUrl = dist("demo-frames.html");
 const chrome = await launch({ port: 9336, fileAccess: false });
 const { check, failed } = checks();
@@ -132,6 +136,76 @@ await p.eval(`window.__advance(46000)`); await sleep(400);
 const fIdle = await fr(p);
 await p.eval(`window.dispatchEvent(new PointerEvent("pointermove"))`); await sleep(300);
 check("frames pause after 45 s without interaction, and resume on pointer", fIdle === "paused" && (await fr(p)) === "on", { idle: fIdle, woke: await fr(p) });
+await p.close();
+
+// ---------------------------------------------------------------- a published page in a frame says nothing to its parent
+// The studio's Preview renders the page with editorPreview, and then its runtime tells the studio
+// which drawing was tapped (issue 14). A page rendered without it, as the built demo page and every
+// published page are, posts nothing, whoever frames it. The page rendered with it is the control:
+// a tap in that frame reaches the parent, so the silence of the other means something.
+const published = readFileSync(distPath("demo-desk.html"), "utf8");
+/** A page that frames the given documents side by side, each in a sandboxed srcdoc frame of `height`; returns each frame's index. */
+async function framing(pages: Record<string, string>, height: number): Promise<{ page: Page; index: Record<string, number> }> {
+  const page = await chrome.newPage();
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 860, deviceScaleFactor: 1, mobile: false });
+  await page.goto("data:text/html,<!DOCTYPE html><title>A page that frames others</title>", 300);
+  const index: Record<string, number> = {};
+  for (const [name, html] of Object.entries(pages)) {
+    const before = page.frameCount();
+    // the documents reach the page as values (page.call); every message from each frame is kept, whatever it is
+    await page.call(`(name, html, height) => new Promise((done) => {
+      window.__heard = window.__heard || {};
+      window.__heard[name] = [];
+      document.body.style.cssText = "margin:0;display:flex";
+      const f = document.createElement("iframe");
+      f.id = name;
+      f.setAttribute("sandbox", "allow-scripts");
+      f.style.cssText = "width:375px;height:" + height + "px;border:0;flex:none";
+      addEventListener("message", (e) => { if (e.source === f.contentWindow) window.__heard[name].push(e.data); });
+      f.addEventListener("load", () => done(true), { once: true });
+      f.srcdoc = html;
+      document.body.append(f);
+    })`, name, html, height);
+    for (let i = 0; i < 30 && page.frameCount() === before; i++) await sleep(100);
+    index[name] = page.frameCount() - 1;
+  }
+  await sleep(800);
+  return { page, index };
+}
+const framedPages = { published, preview: renderPage(DESK_SCENE, PIA_PAGE, { demo: true, editorPreview: true }).html };
+const { page: framer, index: frameIndex } = await framing(framedPages, 812);
+p = framer;
+for (const name of Object.keys(framedPages)) {
+  const box = await p.call<[number, number]>(`(id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.x, r.y]; }`, name);
+  const at = await p.frameCall<[number, number]>(frameIndex[name], `(k) => { const o = [...document.querySelectorAll(".obj")].find((x) => x.getAttribute("data-k") === k); const r = o.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }`, "commissions");
+  await p.click(box[0] + at[0], box[1] + at[1]);
+  await sleep(300);
+}
+await sleep(800);
+const heard = await p.eval<Record<string, unknown[]>>(`window.__heard`);
+const opened = await Promise.all(Object.keys(framedPages).map((name) => p.frameEval<string>(`[...document.querySelectorAll('.obj[aria-pressed="true"]')].map((o) => o.getAttribute("data-k")).join()`, frameIndex[name])));
+const embedLogs = p.logs.filter((l) => /^(error|exception)/i.test(l) && !/fonts\.g/.test(l));
+check("a published page in a frame posts nothing to its parent when a drawing is tapped; the studio preview's page posts its slot id alone",
+  opened.every((k) => k === "commissions") && heard.published?.length === 0 && JSON.stringify(heard.preview) === JSON.stringify([{ type: "scena:tap", slot: "commissions" }]) && !embedLogs.length,
+  { opened, heard, logs: embedLogs });
+await p.close();
+
+// After an edit the studio renders its preview with the tapped drawing selected, and that page
+// brings its open panel into view as it loads, in a pane too short to show it. Only the editor
+// flag does that: the same page rendered selected without it stays at its top, as does the demo
+// page. All three are in frames as short as the studio's pinned preview on a phone.
+const scrolling = { published, selected: renderPage(DESK_SCENE, PIA_PAGE, { demo: true, selected: "commissions" }).html,
+  preview: renderPage(DESK_SCENE, PIA_PAGE, { demo: true, selected: "commissions", editorPreview: true }).html };
+const { page: shortFrames, index: shortIndex } = await framing(scrolling, 357);
+p = shortFrames;
+await sleep(1200); // the typeface arrives, and the editor's page puts its panel back in view once more
+const PLACE = `({ scrolled: Math.round(scrollY), panel: (() => { const r = document.querySelector(".tag").getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), innerHeight]; })(),
+  open: !document.getElementById("tb").hidden, title: document.getElementById("tt").textContent })`;
+const placed = Object.fromEntries(await Promise.all(Object.keys(scrolling).map(async (name) => [name, await p.frameEval<any>(PLACE, shortIndex[name])])));
+const inView = (f: any) => f.panel[0] >= 0 && f.panel[1] <= f.panel[2];
+check("only the studio preview's page scrolls itself, to its open panel; a page without the editor flag stays at its top, selected or not",
+  placed.published.scrolled === 0 && !placed.published.open && placed.selected.scrolled === 0 && placed.selected.open && !inView(placed.selected)
+  && placed.preview.scrolled > 0 && placed.preview.open && placed.preview.title === "Envelope" && inView(placed.preview), placed);
 await p.close();
 
 await chrome.close();

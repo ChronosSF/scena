@@ -33,6 +33,18 @@ export function select(id: string | null, focus?: "layer" | "list"): void {
   if (id && focus) store.requestFocus(focus, id);
 }
 
+/**
+ * A drawing was tapped in the preview (preview-message.ts found it in the scene): select it, and
+ * bring its link's title to the keyboard. The inspector acts on the focus request.
+ */
+export function editLink(id: string): void {
+  const layer = getLayer(st().scene, id);
+  if (!layer) return;
+  store.select(id);
+  store.requestFocus("title", id);
+  announce(`${layer.name || id} selected. Its link is in the panel.`);
+}
+
 export function toggleClickable(id: string): void {
   const layer = getLayer(st().scene, id);
   if (!layer) return;

@@ -181,7 +181,12 @@ check("typing a link's title and address fills the page",
 // the preview is the exported page in a sandboxed frame: a real tap inside it
 await clickOn('[data-ui="view-preview"]');
 await sleep(1500);
-const at = await page.frameEval<[number, number] | null>(`(() => { const o = document.querySelector('.obj[data-k="newsletter"]'); if (!o) return null; const r = o.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+// the tap waits for the page's runtime, whose script waits for the typeface's stylesheet, and for
+// the typeface, which moves the drawing when it arrives: a fixed wait was once too short
+const at = await page.frameEval<[number, number] | null>(`(async () => {
+  for (let i = 0; i < 100 && !document.documentElement.dataset.boil; i++) await new Promise((r) => setTimeout(r, 100));
+  await document.fonts.ready;
+  const o = document.querySelector('.obj[data-k="newsletter"]'); if (!o) return null; const r = o.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
 const frame = await page.eval<[number, number]>(`(() => { const r = document.getElementById("preview").getBoundingClientRect(); return [r.x, r.y]; })()`);
 if (at) await page.click(frame[0] + at[0], frame[1] + at[1]);
 await sleep(600);
@@ -189,6 +194,18 @@ const tapped = await page.frameEval<any>(`({ title: (document.getElementById("tt
   boil: document.documentElement.dataset.boil || "", own: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]') })`);
 check("the preview runs the page under the policy: a tap on a drawing opens its panel, with what was typed",
   tapped.pressed === "true" && tapped.title === "Letters from my desk" && tapped.boil !== "" && tapped.own === true, tapped);
+// tap to focus (issue 14): the page's message reaches the studio under this policy, and a tap on
+// the envelope brings up the commissions link beside the preview, with the focus in its title
+const envelope = await page.frameEval<[number, number] | null>(`(async () => {
+  for (let i = 0; i < 100 && !document.documentElement.dataset.boil; i++) await new Promise((r) => setTimeout(r, 100)); // the runtime has run
+  await document.fonts.ready; // the typeface moves the drawing when it arrives
+  const o = document.querySelector('.obj[data-k="commissions"]'); if (!o) return null; o.scrollIntoView({ block: "center" }); const r = o.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+if (envelope) await page.click(frame[0] + envelope[0], frame[1] + envelope[1]);
+await sleep(800);
+const focused = await page.eval<any>(`(() => { const s = sceneStudio.store.getSnapshot(), a = document.activeElement;
+  return { sel: s.sel, field: a.closest && a.closest("#inspector") ? a.getAttribute("name") : a.id || a.tagName, value: "value" in a ? a.value : null, title: s.page.links.commissions.title }; })()`);
+check("a tap on a drawing in the preview brings up its link beside it, with the focus in its Title field",
+  !!envelope && focused.sel === "envelope" && focused.field === "link-title" && focused.value === focused.title, focused);
 writeFileSync(join(out, "web-studio-preview.png"), await page.screenshot());
 await clickOn('[data-ui="view-edit"]');
 await sleep(700); // autosave waits a moment after the last change

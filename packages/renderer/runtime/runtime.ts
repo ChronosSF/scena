@@ -11,6 +11,8 @@ interface Data {
   demo: boolean;
   /** studio preview only: ignore the OS reduced-motion setting */
   force?: 1;
+  /** the studio's Preview only: tell the studio which drawing was activated, and bring an open panel into view on load */
+  ed?: 1;
 }
 type Nav = Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
 
@@ -107,7 +109,7 @@ type Nav = Navigator & { deviceMemory?: number; connection?: { saveData?: boolea
 
   /* ---------- selection and the tag panel ---------- */
   const hint = $("hint"), body = $("tb"), tt = $("tt"), ts = $("ts"), tx = $("tx"), btn = $("tbtn") as HTMLAnchorElement;
-  const sel = (key: string | undefined) => {
+  let sel = (key: string | undefined) => {
     const l = key ? L[key] : undefined;
     if (!key || !l) return;
     objs.forEach((o) => {
@@ -165,5 +167,28 @@ type Nav = Navigator & { deviceMemory?: number; connection?: { saveData?: boolea
       clearTimeout(tm);
       tm = setTimeout(() => toast.classList.remove("show"), 2800);
     });
+  }
+
+  /* ---------- the studio's Preview only (RenderOptions.editorPreview): a published page runs none of this ---------- */
+  if (D.ed) {
+    // Tell the studio which link a drawing is when it is activated, so it can bring up that
+    // link's form. Every activation goes through sel, so sel is wrapped. The message is the slot
+    // id, read off the drawing, and nothing else from the page. The frame's origin is opaque and
+    // the studio may be a file:// page, so there is no origin to name as the target: "*" is safe
+    // because a slot id is all the message holds.
+    const pick = sel;
+    sel = (k) => {
+      pick(k);
+      const o = d.querySelector<HTMLElement>(".obj.selected");
+      if (o && o.dataset.k == k) parent.postMessage({ type: "scena:tap", slot: o.dataset.k }, "*");
+    };
+    // After an edit the studio renders the page again with the tapped drawing selected, and the
+    // frame starts again at its top: bring the open panel back into view at once, and again when
+    // the typeface has arrived and moved it.
+    if (!body.hidden) {
+      const back = () => body.parentElement!.scrollIntoView({ block: "nearest" });
+      back();
+      d.fonts.ready.then(back);
+    }
   }
 })();

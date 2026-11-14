@@ -52,7 +52,7 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 145 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, saved work, file sniffing, both apps' policies, frames, board and lettering
+pnpm test         # 184 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
 pnpm check        # typecheck + test + build
 
@@ -68,9 +68,9 @@ Other tools, all optional:
 | `pnpm encode:samples` | Regenerates `samples.json`: the frame-animated steaming mug sample |
 | `pnpm fixtures` | Regenerates the test drawings in `fixtures/`, including the mug's three SVG frames, a blinking face as a PNG sequence and as an animated PNG, a paper texture, a drawn desk top and a lettered "Pia" (SVG and PNG) |
 | `pnpm parity` | Confirms the renderer reproduces the prototype's `demo-desk.html` (apart from the runtime) |
-| `pnpm verify:studio [url]` | Drives the studio in headless Chrome through real mouse, keyboard and file-chooser input. Default target: the build from file://. Run `pnpm build` first |
-| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends with every page, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview, a reload, markup and added scripts that try to run, and the home page before and after a visit to the studio. Run `pnpm build` first. With a URL it checks a server that is already running, such as `pnpm dev:web` |
-| `pnpm verify:runtime` | Checks every branch of the boil control (lite mode, slow device, Save-Data, reduced motion, offscreen, hidden, idle) on the built demo page, and that frames flip, hold frame 1 and pause with it on `demo-frames.html` |
+| `pnpm verify:studio [url]` | Drives the studio in headless Chrome through real mouse, touch, keyboard and file-chooser input, including taps in the preview that bring up a link's form and keep its panel open in the page while it is edited, on a desktop and at 375 px, and the way back to the page's settings. Default target: the build from file://. Run `pnpm build` first |
+| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends with every page, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview that opens the page's panel and brings up the link's form, a reload, markup and added scripts that try to run, and the home page before and after a visit to the studio. Run `pnpm build` first. With a URL it checks a server that is already running, such as `pnpm dev:web` |
+| `pnpm verify:runtime` | Checks every branch of the boil control (lite mode, slow device, Save-Data, reduced motion, offscreen, hidden, idle) on the built demo page, that frames flip, hold frame 1 and pause with it on `demo-frames.html`, and that the demo page in a frame posts nothing to its parent when a drawing is tapped and never scrolls itself (only the studio's preview renders a page that does either) |
 | `pnpm shots [url]` | Retakes the studio screenshots in `docs/design/` (desktop light and dark, 375 px). Default target: the build from file:// |
 | `pnpm measure [--soft]` | Boil frame cost at 375×812 @3x with 1×, 4× and 6× CPU slowdown, against the original prototype; then the desk with three objects flipping frames at 6 fps |
 
@@ -145,7 +145,8 @@ The preview takes two to four seconds to paint the first time (web font plus the
   clipped to its shape. Then, in the page settings, drop `fixtures/pia-lettering.svg` on "Name
   lettering": her name is drawn, in the palette's ink with a riso shadow, and screen readers
   still hear the typed name. Try a typeface: Caveat.
-- **2:30** Preview, phone frame: "This is the exact file we publish." Tap the plant, then the mug.
+- **2:30** Preview, phone frame: "This is the exact file we publish." Tap the plant, then the mug:
+  each opens its panel on the page, and its link comes up in the inspector beside it.
 - **2:45** Export: one HTML file of about 20 KB with no outside scripts. Then "Open Pia's finished
   desk": "Her whole page is the same format your drawings just became."
 
@@ -189,7 +190,7 @@ plan). The web app is a shell for them: it has no sign-in, no database and no ho
 the studio in it keeps work in the browser, as the single-file build does. Also not built: the
 pinboard and the shop window (the scene picker lists the desk alone until they are
 drawn); keeping a page's links when another scene is chosen (it starts a new page, after
-asking); tapping an object in the preview to open its form; the Open Graph image; the badge
+asking); the Open Graph image; the badge
 control in the studio (the renderer
 supports it); drawing a custom tap-area shape (the format supports it); gradients painted with
 the sentinel colours; `<symbol>` in uploaded SVG; and, for frame animation, motion presets (float,

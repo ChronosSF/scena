@@ -247,6 +247,31 @@ describe("rendering features", () => {
     expect(forced).toContain('"force":1');
     expect(forced).not.toContain("prefers-reduced-motion:reduce){");
   });
+
+  test("the studio preview's flag reaches the runtime data only when asked, and changes nothing else", () => {
+    // the JSON between the data block's tags, found by position: it is written as it is, escaped for a script element
+    const start = '<script type="application/json" id="sd">';
+    const data = (h: string) => h.slice(h.indexOf(start) + start.length, h.indexOf("</script", h.indexOf(start)));
+    // without the option the data block has the keys it always had, and no other
+    for (const p of [html, renderPage(desk, pia).html, renderPage(desk, pia, { forceMotion: true }).html]) {
+      expect(Object.keys(JSON.parse(data(p)))).not.toContain("ed");
+    }
+    expect(Object.keys(JSON.parse(data(html)))).toEqual(["links", "boil", "motion", "demo"]);
+    // with it, the flag is the one difference in the whole page
+    const preview = renderPage(desk, pia, { demo: true, editorPreview: true }).html;
+    expect(JSON.parse(data(preview))).toEqual({ ...JSON.parse(data(html)), ed: 1 });
+    expect(preview.replace(data(preview), "")).toBe(html.replace(data(html), ""));
+    // the runtime's editor-only code is one block behind that flag, at its end: the flag is read
+    // once, and the message to the studio and the scroll back to the open panel are only in there
+    expect(RUNTIME_JS.match(/\.ed\b/g)).toHaveLength(1);
+    expect(RUNTIME_JS).toMatch(/if\(\w+\.ed\)\{/);
+    const block = RUNTIME_JS.slice(RUNTIME_JS.search(/if\(\w+\.ed\)\{/));
+    expect(block).toContain('parent.postMessage({type:"scena:tap",slot:');
+    for (const call of ["postMessage", "scrollIntoView"]) {
+      expect(RUNTIME_JS.split(call), call).toHaveLength(2);
+      expect(block, call).toContain(call);
+    }
+  });
 });
 
 describe("frame-flip animation", () => {

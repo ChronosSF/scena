@@ -138,7 +138,7 @@ the preview only, never to the export.
 
 - **Top bar.** The product mark and "Studio", then the scene name as an inline text field, then
   Undo and Redo. Edit/Preview is a segmented control in the exact centre; in Preview it gains the
-  device (phone or full width) and page-appearance controls. On the right:
+  device (phone or full width) and page-appearance controls, on a wide screen only. On the right:
   - the budget pill, a status dot and a summary that opens the checks in a popover;
   - the autosave indicator, a quiet check, or a warning when the work is too big for browser
     storage;
@@ -296,9 +296,53 @@ the preview only, never to the export.
   small dialog: "Add 3 drawings". It has two large choices in the style of the export rows, "One
   drawing with 3 frames" (film icon) and "3 separate drawings" (copy icon), and Cancel. An
   animated PNG or WebP skips the question: it becomes frames.
-- **Preview.** The panels go away and the exact exported page runs in a sandboxed iframe. It sits
-  in a phone frame (375 px wide) or in a browser window with the page address. Taps inside it work
-  as on the published page.
+- **Preview** (the plan's section 2.3). The exact exported page runs in a sandboxed iframe, and
+  the inspector stays beside it, where it is in Edit; the Layers or Links panel goes away.
+
+  ```
+  +---------------------------------- bar, 48 -----------------------------------+
+  |                  [Edit|Preview] [phone|full] [appearance]          [Export]  |
+  +-----------------------------------------------------------+------------------+
+  | workspace                                                 | Inspector        |
+  |                    +----------------+                     | 296              |
+  |                    | the page, live |                     | the tapped       |
+  |                    | (sandboxed)    |                     | link's form,     |
+  |                    +----------------+                     | Title focused    |
+  +-----------------------------------------------------------+------------------+
+  ```
+
+  - The page sits in a phone frame (375 px wide) or in a browser window with the page address.
+    Taps inside it work as on the published page: the panel opens under the drawing, and a link
+    says where it would go instead of leaving.
+  - A tap on a drawing, or Enter or Space on it, also selects it in the studio. The inspector
+    shows its link's form (the links-only mode's form, or a drawing's Link section in a scene of
+    one's own), brings the Title field into view and puts the focus in it. The scroll is smooth,
+    and instant with reduced motion. The same words are said in the polite live region as for a
+    drawing picked on the canvas: "Envelope selected. Its link is in the panel."
+  - What is typed reaches the page a moment later, and shows where it was tapped. An edit
+    renders the page again and the frame reloads; after a tap, the page is rendered with that
+    drawing selected, so it comes back with the same panel open and the new words in it, and the
+    page brings that panel into view. The form keeps the focus throughout. A tap alone does not
+    reload the frame: the page is rendered again only when the documents change (the store's
+    `docRev`), never for the selection. The Preview opens as a visitor first sees the page, with
+    nothing selected, and forgets the tapped drawing as soon as the selection changes any other
+    way.
+  - With a drawing selected, the inspector starts with **Page settings** (a ghost button with a
+    left arrow): it clears the selection, and the panel takes the focus at its top, not the Name
+    field, so a phone's keyboard does not come up for a change of panel. It is there in Preview
+    at every width: on a phone the page fills its pane edge to edge and there are no tabs, and on
+    a wide screen the other way, a press on the workspace around the page (as on the canvas), is
+    for a pointer only.
+  - How the page says which drawing was tapped. Only the Preview renders the page with
+    `editorPreview`, which adds `"ed":1` to its runtime data. The runtime's code for it is one
+    block behind that flag: it posts `{ type: "scena:tap", slot: "<slot id>" }` to its parent
+    when a drawing is activated, and it brings an open panel into view, without animation, when
+    the page arrives selected. An exported page, a published page and the picker's cards post
+    nothing and never scroll themselves. The frame shows documents a person supplied, so the
+    studio acts on a message only when it comes from the Preview frame's own window, from the
+    opaque origin such a frame has (`"null"`), in exactly that shape, and names a slot of the
+    open scene that has a drawing (`tappedObject` in `src/preview-message.ts`). What it then uses
+    is the scene's own slot, never the message's text.
 - **Phone, below 900 px.** One column:
   - the bar, then the canvas;
   - a tab bar: Layers, and Drawing or Page;
@@ -307,6 +351,17 @@ the preview only, never to the export.
   Picking a drawing on the canvas switches to its settings; picking it in the list stays in the
   list. Fit is width-only and the page scrolls. Labels in the bar collapse to icons, which keep
   their accessible names. There is no horizontal scrolling at 375 px.
+
+  In Preview there are no tabs. The page is pinned on top, at the screen's own width with no
+  device around it, in a pane 44% of the height (the share the sheet has in Edit, the other way
+  round), and the inspector scrolls under it. The page scrolls inside its pane. The Device
+  control is not shown: the screen is the phone. A tap on a drawing puts its Title field at the
+  top of the form, just under the page. The focus raises the on-screen keyboard, which on a
+  phone covers roughly the bottom 40% of the screen, so the field and the page above it stay in
+  view: on a 375 × 812 screen the field ends at about 470 px. The drawing and its panel are
+  usually below the pane's fold, so after each edit the page scrolls itself back to the open
+  panel rather than starting at its top. Page settings, at the top of the form, is the way back
+  to the page's own settings.
 
 ## Components
 
@@ -365,3 +420,18 @@ framework: the chrome is one hand-written stylesheet on custom properties.
    is turned off, so the renderer leaves it out. A hidden decoration gets opacity 0 and still
    ships in the file, so it still counts toward the page weight. Showing it again restores its
    previous opacity from the studio's stash, which is not exported. This needs no format change.
+6. **Every tap in the preview brings up the form.** It is what the plan asks, and it makes the
+   preview the quickest way to a link. But a tap that was only meant to try the page also moves
+   the focus, and on a phone it raises the keyboard. If that gets in the way, the next step is a
+   tap that selects and a second tap, or a button in the page's panel, that focuses.
+7. **The form is on the right in Preview.** The plan says form on the left, preview on the
+   right. The inspector is on the right in Edit, so it stays there: switching views does not
+   move the form. On a phone the plan's order holds: the page on top, the form under it.
+8. **The preview reloads on every edit.** The page is rendered again and the frame reloads after
+   each pause in typing. After a tap it is rendered with that drawing selected and brings its
+   panel back into view, so what is typed shows where it was tapped, but the reload itself
+   remains: the boil starts over, a once-on-tap animation plays again, and the page's own scroll
+   position is set by the page, not kept. Updating the page in place, by message, would keep all
+   of that, but it would make the frame trust more of what the studio sends, and the preview
+   would no longer be the exported file. The frame is only rendered again when the documents
+   change, and a tap alone never reloads it.

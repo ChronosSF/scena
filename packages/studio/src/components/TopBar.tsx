@@ -73,8 +73,11 @@ export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: 
         </div>
         {view === "preview" ? (
           <>
-            <Segmented label="Device" iconOnly value={phone ? "phone" : "full"} onChange={(v) => store.set({ phone: v === "phone" })}
-              options={[{ value: "phone", label: "Phone", icon: Smartphone }, { value: "full", label: "Full width", icon: Monitor }]} />
+            {/* on a narrow screen the preview is the screen's own width, so there is no device to choose */}
+            <span className="hide-narrow">
+              <Segmented label="Device" iconOnly value={phone ? "phone" : "full"} onChange={(v) => store.set({ phone: v === "phone" })}
+                options={[{ value: "phone", label: "Phone", icon: Smartphone }, { value: "full", label: "Full width", icon: Monitor }]} />
+            </span>
             <span className="hide-narrow">
               <Segmented label="Page appearance" iconOnly value={page.theme.mode} onChange={setAppearance} options={APPEARANCE} />
             </span>

@@ -383,6 +383,46 @@ await sleep(600);
 const tapped = await page.frameEval<any>(`({ title: document.getElementById("tt").textContent, pressed: document.querySelector('.obj[data-k="link"]').getAttribute("aria-pressed"), boil: document.documentElement.dataset.boil, csp: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]') })`);
 check("tapping a drawing in the preview opens its panel", tapped.pressed === "true" && tapped.title.length > 0, tapped);
 
+// Tap to focus (issue 14): the same tap brings up the drawing's link in the inspector beside the
+// preview, with the focus in its Title field, scrolled into the panel.
+/** The selection, its link's title, and where the studio's focus is: a field of the inspector by its name, or another element by its id or tag. */
+const FOCUSED = `(() => { const s = sceneStudio.store.getSnapshot(), l = s.scene.layers.find((x) => x.id === s.sel), a = document.activeElement;
+  const r = a.getBoundingClientRect(), p = document.getElementById("inspector").getBoundingClientRect(), inside = !!(a.closest && a.closest("#inspector"));
+  return { sel: s.sel, title: l && l.slotId ? s.page.links[l.slotId].title : null, inspector: document.getElementById("inspector").getAttribute("aria-label"),
+    focus: inside ? a.getAttribute("name") : a.id || a.tagName, value: "value" in a ? a.value : null, inView: inside && r.top >= p.top && r.bottom <= p.bottom }; })()`;
+/**
+ * The centre of a slot's drawing in the frame attached last, scrolled into that frame's view, in
+ * the studio's coordinates. It waits for the page's runtime to have run (its script waits for the
+ * typeface's stylesheet) and for the typeface, which moves the drawing when it arrives.
+ */
+const drawingIn = async (frameSelector: string, slot: string): Promise<[number, number]> => {
+  const box = await page.call<[number, number]>(`(sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return [r.x, r.y]; }`, frameSelector);
+  const at = await page.frameCall<[number, number]>(undefined, `async (k) => {
+    for (let i = 0; i < 100 && !document.documentElement.dataset.boil; i++) await new Promise((r) => setTimeout(r, 100));
+    await document.fonts.ready;
+    const o = [...document.querySelectorAll(".obj")].find((x) => x.getAttribute("data-k") === k); o.scrollIntoView({ block: "center" });
+    const r = o.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }`, slot);
+  return [box[0] + at[0], box[1] + at[1]];
+};
+/** What the page in the preview frame shows: whether its runtime has run, its panel, and whether the panel is in the frame's view. */
+const PANE = `({ same: window.__sameDocument === true, ran: !!document.documentElement.dataset.boil, title: document.getElementById("tt").textContent,
+  pressed: [...document.querySelectorAll('.obj[aria-pressed="true"]')].map((o) => o.getAttribute("data-k")).join(), open: !document.getElementById("tb").hidden,
+  scrolled: Math.round(scrollY), inView: (() => { const r = document.querySelector(".tag").getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })() })`;
+interface Pane { same: boolean; ran: boolean; title: string; pressed: string; open: boolean; scrolled: number; inView: boolean }
+/** PANE, asked again until `done` holds or 5 s pass: an edit reloads the frame, and the page in it may be between two documents. */
+async function previewShows(done: (p: Pane) => boolean): Promise<Pane | null> {
+  let last: Pane | null = null;
+  for (let i = 0; i < 25; i++) {
+    try { last = await page.frameEval<Pane>(PANE); if (done(last)) return last; } catch { /* the frame is between two documents */ }
+    await sleep(200);
+  }
+  return last;
+}
+await sleep(400); // the panel scrolls smoothly to the field
+const ownTap = await page.eval<any>(FOCUSED);
+check("in a scene of your own the tap also brings up the drawing's link, with the focus in its Title field, in view",
+  ownTap.sel === "plant-procreate" && ownTap.inspector === "Drawing settings" && ownTap.focus === "link-title" && ownTap.value === ownTap.title && ownTap.inView === true, ownTap);
+
 // the mug plays its frames once per tap in the preview, holds the last, and replays on the next tap.
 // Media emulation does not reach the out-of-process preview frame, so it follows this machine's
 // own setting first: with reduced motion, frame 1 holds.
@@ -414,6 +454,8 @@ const names = Object.keys(files);
 const html = files[names.find((n) => n.endsWith(".html"))!] || "";
 check("export dialog offers the three files", names.length === 3 && /no external scripts/i.test(exportText), names);
 check("exported page has no external script and a CSP", !/<script[^>]+src=/i.test(html) && html.includes("Content-Security-Policy") && html.includes("data:image/png;base64"), `${html.length} B`);
+check("the exported page is the published one, not the preview's: its runtime data has no editor flag, so it posts nothing to a frame's parent",
+  html.includes('"demo":false') && !html.includes('"ed":'), html.slice(html.indexOf('"motion":'), html.indexOf('"motion":') + 40));
 for (const n of names) writeFileSync(join(out, n), files[n]!);
 const beforeImport = await page.eval<string>(`JSON.stringify({ s: sceneStudio.store.getSnapshot().scene, p: sceneStudio.store.getSnapshot().page })`);
 await page.eval(`document.querySelector("dialog[open]")?.close()`);
@@ -597,6 +639,9 @@ check(`each card is the published page in a sandboxed frame, running under the s
   live.length === twoScenes.length && twoScenes.every((e) => live[frameOf[e.scene.id]!]?.objects === e.scene.slots.length) // a drawing for every link of the sample
   && live.every((f) => (boils(f) || tooSlow(f)) && f.policy && f.painted >= 0 && f.width === 375), live);
 console.log(`NOTE  the cards painted ${live.map((f) => `${f.painted} ms`).join(" and ")} after their frames were made, on this machine. The plan's target is under a second on a mid-range phone, which this does not measure.`);
+// only the Preview renders the page with the editor flag (issue 14): a card's page tells the studio nothing
+const cardData = await Promise.all(Array.from({ length: page.frameCount() }, (_, i) => page.frameEval<string>(`Object.keys(JSON.parse(document.getElementById("sd").textContent)).join()`, i)));
+check("the picker's cards are not the preview: their runtime data has no editor flag", cardData.length === twoScenes.length && cardData.every((keys) => !keys.split(",").includes("ed")), cardData);
 
 // a real tap on a drawing in the second card opens its panel, there and only there
 const tapInCard = async (sceneId: string, slot: string) => {
@@ -723,6 +768,72 @@ await typeInto('#inspector [name="url"]', "example.com/letter");
 await clickOn('[data-ui="view-preview"]');
 await sleep(500);
 const inPreview = await page.eval<boolean>(`document.getElementById("preview").srcdoc.includes("Letters from my desk") && document.getElementById("preview").srcdoc.includes("https://example.com/letter")`);
+
+// Tap to focus (issue 14), in the links-only mode: a real tap on the envelope in the preview
+// opens its panel in the page and brings up the commissions link beside it, the focus in its title
+const previewFrom = page.logs.length;
+await sleep(1000);
+const envelope = await drawingIn("#preview", "commissions");
+await page.frameEval(`window.__sameDocument = true`); // gone if the frame reloads
+await page.click(envelope[0], envelope[1]);
+await sleep(800);
+const byTap = { ...(await page.eval<any>(FOCUSED)), panel: await page.frameEval<any>(PANEL) };
+check("a tap on the envelope in the preview opens its panel there and brings up the commissions link beside it, with the focus in its Title field",
+  byTap.sel === "envelope" && byTap.inspector === "Link settings" && byTap.focus === "link-title" && byTap.value === byTap.title && byTap.inView === true
+  && byTap.panel.pressed === "commissions" && byTap.panel.title === byTap.title, byTap);
+const afterTapAlone = await page.frameEval<Pane>(PANE);
+check("a tap alone does not reload the preview: the page that was tapped is still there, its panel open", afterTapAlone.same && afterTapAlone.open && afterTapAlone.pressed === "commissions", afterTapAlone);
+// what is typed next shows in the envelope's panel, which is open again when the edited page arrives
+await typeInto('#inspector [name="link-title"]', "Commissions, spring");
+const typedTap = await previewShows((f) => f.ran && f.title === "Commissions, spring");
+const typedFocus = await page.eval<any>(FOCUSED);
+check("after a tap, what is typed in the Title shows in the page's open panel with no second tap, and the focus stays in the field",
+  !!typedTap && !typedTap.same && typedTap.title === "Commissions, spring" && typedTap.open && typedTap.pressed === "commissions" && typedTap.inView
+  && typedFocus.focus === "link-title" && typedFocus.value === "Commissions, spring", { pane: typedTap, focus: typedFocus.focus });
+// by keyboard: Tab from the bar into the page in the frame, to the cat, and Enter, as on the page
+await page.eval(`document.querySelector('[data-ui="view-preview"]').focus()`);
+const onCat = async () => (await page.eval<boolean>(`document.activeElement === document.getElementById("preview")`))
+  && (await page.frameEval<string>(`(document.activeElement && document.activeElement.getAttribute("data-k")) || ""`)) === "newsletter";
+let presses = 0;
+for (; presses < 30 && !(await onCat()); presses++) await pressTab();
+await pressEnter();
+await sleep(800);
+const byKeys = { ...(await page.eval<any>(FOCUSED)), panel: await page.frameEval<any>(PANEL) };
+check("by keyboard: Tab into the preview to the cat, then Enter, opens its panel and brings up its link, with the focus in its Title field",
+  presses < 30 && byKeys.sel === "cat" && byKeys.focus === "link-title" && byKeys.value === "Letters from my desk" && byKeys.value === byKeys.title && byKeys.panel.pressed === "newsletter",
+  { presses, ...byKeys });
+// Messages from anywhere but the preview frame are ignored: one the studio's own window posts in
+// the right shape (a file:// page's origin is "null" too), and a real tap in a second sandboxed
+// frame that runs the same page, which does post, as the preview would
+await page.eval(`window.postMessage({ type: "scena:tap", slot: "commissions" }, "*")`);
+await sleep(400);
+const afterOwn = await page.eval<any>(FOCUSED);
+const framesBefore = page.frameCount();
+await page.eval(`new Promise((done) => {
+  const f = document.createElement("iframe");
+  f.id = "forged";
+  f.setAttribute("sandbox", "allow-scripts");
+  f.style.cssText = "position:fixed;left:0;top:0;width:375px;height:760px;z-index:1000;border:0;background:#fff";
+  window.__forged = [];
+  addEventListener("message", (e) => { if (e.source === f.contentWindow) window.__forged.push(e.data); });
+  f.addEventListener("load", () => done(true), { once: true });
+  f.srcdoc = document.getElementById("preview").srcdoc;
+  document.body.append(f);
+})`);
+for (let i = 0; i < 30 && page.frameCount() === framesBefore; i++) await sleep(100);
+await sleep(500);
+const forgedAt = await drawingIn("#forged", "commissions");
+await page.click(forgedAt[0], forgedAt[1]);
+await sleep(800);
+const afterForged = { ...(await page.eval<any>(FOCUSED)), sent: await page.eval<any[]>(`window.__forged`), panel: await page.frameEval<any>(PANEL) };
+await page.eval(`document.getElementById("forged").remove()`);
+await sleep(300);
+const previewErrors = page.logs.slice(previewFrom).filter((l) => /^(error|exception|console\.error)/i.test(l) && !/fonts\.g/.test(l));
+check("a message that does not come from the preview frame is ignored: from the studio's own window, and from a tap in another frame running the same page",
+  afterOwn.sel === "cat" && afterOwn.focus === "link-title" && afterOwn.value === "Letters from my desk"
+  && afterForged.sent.length === 1 && afterForged.sent[0].slot === "commissions" && afterForged.panel.pressed === "commissions" // the tap landed, and the frame posted
+  && afterForged.sel === "cat" && afterForged.title === "Letters from my desk" && previewErrors.length === 0,
+  { own: afterOwn.sel, forged: { sel: afterForged.sel, sent: afterForged.sent, focus: afterForged.focus }, errors: previewErrors.join(" | ").slice(0, 300) });
 await clickOn('[data-ui="view-edit"]');
 await sleep(300);
 check("the preview shows what was typed", inPreview === true);
@@ -803,6 +914,83 @@ await sleep(400);
 const tap = await page.eval<any>(`({ sel: sceneStudio.store.getSnapshot().sel, title: (document.querySelector('[data-ui="slot-title"]') || {}).textContent })`);
 await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 check("a tap on a drawing picks it", tap.sel === "sketchbook" && tap.title === "Sketchbook", tap);
+
+// Tap to focus on a phone (issue 14): the preview is pinned on top and the form scrolls under it.
+// A real tap on the envelope brings up its link, with the Title field at the top of the form,
+// right under the preview, where an on-screen keyboard leaves it in view.
+await clickOn('[data-ui="view-preview"]');
+await sleep(1500);
+/** The pinned preview and the form under it: where each is, how far the form has scrolled, and anything that goes sideways. */
+const PINNED = `(() => { const f = document.getElementById("preview").getBoundingClientRect(), i = document.getElementById("inspector"), r = i.getBoundingClientRect(), b = document.activeElement.getBoundingClientRect();
+  return { bar: Math.round(document.querySelector(".bar").getBoundingClientRect().bottom), frame: [f.left, f.top, f.right, f.bottom].map(Math.round), form: [r.top, r.bottom].map(Math.round),
+    scrolled: Math.round(i.scrollTop), field: [b.top, b.bottom].map(Math.round), screen: innerHeight, device: !!document.querySelector(".device, .browser"),
+    sideways: document.documentElement.scrollWidth - innerWidth, formSideways: i.scrollWidth - i.clientWidth }; })()`;
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+const onPhoneEnvelope = (await drawingIn("#preview", "commissions")).map(Math.round);
+await page.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: onPhoneEnvelope[0], y: onPhoneEnvelope[1] }] });
+await page.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+await sleep(900);
+const pinnedTap = { ...(await page.eval<any>(FOCUSED)), ...(await page.eval<any>(PINNED)) };
+check("at 375 px a real tap on the envelope in the pinned preview brings up the commissions link, the focus in its Title field just under the preview",
+  pinnedTap.sel === "envelope" && pinnedTap.focus === "link-title" && pinnedTap.value === pinnedTap.title && pinnedTap.inView === true && pinnedTap.device === false
+  && pinnedTap.frame.join() === `0,${pinnedTap.bar},375,${pinnedTap.form[0]}` && pinnedTap.form[1] === pinnedTap.screen
+  && pinnedTap.field[0] >= pinnedTap.form[0] && pinnedTap.field[1] <= pinnedTap.screen * 0.6, pinnedTap);
+// a finger on the form scrolls the form; the preview stays where it is
+const formAt = await page.eval<[number, number]>(`(() => { const r = document.getElementById("inspector").getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height * 0.75)]; })()`);
+const formTouch = (type: string, y: number) => page.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: formAt[0], y }] });
+await formTouch("touchStart", formAt[1]);
+for (let i = 1; i <= 8; i++) { await formTouch("touchMove", formAt[1] - i * 20); await sleep(16); }
+await formTouch("touchEnd", 0);
+await sleep(500);
+const pinnedSwipe = await page.eval<any>(PINNED);
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+check("at 375 px the preview stays pinned while the form scrolls under it, and nothing scrolls sideways",
+  pinnedSwipe.scrolled > pinnedTap.scrolled + 40 && pinnedSwipe.frame.join() === pinnedTap.frame.join() && pinnedSwipe.form.join() === pinnedTap.form.join()
+  && pinnedTap.sideways <= 0 && pinnedSwipe.sideways <= 0 && pinnedSwipe.formSideways <= 0, { before: { scrolled: pinnedTap.scrolled, frame: pinnedTap.frame }, after: pinnedSwipe });
+// an edit made while the pane is scrolled down to the envelope: the edited page comes back with the
+// envelope's panel open, in view in the pane, and showing what was typed
+const scrolledBefore = (await page.frameEval<Pane>(PANE)).scrolled;
+await typeInto('#inspector [name="link-title"]', "Commissions, summer");
+const pinnedEdit = await previewShows((f) => f.ran && f.title === "Commissions, summer" && f.inView);
+check("at 375 px, after an edit made with the pane scrolled, the tapped drawing's panel is open and in view in the pane, showing what was typed",
+  scrolledBefore > 0 && !!pinnedEdit && pinnedEdit.title === "Commissions, summer" && pinnedEdit.open && pinnedEdit.pressed === "commissions" && pinnedEdit.inView && pinnedEdit.scrolled > 0,
+  { scrolledBefore, pane: pinnedEdit });
+writeFileSync(join(out, "studio-preview-375.png"), await page.screenshot());
+// the way back to the page's settings, which the pinned preview leaves no room around: by touch, then by keyboard
+const BACK = `(() => { const s = sceneStudio.store.getSnapshot(), i = document.getElementById("inspector"), a = document.activeElement;
+  return { sel: s.sel, inspector: i.getAttribute("aria-label"), focus: a.id || a.getAttribute("data-ui") || a.tagName, top: i.scrollTop, button: !!document.querySelector('[data-ui="to-page"]'),
+    name: !!i.querySelector('[name="display-name"]') }; })()`;
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+const backAt = (await center('[data-ui="to-page"]'))!.map(Math.round);
+const backLabel = await page.eval<string>(`document.querySelector('[data-ui="to-page"]').textContent`);
+await page.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: backAt[0], y: backAt[1] }] });
+await page.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+await sleep(500);
+const backByTouch = await page.eval<any>(BACK);
+check("at 375 px a tap on Page settings at the top of the form goes back to the page's settings, the focus on the panel at its top",
+  backLabel === "Page settings" && backByTouch.sel === null && backByTouch.inspector === "Page settings" && backByTouch.focus === "inspector" && backByTouch.top === 0 && !backByTouch.button && backByTouch.name,
+  backByTouch);
+const againAt = (await drawingIn("#preview", "commissions")).map(Math.round);
+await page.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: againAt[0], y: againAt[1] }] });
+await page.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+await sleep(900);
+await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+const tappedAgain = await page.eval<any>(FOCUSED);
+let backTabs = 0;
+for (; backTabs < 6 && (await page.eval<string>(`document.activeElement.getAttribute("data-ui") || ""`)) !== "to-page"; backTabs++) await pressTab(SHIFT);
+await pressEnter();
+await sleep(500);
+const backByKeys = await page.eval<any>(BACK);
+check("by keyboard: Shift+Tab from the Title to Page settings, then Enter, goes back to the page's settings, the focus on the panel",
+  tappedAgain.sel === "envelope" && tappedAgain.focus === "link-title" && backTabs < 6
+  && backByKeys.sel === null && backByKeys.inspector === "Page settings" && backByKeys.focus === "inspector" && !backByKeys.button && backByKeys.name, { backTabs, ...backByKeys });
+// with the selection cleared, the tapped drawing is forgotten: the next edit brings the page back as a visitor first sees it
+await page.frameEval(`window.__sameDocument = true`); // gone once the edit reloads the frame
+await typeInto('#inspector [name="display-name"]', "Ada Morandi");
+const forgotten = await previewShows((f) => f.ran && !f.same && !f.open);
+check("once the page's settings are back, the next edit renders the page as a visitor first sees it: no panel open, at its top",
+  !!forgotten && !forgotten.open && forgotten.pressed === "" && forgotten.scrolled === 0, forgotten);
+await clickOn('[data-ui="view-edit"]');
 
 // The scene picker on a phone: it takes the whole screen, one card to a row, and nothing goes
 // sideways. The desk is open, with links typed, so its card says so and another scene asks first.

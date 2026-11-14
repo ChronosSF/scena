@@ -134,3 +134,34 @@ describe("autosave", () => {
     }
   });
 });
+
+describe("the documents' own revision", () => {
+  // The preview renders the page again on this alone (components/Preview.tsx): a tap that only
+  // selects a drawing and asks for its title never reloads the frame, and an edit always does.
+  test("moves with an edit, undo and redo, and not with the selection, the view or a focus request", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    vi.stubGlobal("localStorage", storage({}));
+    try {
+      store.change(() => ({ ...deskDocs(), sel: null, stash: {} }), { noHistory: true });
+      const docRev = () => store.getSnapshot().docRev, opened = docRev(), rev = store.getSnapshot().rev;
+      store.select("envelope");
+      store.requestFocus("title", "envelope");
+      store.set({ view: "preview" });
+      store.select(null);
+      expect(store.getSnapshot().rev).toBe(rev + 4);
+      expect(docRev()).toBe(opened);
+      store.change(({ page }) => { page.links.commissions!.title = "Commissions, spring"; });
+      expect(docRev()).toBe(opened + 1);
+      store.undo();
+      expect(docRev()).toBe(opened + 2);
+      store.redo();
+      expect(docRev()).toBe(opened + 3);
+      expect(store.getSnapshot().page.links.commissions!.title).toBe("Commissions, spring");
+      store.set({ view: "edit" });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+});

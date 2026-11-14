@@ -86,7 +86,8 @@ export function Workspace() {
   if (view === "preview") {
     return (
       <main className="workspace" id="workspace" aria-label="Preview">
-        <div className="workspace-scroll"><Preview /></div>
+        {/* as on the canvas, a press on the workspace around the page clears the selection, and the inspector shows the page */}
+        <div className="workspace-scroll" onPointerDown={(e) => { if (!(e.target as Element).closest(".device, .browser")) store.select(null); }}><Preview /></div>
       </main>
     );
   }

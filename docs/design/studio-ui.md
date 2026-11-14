@@ -25,7 +25,7 @@ then the scene picker over it).
 
 ## Tokens
 
-All tokens are at the top of `apps/studio/src/studio.css`. The chrome follows the OS light or
+All tokens are at the top of `packages/studio/src/studio.css`. The chrome follows the OS light or
 dark setting through `prefers-color-scheme`. The page on the canvas follows its own Light, Dark
 or Auto setting, independently.
 
@@ -310,7 +310,7 @@ the preview only, never to the export.
 
 ## Components
 
-Thin wrappers in `apps/studio/src/components/ui.tsx`, so every surface looks and behaves the same:
+Thin wrappers in `packages/studio/src/components/ui.tsx`, so every surface looks and behaves the same:
 
 - `Button` (default outline, `primary` ink, `ghost`, `danger`) and `IconButton` (28 or 24 px,
   always with a tooltip and an accessible name).

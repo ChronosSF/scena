@@ -6,6 +6,7 @@
   "description": "renderPage(scene, page) -> a self-contained HTML page with the inlined, CSP-hashed runtime.",
   "exports": {
     ".": "./src/index.ts",
+    "./runtime": "./src/runtime.generated.ts",
     "./build-runtime": "./scripts/build-runtime.ts"
   },
   "scripts": {

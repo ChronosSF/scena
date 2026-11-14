@@ -1,6 +1,6 @@
 # 0001. Tech stack for the scene format, the renderer and the studio
 
-- **Status:** Accepted for the current phase. Revisit when accounts and publishing start (milestones M1 and M2 in the development plan).
+- **Status:** Accepted for the current phase. Revisit when accounts and publishing start (milestones M1 and M2 in the development plan). The move it plans for the start of M1, the studio into a package and a Next.js app beside it, is [ADR 0004](0004-one-studio-two-apps.md).
 - **Date:** 9 November 2026
 - **Deciders:** Vittoria (founder), with Claude as the implementer
 

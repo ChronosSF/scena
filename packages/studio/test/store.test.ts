@@ -1,4 +1,4 @@
-// Opening autosaved work (apps/studio/src/store.ts): work this build cannot open is set aside
+// Opening autosaved work (packages/studio/src/store.ts): work this build cannot open is set aside
 // in the browser's storage, never dropped, so the next autosave does not write over it.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { deskDocs } from "../src/model.ts";

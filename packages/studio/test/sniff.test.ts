@@ -1,4 +1,4 @@
-// Type sniffing for dropped files (apps/studio/src/ingest/raster.ts): the pattern for the
+// Type sniffing for dropped files (packages/studio/src/ingest/raster.ts): the pattern for the
 // start of an SVG accepts what real exports begin with, and stays fast on a file built to
 // make it backtrack.
 import { describe, expect, test } from "vitest";

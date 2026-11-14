@@ -3,16 +3,19 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "description": "Illustrated link-in-bio: scene format, renderer and the bring-your-own-drawings studio.",
+  "description": "Illustrated link-in-bio: scene format, renderer, the studio, and the web app it runs in.",
   "packageManager": "pnpm@10.13.1",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "gen": "pnpm --filter @scena/renderer gen",
-    "dev": "pnpm gen && pnpm --filter @scena/studio dev",
-    "build": "pnpm gen && pnpm --filter @scena/studio build",
-    "preview": "pnpm --filter @scena/studio preview",
+    "dev": "pnpm gen && pnpm --filter @scena/studio-app dev",
+    "dev:web": "pnpm gen && pnpm --filter @scena/web dev",
+    "build": "pnpm build:studio && pnpm build:web",
+    "build:studio": "pnpm gen && pnpm --filter @scena/studio-app build",
+    "build:web": "pnpm gen && pnpm --filter @scena/web build",
+    "preview": "pnpm --filter @scena/studio-app preview",
     "typecheck": "pnpm gen && pnpm -r --no-bail typecheck && tsc --noEmit -p tools",
     "test": "pnpm gen && vitest run",
     "test:watch": "vitest",
@@ -25,12 +28,14 @@
     "measure": "node tools/measure.ts",
     "verify:studio": "node tools/verify-studio.ts",
     "verify:runtime": "node tools/verify-runtime.ts",
+    "verify:web": "node tools/verify-web.ts",
     "shots": "node tools/design-shots.ts"
   },
   "devDependencies": {
     "@scena/renderer": "workspace:*",
     "@scena/scene": "workspace:*",
     "@scena/scenes": "workspace:*",
+    "@scena/studio": "workspace:*",
     "@types/node": "26.6.6",
     "typescript": "7.0.2",
     "vitest": "5.1.0"

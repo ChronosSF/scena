@@ -4,10 +4,9 @@
 // on which scene it is showing. The picker on screen is checked by tools/verify-studio.ts.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { validatePage, validateScene } from "@scena/scene";
-import { renderPage, RUNTIME_SHA256 } from "@scena/renderer";
+import { renderPage } from "@scena/renderer";
 import { BUILT_IN_SCENES, DESK_SCENE, type BuiltInScene } from "@scena/scenes";
 import { smallDesk } from "@scena/scenes/testing";
-import { isDataBlock, isExternal, policyFor, scriptElements } from "../csp.ts";
 import { addSample, audienceWords, blankPage, blankScene, builtInDocs, deskDocs, hasWork, isBuiltIn, offeredPalettes, pageFor, slotWords } from "../src/model.ts";
 import { setLettering } from "../src/board.ts";
 import { blankDocs, store } from "../src/store.ts";
@@ -44,9 +43,6 @@ describe("what a card says", () => {
 });
 
 describe("what a card's frame shows", () => {
-  /** Base64 SHA-256, as a policy writes it (Web Crypto: the studio's tests have no Node types). */
-  const sha256 = async (s: string) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))));
-
   test.each(each)("%s: the published page, with a drawing to tap for every link of the sample", (_name, { scene, sample }) => {
     const { html } = renderPage(scene, sample, { demo: true });
     for (const slot of scene.slots) expect(html).toContain(`data-k="${slot.id}" role="button" tabindex="0"`);
@@ -55,21 +51,9 @@ describe("what a card's frame shows", () => {
     expect(html).toContain("Demo page. The links are placeholders."); // a tap shows where a link would go; it does not leave
   });
 
-  // A frame made from srcdoc runs under the studio's own policy as well as the page's, and
-  // the studio names its scripts by hash (csp.ts, vite.config.ts). So a card works in the
-  // built studio only if the one script its page runs is the page runtime, whatever the scene.
-  test.each(each)("%s: the only script its page runs is the page runtime, which the studio's policy names", async (_name, { scene, sample }) => {
-    const studioPolicy = policyFor(["the-studio-bundle", RUNTIME_SHA256]);
-    for (const forceMotion of [false, true]) {
-      const { html } = renderPage(scene, sample, { demo: true, forceMotion });
-      const scripts = scriptElements(html);
-      expect(scripts.some(isExternal)).toBe(false);
-      const run = scripts.filter((s) => !isDataBlock(s));
-      expect(await Promise.all(run.map((s) => sha256(s.body)))).toEqual([RUNTIME_SHA256]);
-      expect(studioPolicy).toContain(`'sha256-${await sha256(run[0]!.body)}'`);
-      expect(html).toContain(`script-src 'sha256-${RUNTIME_SHA256}'`); // and the page's own policy names it too
-    }
-  });
+  // That the one script such a page runs is the page runtime, which the policy of the app showing
+  // the card has to name, is checked where each policy is: apps/studio/test/csp.test.ts and
+  // apps/web/test/csp.test.ts.
 });
 
 describe("what choosing a scene opens", () => {

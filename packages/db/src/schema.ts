@@ -12,8 +12,11 @@
 // outside it cannot write a table directly, around the checks in the queries.
 
 import { sql } from "drizzle-orm";
-import { bigint, customType, index, jsonb, pgEnum, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, check, customType, index, jsonb, pgEnum, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { HANDLE_PATTERN } from "@scena/scene";
 import type { CheckedDraft } from "./draft.ts";
+
+if (HANDLE_PATTERN.includes("'")) throw new Error("The handle pattern has a quote in it, so it cannot be written into the constraint as it is.");
 
 /** Text compared without regard to case (the citext extension): "Pia" and "pia" are one email, one handle. */
 const citext = customType<{ data: string }>({ dataType: () => "citext" });
@@ -58,6 +61,13 @@ export const pages = pgTable("pages", {
   unique("pages_handle_unique").on(t.handle),
   // One page per person in phase 1 (plan §5); a later migration drops this to allow more.
   unique("pages_user_id_unique").on(t.userId),
+  // The handle rule, which the database holds too: a row written around the package cannot then
+  // carry a handle the rest of the system takes to be impossible. The pattern is the scene
+  // package's own (HANDLE_PATTERN), written into the constraint as it is: a constraint takes
+  // no parameter, and the pattern is a constant of this repository with no quote in it. As
+  // text, because citext would match it whatever the case of the letters. A change to the
+  // rule shows up in `pnpm db:check` as a migration that is missing.
+  check("pages_handle_rule", sql`${t.handle}::text ~ ${sql.raw(`'${HANDLE_PATTERN}'`)}`),
 ]).enableRLS();
 
 /**

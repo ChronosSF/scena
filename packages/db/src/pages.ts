@@ -120,12 +120,12 @@ export async function changeHandle(db: Database, input: { pageId: string; userId
       if (!current) return notFound();
       if (current.handle === input.handle) return { ok: true, page: toPage(current) };
       if (await reservedInDatabase(tx, input.handle)) return reservedRefusal(input.handle);
-      // The draft is written again, with its new handle, so it is checked again.
-      const checked = checkDraft(current.draft);
-      if (!checked.ok) return refuse("invalid", ...checked.problems);
+      // The stored draft was checked when it was written, and only its handle changes here. It
+      // is not checked again: a rule that has tightened since (a ready-made scene that dropped a
+      // palette) would otherwise hold up a change of address that has nothing to do with it.
       const [row] = await tx.update(pages)
         // the database's clock, as for updated_at, which this update stamps too
-        .set({ handle: input.handle, previousHandle: current.handle, handleChangedAt: sql`now()`, draft: withHandle(checked.draft, input.handle) })
+        .set({ handle: input.handle, previousHandle: current.handle, handleChangedAt: sql`now()`, draft: withHandle(current.draft, input.handle) })
         .where(eq(pages.id, input.pageId)).returning();
       return { ok: true, page: toPage(row!) };
     });

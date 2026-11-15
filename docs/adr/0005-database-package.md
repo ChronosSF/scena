@@ -79,10 +79,12 @@ edit src/schema.ts → pnpm db:generate → read the SQL it wrote → check it i
 - **`pnpm db:check`** fails when the schema and the migrations disagree. drizzle-kit is asked to
   write a migration from the schema into a scratch copy of `migrations/`: if it writes anything,
   the check fails and prints the SQL that is missing. Then `drizzle-kit check` reads the real
-  folder. It needs no database, so it also runs as a test in `pnpm test`.
+  folder; its exit status is the answer, not the wording of what it prints. It needs no
+  database. `pnpm check` runs it once, before the tests. It is not a Vitest test: it starts
+  drizzle-kit twice, and a plain `pnpm test` should not pay for that.
 - **`0000_citext.sql` is the one migration written by hand** (`drizzle-kit generate --custom`),
   because drizzle-kit does not write extensions: `CREATE EXTENSION IF NOT EXISTS citext`.
-  `0001_tables.sql` is generated.
+  `0001_tables.sql` and `0002_handle_rule.sql` are generated.
 
 ## Decision 3: the schema
 
@@ -90,13 +92,13 @@ edit src/schema.ts → pnpm db:generate → read the SQL it wrote → check it i
 |---|---|---|---|
 | `users` | `id` | uuid | primary key, no default |
 | | `email` | citext | not null; unique among accounts not deleted (`users_email_live`) |
-| | `display_name` | text | |
+| | `display_name` | text | cut to the page format's limit when the profile is made |
 | | `locale` | text | not null, default `'en'` |
 | | `created_at` | timestamptz | not null, default `now()` |
 | | `deleted_at` | timestamptz | |
 | `pages` | `id` | uuid | primary key, default `gen_random_uuid()` |
 | | `user_id` | uuid | not null, unique (`pages_user_id_unique`), references `users` on delete cascade |
-| | `handle` | citext | not null, unique (`pages_handle_unique`) |
+| | `handle` | citext | not null, unique (`pages_handle_unique`); the handle rule as a check (`pages_handle_rule`) |
 | | `previous_handle` | citext | |
 | | `handle_changed_at` | timestamptz | |
 | | `draft` | jsonb | not null; a PageDocument the validators passed |
@@ -134,7 +136,13 @@ The details the plan leaves open:
 - **A deleted account and its email.** `deleted_at` marks an account as deleted while the
   deletion (§7.1) is carried out. The email is unique among accounts that are not deleted (a
   partial unique index), so the person can sign up again in the meantime, with a new auth id.
-  `getUser` returns nothing for a deleted account.
+  `getUser` returns nothing for a deleted account, and `createUser` for the same id answers
+  `deleted`, not `exists`: the two agree, so a sign-in that reads and then makes a profile is
+  told why it can do neither.
+- **A display name is held to the page format's limit** (`LIMITS.displayName` in the scene
+  package, 40), because it is the name a page's profile starts with. It comes from the auth
+  provider, so a longer one is cut to fit, between characters, and not refused: nobody should
+  fail to sign in over the length of their name.
 - **`status` is a Postgres enum.** Adding a value later is one statement.
 - **Foreign keys.** A page goes with its account (cascade). An audit entry outlives the account
   it names (set null).
@@ -183,14 +191,16 @@ runs the validators. Revisit if an API ever needs types or documentation generat
   A page on one of the ready-made scenes is checked against that scene as well: its palette, and
   which links it may turn off. It runs before anything is asked of the database; the tests give
   the queries a stand-in database that fails if it is touched.
-- Two more checks, for storage: a draft is at most 64 KB as JSON (the validators read the fields
-  they know, so a field they do not know could carry anything), and text Postgres cannot keep in
-  jsonb (the character U+0000, half of a surrogate pair) is refused with its path rather than
-  failing inside the database.
+- Three more checks, for storage. A draft nests at most 32 levels deep: this is checked first,
+  and without recursion, because everything after it walks the document by calling itself and
+  would run out of stack on one nested deep enough. A draft is at most 64 KB as JSON (the
+  validators read the fields they know, so a field they do not know could carry anything). And
+  text Postgres cannot keep in jsonb (the character U+0000, half of a surrogate pair) is refused
+  with its path rather than failing inside the database.
 - An invalid draft writes nothing. The answer is `{ ok: false, reason: "invalid", problems }`,
   where `problems` are the validators' own messages, each with its path:
   `links["shop"].url: use https:// or mailto:`. Other refusals have the same shape: `reserved`,
-  `taken`, `exists`, `not-found`, each with a sentence a person can act on.
+  `taken`, `exists`, `deleted`, `not-found`, each with a sentence a person can act on.
 
 **The draft's handle is the page's.** A PageDocument carries a `handle`, and so does the row. The
 row's is the address. The package writes it into every draft it stores, whatever handle the draft
@@ -205,6 +215,10 @@ is once the person has picked one.
   `^[a-z0-9][a-z0-9_-]{1,29}$`, so nothing that was accepted is refused, or the other way round.
   The two messages, which differed, are now one: "2 to 30 characters: lowercase letters, digits,
   - and _, starting with a letter or digit". A test fails if the pattern is written anywhere else.
+- **The database holds the rule too.** `pages.handle` has a check built from the scene package's
+  `HANDLE_PATTERN`, compared as text because citext would match it whatever the case. A row
+  written around the package cannot carry a handle the rest of the system takes to be
+  impossible, and a change to the pattern shows in `pnpm db:check` as a missing migration.
 - **Reserved words.** The public list is in `packages/db/src/reserved.ts`: the plan's routes
   (`app`, `api`, `_`, `admin`, `help`), the web app's (`studio`), the routes sign-in, billing and
   publishing will need, the pages a product site has, the service's own names, host names, and
@@ -215,10 +229,12 @@ is once the person has picked one.
 - **Offensive terms are not in the repository.** The list has a marked, empty place for them.
   Where such a list comes from, and whether it is kept in a public repository at all, is the
   founder's decision. The table makes either answer work.
-- **Duplicates.** Handles are `citext` and unique, so the database refuses "Pia" when "pia" is
-  taken, whatever wrote it. A read by handle ignores case too.
+- **Duplicates.** Handles are unique, and the check keeps them lowercase, so no second spelling
+  of a handle can exist, whatever wrote it. They are `citext`, so a read by handle ignores case.
 - **A change** keeps the old handle in `previous_handle` and the time in `handle_changed_at`. A
-  change to the handle the page already has changes nothing.
+  change to the handle the page already has changes nothing. The stored draft is not validated
+  again for it: only its handle changes, and a rule that has tightened since the draft was saved
+  must not hold up a change of address.
 - **Left for issue 17:** the live availability check, the 30-day redirect, the 90-day release,
   and whether a handle someone has just left is held for the redirect. Today it is free at once.
 
@@ -227,40 +243,56 @@ is once the person has picked one.
 Supabase's changelog of 18 May 2026 says "Postgres 17 is what we currently default to on the
 Supabase platform", and its upgrade guide names 17 (17.11) as the version projects move to. I
 found no announcement that new projects are offered 18. This comes from Supabase's public pages,
-not from the dashboard, since there is no account. The local container and CI use
-`postgres:17-alpine` (17.11 when this was written).
+not from the dashboard, since there is no account.
+
+The local container and CI use one build, named by its digest
+(`postgres:17-alpine@sha256:eee6c6e1…`): Postgres 17.11, built on 21 October 2026, for every
+platform the tag has. The tag alone is whatever was pushed last; on 15 November 2026 it was a
+build three days old, and Dependabot's configuration covers npm and the workflow's actions, not
+images. A test fails when `compose.yaml` and the CI workflow name different images. To move to a
+newer build, take one that has been public for a week, as for a package, and change both.
 
 ## Decision 8: how the tests get a database
 
 - **`DATABASE_URL` from the environment**, and nothing else. No file is loaded by itself.
 - **Without it**, the database tests are reported as skipped, by name, in Vitest's summary; they
-  do not pass. Everything else, the drift check included, runs.
-- **With it**, the test file makes a database of its own on that server (`scena_test_` and a
-  random suffix) and a role for the row-level security tests, applies the migrations, runs, and
-  drops both. It never reads or writes the database `DATABASE_URL` names. That needs a user who
-  may create databases and roles: the local one and CI's are superusers.
+  do not pass. Everything else runs.
+- **With it**, the test file makes a database of its own on that server (`scena_test_`, the time
+  and a random suffix) and a role for the row-level security tests, applies the migrations,
+  runs, and drops both. It never reads or writes the database `DATABASE_URL` names. That needs a
+  user who may create databases and roles: the local one and CI's are superusers.
+- **A run that is cut short** leaves its database and its role on the server. The next run
+  removes those whose name says they are more than an hour old, and leaves younger ones alone,
+  since they may belong to a run that is still going.
 - **Locally**, `compose.yaml` starts Postgres 17 as the container `scena-postgres` (project
   `scena`), on `127.0.0.1:5435` only, with a health check and a named volume. Its password is a
   development one for that container alone, written in `compose.yaml` and `.env.example`; the
   code and tests read the address from `DATABASE_URL`.
 - **In CI**, the job "Typecheck, test and build" gets a Postgres 17 service with no password
   (`trust`: it lives as long as the job and only the runner reaches it), sets `DATABASE_URL`,
-  applies the migrations to the empty database, runs `pnpm db:check`, then `pnpm check`, which
-  runs the database tests. Both job names are unchanged.
+  applies the migrations to the empty database, then runs `pnpm check`, which compares the
+  migrations with the schema and runs the database tests. Both job names are unchanged.
 
 ## Checks
 
-- `pnpm check` runs 70 tests of the database package, besides the 186 there were. 17 of them need
-  the database. With `DATABASE_URL` unset they are reported as skipped; with it set, all 256 pass.
+- `pnpm check` runs 75 tests of the database package, besides the 186 there were. 21 of them need
+  the database. With `DATABASE_URL` unset they are reported as skipped; with it set, all 261 pass.
+  It also runs `pnpm db:check` once, before the tests.
 - Without a database: the handle rule (accepted and refused handles, the reserved words and their
-  capitals), every refusal of the draft before a query, the profile's fields, that nothing which
-  runs in a browser imports the package, that the handle pattern is written once, and the drift
-  check.
-- With a database: migrations from empty and twice, the column types, profiles, a draft saved and
-  read back unchanged, an invalid draft refused with the validators' messages and nothing
-  written, the stored draft's handle, a page saved only by its own account, a handle taken in
-  another case refused by the database, a reserved handle refused from the list and from the
-  table, a second page refused, a handle change, the audit log, and row-level security.
+  capitals), every refusal of the draft before a query (a draft nested too deep among them), the
+  profile's fields, that nothing which runs in a browser imports the package, that the handle
+  pattern is written once, and that `compose.yaml` and CI name the same image by its digest.
+- With a database: migrations from empty and twice, the column types, profiles (a deleted
+  account, a long name), a draft saved and read back unchanged, an invalid draft refused with
+  the validators' messages and nothing written, the stored draft's handle, a page saved only by
+  its own account, a taken handle refused by the database in any case, the handle rule held by
+  the database with the scene package's answers, a reserved handle refused from the list and
+  from the table, a second page refused, a handle change (also with a stored draft a newer rule
+  would refuse), the audit log, a test database left behind, and row-level security.
+- After the review, each of its fixes was taken back out in turn (the handle change checking
+  the draft again, the deleted account's answer, the database's handle rule, the depth check,
+  the removal of test databases left behind, the cut of a long name, and the image named by its
+  tag or by another digest), and each made a test fail.
 - Each of 22 deliberate breaks was run once against the tests, and each made at least one fail:
   the validation call removed (from `checkDraft`, `saveDraft` and `createPage` in turn), the
   reserved list and the reserved table not read, each unique constraint removed from the
@@ -326,7 +358,7 @@ the issue that needs it.
 - Where a scene of the person's own is stored on the server (the plan's `scenes` and
   `scene_versions`), so that its pages can be checked against it.
 - Whether a handle that has just been left stays held while its redirect lasts (issue 17).
-- What a deleted account's page does. `getUser` returns nothing for an account marked deleted,
-  but the page queries do not look at the mark: its page is still found by its handle and can
-  still be saved. Nothing marks an account deleted yet; the work that does (account deletion,
+- What a deleted account's page does. `getUser` and `createUser` both treat an account marked
+  deleted as gone, but the page queries do not look at the mark: its page is still found by its
+  handle and can still be saved. Nothing marks an account deleted yet; the work that does (account deletion,
   issue 27) has to settle it, in the queries.

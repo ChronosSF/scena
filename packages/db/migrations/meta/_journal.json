@@ -15,6 +15,13 @@
       "when": 1794735460796,
       "tag": "0001_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794760541593,
+      "tag": "0002_handle_rule",
+      "breakpoints": true
     }
   ]
 }

@@ -58,9 +58,9 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 256 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, and the database package (17 of them need a database, below)
+pnpm test         # 261 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, and the database package (17 of them need a database, below)
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
-pnpm check        # typecheck + test + build
+pnpm check        # typecheck + db:check + test + build
 
 pnpm lint:scene packages/scenes/desk.scene.json packages/scenes/pia.page.json
 ```
@@ -68,7 +68,8 @@ pnpm lint:scene packages/scenes/desk.scene.json packages/scenes/pia.page.json
 ### The local database
 
 Needs Docker. `compose.yaml` runs Postgres 17 as one container, `scena-postgres`, on
-`127.0.0.1:5435`, reachable from this machine only:
+`127.0.0.1:5435`, reachable from this machine only. The image is named by its digest, the same
+one CI uses, so everyone runs the build that was tried:
 
 ```sh
 docker compose up -d --wait   # start it, and wait until it takes connections
@@ -78,15 +79,16 @@ docker compose down -v        # remove it and its data, for a clean start
 
 Everything reads the database's address from `DATABASE_URL`; `.env.example` has the local one.
 Set it in your shell (`export DATABASE_URL=…`, or `$env:DATABASE_URL = "…"` in PowerShell). With
-it set, `pnpm test` and `pnpm check` also run the 17 database tests, each run in a database of
+it set, `pnpm test` and `pnpm check` also run the 21 database tests, each run in a database of
 its own that it makes, migrates and removes, so the tests neither read nor leave anything in
-yours. Without it, Vitest reports those 17 as skipped. CI runs them against a Postgres 17
-service.
+yours. A run that is cut short leaves its database behind; the next run removes it once it is
+an hour old. Without `DATABASE_URL`, Vitest reports those 21 as skipped. CI runs them against a
+Postgres 17 service.
 
 ```sh
 pnpm db:migrate   # applies the migrations the database at DATABASE_URL has not had, then the reserved handles; safe to repeat
 pnpm db:generate  # after a change to packages/db/src/schema.ts: writes the migration for it into packages/db/migrations
-pnpm db:check     # fails when the schema and the migrations disagree (needs no database; pnpm test runs it too)
+pnpm db:check     # fails when the schema and the migrations disagree (needs no database; pnpm check runs it too)
 ```
 
 Other tools, all optional:

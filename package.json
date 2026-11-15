@@ -19,7 +19,7 @@
     "typecheck": "pnpm gen && pnpm -r --no-bail typecheck && tsc --noEmit -p tools",
     "test": "pnpm gen && vitest run",
     "test:watch": "vitest",
-    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm typecheck && pnpm db:check && pnpm test && pnpm build",
     "lint:scene": "node tools/lint-scene.ts",
     "encode:desk": "node packages/scenes/scripts/encode-desk.ts",
     "encode:samples": "node packages/scenes/scripts/encode-samples.ts",

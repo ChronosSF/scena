@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import { HANDLE_RULE, validatePage } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import { changeHandle, createPage, createUser, handleProblem, RESERVED_HANDLES, saveDraft, type Database } from "../src/index.ts";
-import { checkDraft, DRAFT_MAX_BYTES } from "../src/draft.ts";
+import { checkDraft, DRAFT_MAX_BYTES, DRAFT_MAX_DEPTH } from "../src/draft.ts";
 import { isReserved } from "../src/handles.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
@@ -132,6 +132,18 @@ describe("a draft is validated before the database is asked anything", () => {
     if (!r.ok) expect(r.problems).toEqual([expect.stringMatching(/^page: \d+ KB, the limit for a saved page is 64 KB$/)]);
   });
 
+  test("a draft nested deeper than any page is refused, however deep, and never runs out of stack", () => {
+    // a field the validators do not know, with text at the bottom of `levels` arrays
+    const nested = (levels: number) => { let v: unknown = "x"; for (let i = 0; i < levels; i++) v = [v]; return v; };
+    const tooDeep = { ok: false, problems: [`page: nested more than ${DRAFT_MAX_DEPTH} levels deep, which no page document is`] };
+    expect(checkDraft({ ...clone(PIA_PAGE), notes: nested(DRAFT_MAX_DEPTH) })).toEqual(tooDeep);
+    // twenty thousand levels are about 40 KB, under the size limit: without this check the copy
+    // and the walks after it would call themselves that deep
+    expect(checkDraft({ ...clone(PIA_PAGE), notes: nested(20_000) })).toEqual(tooDeep);
+    // within the limit, it is the validators' and the size limit's to judge
+    expect(checkDraft({ ...clone(PIA_PAGE), notes: nested(DRAFT_MAX_DEPTH - 1) }).ok).toBe(true);
+  });
+
   test("a valid draft passes, whatever handle it was sent with, and is not changed in place", () => {
     const sent = { ...clone(PIA_PAGE), handle: "Not A Handle!" };
     const r = checkDraft(sent);
@@ -167,6 +179,16 @@ describe("where the rules live", () => {
     const browser = ["packages/scene/src", "packages/renderer/src", "packages/renderer/runtime", "packages/scenes/src", "packages/studio/src", "apps/studio/src"].flatMap(sources);
     expect(browser.length).toBeGreaterThan(20);
     expect(browser.filter((f) => readFileSync(join(ROOT, f), "utf8").includes("@scena/db"))).toEqual([]);
+  });
+
+  test("the local database and CI run the same Postgres build, named by its digest", () => {
+    // the value of the one "image:" line in each file, read line by line
+    const image = (file: string): string | undefined =>
+      readFileSync(join(ROOT, file), "utf8").split("\n").map((l) => l.trim()).filter((l) => l.startsWith("image:")).map((l) => l.slice("image:".length).trim())[0];
+    const local = image("compose.yaml"), ci = image(".github/workflows/ci.yml");
+    // a tag alone would be whatever was pushed last; the digest is one build
+    expect(local).toMatch(/^postgres:17-alpine@sha256:[0-9a-f]{64}$/);
+    expect(ci).toBe(local);
   });
 
   test("the handle pattern is written in one place", () => {

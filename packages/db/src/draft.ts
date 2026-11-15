@@ -23,7 +23,27 @@ export const DRAFT_MAX_BYTES = 64 * 1024;
 // with is never kept, and is not checked.
 const ANY_HANDLE = "page";
 
+/** The deepest a draft may nest. A page document goes four levels down; this leaves room to spare. */
+export const DRAFT_MAX_DEPTH = 32;
+
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+
+// Whether a value nests deeper than `limit`. It goes down level by level with a list of its own,
+// not by calling itself, so its answer never depends on how much stack there is. The validators
+// accept fields they do not know, and such a field can be nested as deep as its sender likes.
+function nestsDeeperThan(v: unknown, limit: number): boolean {
+  let level: unknown[] = [v];
+  for (let depth = 0; level.length; depth++) {
+    if (depth > limit) return true;
+    const next: unknown[] = [];
+    for (const item of level) {
+      if (item === null || typeof item !== "object") continue;
+      for (const child of Object.values(item)) next.push(child);
+    }
+    level = next;
+  }
+  return false;
+}
 
 /**
  * Migrates a document to the current schema and runs the scene package's validators on it.
@@ -33,6 +53,9 @@ const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typ
  */
 export function checkDraft(doc: unknown): DraftCheck {
   if (!isObject(doc)) return { ok: false, problems: validatePage(doc) };
+  // First, because everything after it (the copy, the validators, the checks below) walks the
+  // document by calling itself, and would run out of stack on one nested deep enough.
+  if (nestsDeeperThan(doc, DRAFT_MAX_DEPTH)) return { ok: false, problems: [`page: nested more than ${DRAFT_MAX_DEPTH} levels deep, which no page document is`] };
   let page: PageDocument;
   try {
     page = migrate(doc, "page");

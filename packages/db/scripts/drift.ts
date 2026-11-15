@@ -3,7 +3,8 @@
 // and what it wrote is the migration that is missing. Then drizzle-kit's own check reads the
 // real folder for snapshots that do not follow one another. Nothing in migrations/ is changed.
 //
-// Used by `pnpm db:check` (scripts/check-migrations.ts) and by test/migrations.test.ts.
+// Used by `pnpm db:check` (scripts/check-migrations.ts), which `pnpm check` runs once. It is not
+// a Vitest test: it starts drizzle-kit twice, which a plain `pnpm test` should not pay for.
 
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -39,8 +40,10 @@ export function migrationDrift(): Drift {
       const sql = written.map((f) => `-- ${f}\n${readFileSync(join(copy, f), "utf8")}`).join("\n");
       return { ok: false, problem: `src/schema.ts and migrations/ disagree. Run pnpm db:generate and check in the migration it writes. It would write:\n${sql}` };
     }
+    // Its exit status is the answer (1 for snapshots that collide or cannot be read); what it
+    // prints is for a person, and its wording is drizzle-kit's to change.
     const check = drizzleKit(["check"]);
-    if (check.status !== 0 || !/Everything's fine/.test(check.output)) return { ok: false, problem: `drizzle-kit check found a problem in migrations/:\n${check.output}` };
+    if (check.status !== 0) return { ok: false, problem: `drizzle-kit check found a problem in migrations/:\n${check.output}` };
     return { ok: true };
   } finally {
     rmSync(scratch, { recursive: true, force: true });

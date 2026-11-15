@@ -1,0 +1,1 @@
+ALTER TABLE "pages" ADD CONSTRAINT "pages_handle_rule" CHECK ("pages"."handle"::text ~ '^[a-z0-9][a-z0-9_-]{1,29}$');

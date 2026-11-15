@@ -12,7 +12,10 @@ name: scena
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # Named by its digest, so that everyone runs the build that was tried and not whatever the
+    # tag points at that day: Postgres 17.11, built on 21 October 2026, for every platform the
+    # tag has. The CI workflow names the same image, and a test fails when the two differ.
+    image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
     container_name: scena-postgres
     environment:
       POSTGRES_USER: scena

@@ -11,9 +11,10 @@ import postgres from "postgres";
  * - `reserved`: the handle is kept for the site itself
  * - `taken`: another account has the handle or the email address
  * - `exists`: the account already has the thing being created
+ * - `deleted`: the account is marked deleted, so it has no profile to read and none to make
  * - `not-found`: no such account or page, or it is not this account's
  */
-export type RefusalReason = "invalid" | "reserved" | "taken" | "exists" | "not-found";
+export type RefusalReason = "invalid" | "reserved" | "taken" | "exists" | "deleted" | "not-found";
 
 /** A refused write. Nothing was written. Each problem is a sentence a person can act on. */
 export interface Refusal {

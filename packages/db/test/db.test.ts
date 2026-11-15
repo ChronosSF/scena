@@ -3,14 +3,15 @@
 // here is reported as skipped. Locally: `docker compose up -d --wait`, then DATABASE_URL from
 // .env.example. CI gives the job a Postgres service and sets it.
 import { randomUUID } from "node:crypto";
+import { readdirSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { eq, sql } from "drizzle-orm";
-import { validatePage, type PageDocument } from "@scena/scene";
+import { LIMITS, isHandle, validatePage, type PageDocument } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import { changeHandle, createPage, createUser, getPageByHandle, getPageByUser, getUser, saveDraft, writeAudit, RESERVED_HANDLES, type Database, type Page } from "../src/index.ts";
 import { checkDraft, type CheckedDraft } from "../src/draft.ts";
 import { isReserved } from "../src/handles.ts";
-import { migrate } from "../src/migrate.ts";
+import { migrate, MIGRATIONS_FOLDER } from "../src/migrate.ts";
 import { brokenUnique, serverError } from "../src/result.ts";
 import { auditLog, handlesReserved, pages, users } from "../src/schema.ts";
 import { createTestDatabase, DATABASE_URL, type TestDatabase } from "./database.ts";
@@ -83,7 +84,8 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
         reserved: await rows(sql`select handle from handles_reserved order by 1`),
       });
       const once = await describeSchema();
-      expect(once.applied).toHaveLength(2);
+      // one row for each checked-in migration
+      expect(once.applied).toHaveLength(readdirSync(MIGRATIONS_FOLDER).filter((f) => f.endsWith(".sql")).length);
       await migrate(db);
       expect(await describeSchema()).toEqual(once);
     });
@@ -119,6 +121,22 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, id));
       expect(await getUser(db, id)).toBeNull();
       expect((await createUser(db, { id: randomUUID(), email: "Bo@example.com" })).ok).toBe(true);
+      // The deleted account has no profile to read, and is told why it cannot make one: the
+      // two answers agree, so a sign-in that reads and then makes a profile knows where it is.
+      expect(await createUser(db, { id, email: "bo3@example.com" })).toEqual({ ok: false, reason: "deleted", problems: ["This account was deleted. It cannot be used again until the deletion is undone or finished."] });
+    });
+
+    test("a name from the auth provider is cut to what a page's profile takes, between characters", async () => {
+      const limit = LIMITS.displayName;
+      // longer than the limit, with a character of two code units across the cut
+      const long = `${"N".repeat(limit - 1)}🖍 and the rest of a very long name`;
+      const made = await createUser(db, { id: randomUUID(), email: "long-name@example.com", displayName: long });
+      expect(made.ok && made.user.displayName).toBe("N".repeat(limit - 1));
+      // the name a page starts with passes the page's own validator
+      const name = made.ok ? made.user.displayName! : "";
+      expect(validatePage({ ...clone(PIA_PAGE), profile: { displayName: name, bio: "" } }, DESK_SCENE)).toEqual([]);
+      const exact = await createUser(db, { id: randomUUID(), email: "exact-name@example.com", displayName: "E".repeat(limit) });
+      expect(exact.ok && exact.user.displayName).toBe("E".repeat(limit));
     });
   });
 
@@ -197,14 +215,15 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
   });
 
   describe("handles", () => {
-    test("a handle taken in another case is refused, by the database itself", async () => {
+    test("a taken handle is refused in any case, by the database itself", async () => {
       const { page } = await pageFor("casey");
       const other = await person();
       expect(await createPage(db, { userId: other.id, handle: "casey", draft: draftAt("casey") })).toEqual({ ok: false, reason: "taken", problems: ['handle: "casey" is taken; choose another address'] });
-      // around the package, which would refuse the capitals: the unique citext column refuses it
-      const write = db.insert(pages).values({ userId: other.id, handle: "CaSeY", draft: checked() });
-      const error = await write.then(() => undefined, (e: unknown) => e);
-      expect(brokenUnique(error)).toBe("pages_handle_unique");
+      // Around the package: the same handle again is refused by the unique column, and its
+      // capitals by the handle rule the database holds, so no second spelling of it can exist.
+      const again = await db.insert(pages).values({ userId: other.id, handle: "casey", draft: checked() }).then(() => undefined, (e: unknown) => e);
+      expect(brokenUnique(again)).toBe("pages_handle_unique");
+      expect(await refusal(db.insert(pages).values({ userId: other.id, handle: "CaSeY", draft: checked() }))).toContain("pages_handle_rule");
       // and a read finds the page whatever the case
       expect((await getPageByHandle(db, "CASEY"))!.id).toBe(page.id);
     });
@@ -270,6 +289,34 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       const now = (await getPageByUser(db, user.id))!;
       expect([now.handle, now.previousHandle, now.handleChangedAt]).toEqual([p.handle, p.previousHandle, p.handleChangedAt]);
     });
+
+    test("a handle change is not held up by a stored draft that a newer rule would refuse", async () => {
+      const { user, page } = await pageFor("old-rules");
+      // as if it had been saved before a rule tightened: a name longer than a profile now takes
+      const stored = { ...checked(), handle: "old-rules", profile: { displayName: "x".repeat(LIMITS.displayName + 20), bio: "" } } as CheckedDraft;
+      await db.update(pages).set({ draft: stored }).where(eq(pages.id, page.id));
+      expect(checkDraft(stored).ok).toBe(false);
+
+      const moved = await changeHandle(db, { pageId: page.id, userId: user.id, handle: "new-address" });
+      expect(moved.ok && [moved.page.handle, moved.page.previousHandle, moved.page.draft.handle]).toEqual(["new-address", "old-rules", "new-address"]);
+      // the rest of the draft is as it was; saving it is still the validators' to refuse
+      expect(moved.ok && moved.page.draft.profile).toEqual(stored.profile);
+      expect((await saveDraft(db, { pageId: page.id, userId: user.id, draft: stored })).ok).toBe(false);
+    });
+
+    test("the database holds the handle rule itself, with the same answers as the scene package", async () => {
+      // written straight into the table, around the package's own checks
+      const handles = ["ok_handle-1", "ab", "x".repeat(30), "Pia", "a", "x".repeat(31), "has space", "-lead", "_lead", "dot.ted", "pia\n", "piá", ""];
+      for (const handle of handles) {
+        const user = await person();
+        const why = await refusal(db.insert(pages).values({ userId: user.id, handle, draft: checked() }));
+        expect(why === "", `${JSON.stringify(handle)}: ${why || "accepted"}`).toBe(isHandle(handle));
+        if (why) expect(why).toContain("pages_handle_rule");
+      }
+      // and a change made around the package is refused the same way
+      const { page } = await pageFor("kept-lowercase");
+      expect(await refusal(db.update(pages).set({ handle: "Kept-Lowercase" }).where(eq(pages.id, page.id)))).toContain("pages_handle_rule");
+    });
   });
 
   describe("audit log", () => {
@@ -287,6 +334,30 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       // the page went with the account
       expect(await getPageByHandle(db, "audited")).toBeNull();
     });
+  });
+
+  describe("test databases", () => {
+    test("one left behind by a run that was cut short is removed by the next run; a recent one is left alone", async () => {
+      const client = db.$client;
+      const hour = 60 * 60 * 1000;
+      const old = `scena_test_${Date.now() - 2 * hour}_leftbehind`, recent = `scena_test_${Date.now()}_alongside`;
+      const names = async () => [...await client<{ name: string }[]>`select datname as name from pg_database where starts_with(datname, 'scena_test_') union all select rolname from pg_roles where starts_with(rolname, 'scena_test_')`].map((r) => r.name);
+      for (const name of [old, recent]) {
+        await client`create database ${client(name)}`;
+        await client`create role ${client(`${name}_outsider`)} nologin`;
+      }
+      const next = await createTestDatabase(); // what the next run does first
+      try {
+        const left = await names();
+        expect(left).not.toContain(old);
+        expect(left).not.toContain(`${old}_outsider`);
+        expect(left).toEqual(expect.arrayContaining([recent, `${recent}_outsider`]));
+      } finally {
+        await next.drop();
+        await client`drop database if exists ${client(recent)} with (force)`;
+        await client`drop role if exists ${client(`${recent}_outsider`)}`;
+      }
+    }, 60_000);
   });
 
   describe("row-level security", () => {

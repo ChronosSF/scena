@@ -1,7 +1,7 @@
 # The gate for every push to master and every pull request. Two jobs run in parallel:
-#   check   the database migrations, applied to an empty Postgres and compared with the schema;
-#           then pnpm check: typecheck, the vitest suite (the database tests included), and
-#           the build of both apps
+#   check   the database migrations, applied to an empty Postgres; then pnpm check: typecheck,
+#           the migrations compared with the schema, the vitest suite (the database tests
+#           included), and the build of both apps
 #   chrome  both builds in the runner's Google Chrome, driven through the DevTools protocol
 #           (tools/cdp.ts). The single-file studio is opened from file://: parity with the
 #           prototype, the page runtime's boil control, and the studio end to end. The web
@@ -29,12 +29,16 @@ jobs:
     name: Typecheck, test and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Postgres 17, the major a new Supabase project runs, as in compose.yaml. It lives only as
-    # long as the job and is reached from the runner alone, so it takes no password ("trust"):
-    # there is none to write here.
+    # Postgres 17, the major a new Supabase project runs. It lives only as long as the job and
+    # is reached from the runner alone, so it takes no password ("trust"): there is none to
+    # write here.
     services:
       postgres:
-        image: postgres:17-alpine
+        # The image is named by its digest, so that a run uses the build that was tried, not
+        # whatever the tag points at that day: Postgres 17.11, built on 21 October 2026. It is
+        # the same line as in compose.yaml, and a test fails when the two differ. To move to a
+        # newer build, take one that has been public for a week and change both.
+        image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
@@ -57,8 +61,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Apply the migrations to the empty database
         run: pnpm db:migrate
-      - name: Check that the migrations match the schema
-        run: pnpm db:check
       - run: pnpm check
 
   chrome:

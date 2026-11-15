@@ -5,6 +5,7 @@
 import { SCHEMA_VERSION, ROLES, KINDS, PART_ROLES, WHENS, STATUSES, LAYER_TYPES, ASSET_KINDS, EFFECTS, LIMITS, FRAMES, FRAME_PLAYS, BACKGROUND_FITS, LETTERING, TYPEFACES, typeface } from "./constants.ts";
 import { isColor } from "./color.ts";
 import { fragmentProblem, isSafeId, isSafeRasterUrl } from "./safety.ts";
+import { HANDLE_RULE, isHandle } from "./handle.ts";
 import type { DocumentKind, PageDocument, SceneDocument } from "./types.ts";
 
 // Loosely typed view of unvalidated JSON; the checks below are what make it safe to use.
@@ -344,7 +345,7 @@ export function validatePage(doc: unknown, scene?: unknown): string[] {
   if (!v.obj(doc, "page")) return errors;
   v.need(doc.schemaVersion === SCHEMA_VERSION, "schemaVersion", `expected ${SCHEMA_VERSION}, got ${JSON.stringify(doc.schemaVersion)}`);
   if (v.obj(doc.scene, "scene")) { v.id(doc.scene.id, "scene.id"); v.str(doc.scene.version, "scene.version"); }
-  if (v.str(doc.handle, "handle")) v.need(/^[a-z0-9][a-z0-9_-]{1,29}$/.test(doc.handle), "handle", "2-30 characters: lowercase letters, digits, - and _");
+  if (v.str(doc.handle, "handle")) v.need(isHandle(doc.handle), "handle", HANDLE_RULE);
   if (v.obj(doc.profile, "profile")) {
     v.str(doc.profile.displayName, "profile.displayName", { max: LIMITS.displayName });
     v.str(doc.profile.bio, "profile.bio", { empty: true, max: LIMITS.bio });

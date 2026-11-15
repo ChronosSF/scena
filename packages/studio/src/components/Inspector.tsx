@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowUp, Maximize2, RotateCw, Shapes, Trash2 } from "lucide-react";
-import { LIMITS, safeHref, type CommissionStatus, type Layer, type LinkContent, type Motion, type ObjectLayer, type SlotKind } from "@scena/scene";
+import { HANDLE_RULE, LIMITS, isHandle, safeHref, type CommissionStatus, type Layer, type LinkContent, type Motion, type ObjectLayer, type SlotKind } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
 import { useNarrow, useReducedMotion } from "../hooks.ts";
 import { CANVASES, KIND_LABELS, SURFACES, canTurnOff, currentSurface, defaultLink, getLayer, isBuiltIn, offeredPalettes, slotOf, type Surface } from "../model.ts";
@@ -13,7 +13,6 @@ import { FramesSection } from "./FramesSection.tsx";
 import { BackgroundInspector, LetteringSection, TypefaceSection, UseAsSection } from "./BoardSections.tsx";
 import { isBackground } from "../board.ts";
 
-const HANDLE = /^[a-z0-9][a-z0-9_-]{1,29}$/;
 const MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 
 export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
@@ -427,8 +426,8 @@ function HandleField({ handle }: { handle: string }) {
   useEffect(() => { setDraft(handle); }, [handle]);
   return (
     <TextField label="Page address" value={draft} max={30} hint="Also the export file name."
-      check={(v) => (HANDLE.test(v) ? null : { level: "error", text: "2 to 30 characters: lowercase letters, digits, - and _." })}
-      onChange={(v) => { setDraft(v); if (HANDLE.test(v)) store.change(({ page }) => { page.handle = v; }); }} />
+      check={(v) => (isHandle(v) ? null : { level: "error", text: `${HANDLE_RULE}.` })}
+      onChange={(v) => { setDraft(v); if (isHandle(v)) store.change(({ page }) => { page.handle = v; }); }} />
   );
 }
 

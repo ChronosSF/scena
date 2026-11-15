@@ -1,0 +1,79 @@
+// A page's draft is a PageDocument, stored as it is (jsonb). The scene package's validators are
+// the definition of a valid one: nothing here restates the format. Every write of a draft goes
+// through checkDraft, and the draft column's type takes only what checkDraft returns.
+
+import { isHandle, migrate, validatePage, type PageDocument } from "@scena/scene";
+import { BUILT_IN_SCENES } from "@scena/scenes";
+
+declare const checked: unique symbol;
+
+/**
+ * A page document that the validators passed. Only this module makes one, so a query that
+ * writes a draft without checking it first does not compile.
+ */
+export type CheckedDraft = PageDocument & { readonly [checked]: true };
+
+export type DraftCheck = { ok: true; draft: CheckedDraft } | { ok: false; problems: string[] };
+
+/** The largest draft kept, as JSON. A finished page is a few kilobytes. */
+export const DRAFT_MAX_BYTES = 64 * 1024;
+
+// The handle a draft is checked with. A draft's handle is not the caller's to choose: the
+// page's own handle is written into it before it is stored (withHandle), so the one it arrives
+// with is never kept, and is not checked.
+const ANY_HANDLE = "page";
+
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * Migrates a document to the current schema and runs the scene package's validators on it.
+ * A page on one of the ready-made scenes is checked against that scene as well: its palette,
+ * and which links it may turn off. The problems are the validators' own messages, each with
+ * its path ("links[\"shop\"].url: use https:// or mailto:"), ready to show to a person.
+ */
+export function checkDraft(doc: unknown): DraftCheck {
+  if (!isObject(doc)) return { ok: false, problems: validatePage(doc) };
+  let page: PageDocument;
+  try {
+    page = migrate(doc, "page");
+  } catch (e) {
+    return { ok: false, problems: [`schemaVersion: ${(e as Error).message}`] };
+  }
+  page.handle = ANY_HANDLE; // migrate returned a copy
+  const sceneId = isObject(page.scene) ? page.scene.id : undefined;
+  const scene = BUILT_IN_SCENES.find((b) => b.scene.id === sceneId)?.scene;
+  const problems = validatePage(page, scene);
+  storageProblems(page, "", problems);
+  const bytes = new TextEncoder().encode(JSON.stringify(page)).length;
+  if (bytes > DRAFT_MAX_BYTES) problems.push(`page: ${Math.ceil(bytes / 1024)} KB, the limit for a saved page is ${DRAFT_MAX_BYTES / 1024} KB`);
+  return problems.length ? { ok: false, problems } : { ok: true, draft: page as CheckedDraft };
+}
+
+/** The draft with the page's handle in it, which is the only handle a stored draft carries. */
+export function withHandle(draft: CheckedDraft, handle: string): CheckedDraft {
+  if (!isHandle(handle)) throw new Error(`The page's handle "${handle}" does not follow the handle rule, so no draft can carry it.`);
+  return { ...draft, handle };
+}
+
+// Postgres's jsonb cannot hold the character U+0000, nor half of a surrogate pair (half of an
+// emoji, as text cut in the wrong place leaves it). The validators accept both, and the write
+// would then fail inside the database, so they are refused here with their path. The pattern
+// has no repetition, so it runs in linear time.
+const UNSTORABLE = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const PLAIN_KEY = /^[A-Za-z_$][\w$]*$/;
+const CANNOT_SAVE = "contains a character that cannot be saved (a null character, or half of an emoji); remove it";
+
+function storageProblems(v: unknown, path: string, out: string[]): void {
+  if (typeof v === "string") {
+    if (UNSTORABLE.test(v)) out.push(`${path || "page"}: ${CANNOT_SAVE}`);
+  } else if (Array.isArray(v)) {
+    v.forEach((item, i) => storageProblems(item, `${path}[${i}]`, out));
+  } else if (isObject(v)) {
+    for (const [key, item] of Object.entries(v)) {
+      if (UNSTORABLE.test(key)) { out.push(`${path || "page"}: a name in it ${CANNOT_SAVE}`); continue; }
+      // written as the validators write paths: a link by its slot id in brackets, a field after a dot
+      const at = path === "links" || !PLAIN_KEY.test(key) ? `${path}[${JSON.stringify(key)}]` : path ? `${path}.${key}` : key;
+      storageProblems(item, at, out);
+    }
+  }
+}

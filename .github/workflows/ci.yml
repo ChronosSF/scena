@@ -1,5 +1,7 @@
 # The gate for every push to master and every pull request. Two jobs run in parallel:
-#   check   pnpm check: typecheck, the vitest suite, and the build of both apps
+#   check   the database migrations, applied to an empty Postgres and compared with the schema;
+#           then pnpm check: typecheck, the vitest suite (the database tests included), and
+#           the build of both apps
 #   chrome  both builds in the runner's Google Chrome, driven through the DevTools protocol
 #           (tools/cdp.ts). The single-file studio is opened from file://: parity with the
 #           prototype, the page runtime's boil control, and the studio end to end. The web
@@ -27,6 +29,24 @@ jobs:
     name: Typecheck, test and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Postgres 17, the major a new Supabase project runs, as in compose.yaml. It lives only as
+    # long as the job and is reached from the runner alone, so it takes no password ("trust"):
+    # there is none to write here.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      # The database tests run when this is set; each makes a database of its own on this server.
+      DATABASE_URL: postgres://postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6 # the version comes from "packageManager" in package.json
@@ -35,6 +55,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Apply the migrations to the empty database
+        run: pnpm db:migrate
+      - name: Check that the migrations match the schema
+        run: pnpm db:check
       - run: pnpm check
 
   chrome:

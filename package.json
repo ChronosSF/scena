@@ -29,6 +29,9 @@
     "verify:studio": "node tools/verify-studio.ts",
     "verify:runtime": "node tools/verify-runtime.ts",
     "verify:web": "node tools/verify-web.ts",
+    "db:generate": "pnpm --filter @scena/db generate",
+    "db:migrate": "pnpm --filter @scena/db migrate",
+    "db:check": "pnpm --filter @scena/db check:migrations",
     "shots": "node tools/design-shots.ts"
   },
   "devDependencies": {

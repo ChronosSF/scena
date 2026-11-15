@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { BACKGROUND_SAMPLES, DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { validateScene, type PageDocument, type Part, type SceneDocument } from "@scena/scene";
+import { PAGE_IDS, validateScene, type PageDocument, type Part, type SceneDocument } from "@scena/scene";
 import { renderPage, renderParts, RUNTIME_JS, RUNTIME_SHA256 } from "../src/index.ts";
 import { buildRuntime } from "../scripts/build-runtime.ts";
 
@@ -22,10 +22,22 @@ const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJA
 const { html } = renderPage(desk, pia, { demo: true });
 const count = (re: RegExp) => (html.match(re) || []).length;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+/**
+ * A page as it is stored in __snapshots__: all of it but the runtime's text and that text's
+ * hash in the policy, each of which is there exactly once. The runtime is checked on its own
+ * below (it is in the page, in step with its source, and its hash is the one the policy names),
+ * so a change to it does not rewrite every stored page, and no stored page is a copy of it.
+ */
+const stored = (page: string): string => {
+  const script = `<script>${RUNTIME_JS}</script>`, hash = `'sha256-${RUNTIME_SHA256}'`;
+  expect(page.split(script), "the runtime is in the page once").toHaveLength(2);
+  expect(page.split(hash), "its hash is in the policy once").toHaveLength(2);
+  return page.split(script).join("<script>/* the page runtime, packages/renderer/runtime/runtime.ts */</script>").split(hash).join("'sha256-RUNTIME'");
+};
 
 describe("desk + Pia", () => {
-  test("snapshot: renders exactly as stored", async () => {
-    await expect(html).toMatchFileSnapshot("./__snapshots__/desk-pia.html");
+  test("snapshot: renders exactly as stored, apart from the runtime", async () => {
+    await expect(stored(html)).toMatchFileSnapshot("./__snapshots__/desk-pia.html");
   });
 
   test("parity: matches the prototype's demo-desk.html apart from the runtime", () => {
@@ -176,6 +188,21 @@ describe("self-contained and secure", () => {
     s2.theme.palettes[0]!.light.line = "red;}</style><script>alert(1)</script>";
     expect(renderPage(s2, pia).html).not.toContain("<script>alert");
   });
+
+  test("the page's ids are its own: the list of them is what the renderer writes, and a drawing that uses one is left out", () => {
+    // every id in the page outside the drawing is one a drawing may not use (PAGE_IDS), and no other is
+    const figure = '<figure class="desk">', from = html.indexOf(figure), to = html.indexOf("</figure>", from);
+    expect(from).toBeGreaterThan(0);
+    const outside = html.slice(0, from) + html.slice(to);
+    const ids = [...outside.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]!);
+    expect([...ids].sort()).toEqual([...PAGE_IDS].sort());
+    // a drawing that uses one is left out, with the reason: the page's own element is the only one with that id
+    const s = clone(desk) as SceneDocument;
+    (s.assets["cat-lines"] as { src: string }).src += '<text id="sd">{"links":{}}</text>';
+    const out = renderPage(s, pia);
+    expect(out.warnings).toEqual(['asset "cat-lines" skipped: uses the id "sd", which the page keeps for its own parts']);
+    expect(out.html.split(' id="sd"')).toHaveLength(2);
+  });
 });
 
 describe("rendering features", () => {
@@ -300,7 +327,7 @@ describe("frame-flip animation", () => {
 
   test("snapshot: a frame-animated drawing in each play mode", async () => {
     expect(validateScene(scene)).toEqual([]);
-    await expect(out).toMatchFileSnapshot("./__snapshots__/frames.html");
+    await expect(stored(out)).toMatchFileSnapshot("./__snapshots__/frames.html");
   });
 
   test("frames stack inside the drawing; one shows at a time, by CSS", () => {
@@ -410,8 +437,8 @@ describe("board, typeface and lettering (ADR 0003)", () => {
   test("snapshots: an uploaded background in both placements, lettering in vector and raster", async () => {
     expect(validateScene(replaced())).toEqual([]);
     expect(validateScene(over())).toEqual([]);
-    await expect(A).toMatchFileSnapshot("./__snapshots__/board-replace.html");
-    await expect(B).toMatchFileSnapshot("./__snapshots__/board-over.html");
+    await expect(stored(A)).toMatchFileSnapshot("./__snapshots__/board-replace.html");
+    await expect(stored(B)).toMatchFileSnapshot("./__snapshots__/board-over.html");
   });
 
   test("a fitted background fills the mat's shape, clipped to it, and never boils", () => {

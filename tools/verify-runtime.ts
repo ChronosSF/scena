@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { renderPage } from "@scena/renderer";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import { launch, sleep, type Page } from "./cdp.ts";
-import { checks, drawingInFrame } from "./checks.ts";
+import { checks, drawingInFrame, settled } from "./checks.ts";
 
 const distPath = (f: string) => join(dirname(fileURLToPath(import.meta.url)), "..", "apps/studio/dist", f);
 const dist = (f: string) => pathToFileURL(distPath(f)).href;
@@ -188,6 +188,28 @@ const embedLogs = p.logs.filter((l) => /^(error|exception)/i.test(l) && !/fonts\
 check("a published page in a frame posts nothing to its parent when a drawing is tapped; the studio preview's page posts its slot id alone",
   opened.every((k) => k === "commissions") && heard.published?.length === 0 && JSON.stringify(heard.preview) === JSON.stringify([{ type: "scena:tap", slot: "commissions" }]) && !embedLogs.length,
   { opened, heard, logs: embedLogs });
+await p.close();
+
+// The runtime reads its data from the element just before its own script, and not by that
+// element's id. A drawing is markup in the same page, earlier in it, so an id in a drawing would
+// be the one a lookup by id finds. The renderer leaves such a drawing out; this page is made by
+// hand, the demo page with one more element in its drawing, to check the runtime on its own.
+const figureAt = published.indexOf('<figure class="desk">'), drawingAt = published.indexOf(">", published.indexOf("<svg", figureAt)) + 1;
+const otherData = JSON.stringify({ links: Object.fromEntries(DESK_SCENE.slots.map((s) => [s.id, { t: "Not the page's", d: "", c: "", u: "https://elsewhere.example/" }])), boil: null, motion: "auto", demo: true });
+const shadowed = published.slice(0, drawingAt) + `<text id="sd" opacity="0">${otherData}</text>` + published.slice(drawingAt);
+const { page: shadowFrames, index: shadowIndex } = await framing({ published, shadowed }, 812);
+p = shadowFrames;
+const PANEL_SAYS = `({ byId: document.getElementById("sd").tagName, title: document.getElementById("tt").textContent, goesTo: document.getElementById("tbtn").getAttribute("href"), open: !document.getElementById("tb").hidden })`;
+const says: Record<string, any> = {};
+for (const name of ["published", "shadowed"]) {
+  const box = await p.call<[number, number]>(`(id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.x, r.y]; }`, name);
+  const at = (await drawingInFrame(p, "commissions", { index: shadowIndex[name], scroll: false }))!;
+  await p.click(box[0] + at[0], box[1] + at[1]);
+  says[name] = await settled(() => p.frameEval<any>(PANEL_SAYS, shadowIndex[name]), (s) => s.open);
+}
+check("the runtime reads the page's own data, by its place: an element in the drawing with the data block's id changes nothing",
+  figureAt > 0 && says.published.byId === "SCRIPT" && says.shadowed.byId === "text" && says.published.open && says.shadowed.open
+  && says.published.title !== "" && says.shadowed.title === says.published.title && says.shadowed.goesTo === says.published.goesTo && says.published.goesTo !== "#", says);
 await p.close();
 
 // After an edit the studio renders its preview with the tapped drawing selected, and that page,

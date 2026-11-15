@@ -1,7 +1,7 @@
 // Scene model: validation, migration and the budget lint, against the built-in desk.
 import { describe, expect, test } from "vitest";
 import { BACKGROUND_SAMPLES, DESK_SCENE, PIA_PAGE, framesDemo } from "@scena/scenes";
-import { contrast, documentKind, fragmentProblem, isSafeId, lintPage, lintScene, migrate, parseColor, safeHref, safeId, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
+import { PAGE_IDS, contrast, documentKind, fragmentProblem, isSafeId, lintPage, lintScene, migrate, parseColor, safeHref, safeId, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const desk = DESK_SCENE, pia = PIA_PAGE;
@@ -246,6 +246,26 @@ describe("helpers", () => {
     ]) {
       expect(fragmentProblem(ok), ok).toBe("");
     }
+  });
+
+  test("a drawing may not use an id the page keeps for its own parts", () => {
+    // A document finds an element by its id from the top, and a drawing is written into the page
+    // before the page's own panel and data block: its element would be the one found.
+    for (const id of PAGE_IDS) {
+      for (const bad of [`<text id="${id}">x</text>`, `<g id='${id}'/>`, `<g id=${id}></g>`, `<g><path id="${id}" d="M0 0"/></g>`, `<g ID="${id}"/>`, `<g id="a" id="${id}"/>`]) {
+        expect(fragmentProblem(bad), bad).toBe(`uses the id "${id}", which the page keeps for its own parts`);
+      }
+    }
+    // The name inside a longer id is another id (the upload sanitiser's prefix makes one), as is
+    // the name in another case, and a class is not an id.
+    for (const ok of ['<text id="up1-sd">x</text>', '<g id="sd2"/>', '<g id="tbtn-1"/>', '<g id="Sd"/>', '<g id="my-toast"/>', '<g class="sd tt"/>', "<text>id=sd</text>"]) {
+      expect(fragmentProblem(ok), ok).toBe("");
+    }
+    // the validator says which drawing, and why
+    const scene = clone(desk);
+    const drawing = Object.values(scene.assets).find((a) => a.kind === "svg-inline")!;
+    (drawing as { src: string }).src += '<text id="sd">x</text>';
+    expect(validateScene(scene)).toEqual([`assets["${drawing.id}"].src: failed the safety check: uses the id "sd", which the page keeps for its own parts`]);
   });
 
   test("every built-in drawing passes the fragment check", () => {

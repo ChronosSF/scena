@@ -26,6 +26,16 @@ export const FRAGMENT_ATTRIBUTES = ["transform", "d", "x", "y", "x1", "y1", "x2"
   "stop-color", "stop-opacity", "font-size", "font-family", "font-weight", "font-style", "text-anchor",
   "dominant-baseline", "letter-spacing", "display", "visibility", "paint-order", "vector-effect", "preserveAspectRatio"] as const;
 
+/**
+ * The ids a published page gives its own parts: the panel and what is in it, the plain list's
+ * heading, the toast, and the data block the runtime reads. A drawing is written into the same
+ * page, before most of them, and a document finds an element by its id from the top. So a
+ * drawing may not use one: its element would be the one found. The renderer's tests hold this
+ * list to the ids the renderer writes.
+ */
+export const PAGE_IDS = ["hint", "tb", "tt", "ts", "tx", "tbtn", "links-h", "toast", "sd"] as const;
+const PAGE_ID_SET = new Set<string>(PAGE_IDS);
+
 // An HTML parser lowercases the ASCII letters of a tag or attribute name before it matches it.
 const lower = (s: string): string => s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
 const ELEMENT_NAMES = new Set<string>(FRAGMENT_ELEMENTS.map(lower));
@@ -67,7 +77,9 @@ const isSpace = (c: string | undefined): boolean => c === " " || c === "\n" || c
  * words in a <text>, and a parser sees attributes where a pattern sees none.
  *
  * Elements and attributes are allow-listed: a block list misses whatever nobody thought to add.
- * Text between tags is inert in every element allowed here, so it is not inspected.
+ * Text between tags is inert in every element allowed here, so it is not inspected. An id is
+ * not inert: one of the page's own (PAGE_IDS) would put the fragment's element in the place of
+ * the page's, so those are refused.
  */
 export function fragmentProblem(src: unknown): string {
   if (typeof src !== "string") return "fragment is not a string";
@@ -114,6 +126,8 @@ export function fragmentProblem(src: unknown): string {
         }
       }
       if (attributeIsUnsafe(name, value)) return at(attrAt);
+      // an id is matched as it is written, so only the exact names are the page's
+      if (name === "id" && PAGE_ID_SET.has(value)) return `uses the id "${value}", which the page keeps for its own parts`;
     }
     open = src.indexOf("<", i);
   }

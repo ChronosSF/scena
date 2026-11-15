@@ -1,7 +1,7 @@
 // Page runtime. Browser code, compiled and minified by scripts/build-runtime.ts into
 // src/runtime.generated.ts; renderPage() inlines it, hashed for the page CSP.
-// Budget: 5 KB minified. It reads its data from <script type="application/json" id="sd">
-// (see RuntimeData in src/render.ts).
+// Budget: 5 KB minified. It reads its data from <script type="application/json" id="sd">,
+// the element renderPage writes just before this script (see RuntimeData in src/render.ts).
 
 interface Link { t: string; d: string; c: string; u: string; s?: string; sc?: string; m?: string }
 interface Data {
@@ -19,7 +19,9 @@ type Nav = Navigator & { deviceMemory?: number; connection?: { saveData?: boolea
 (() => {
   const d = document, R = d.documentElement, N = navigator as Nav, W = window, ds = R.dataset;
   const $ = (i: string) => d.getElementById(i)!;
-  const D: Data = JSON.parse($("sd").textContent || "{}");
+  // The data block is found by its place, the element just before this script, and not by its
+  // id. A drawing is markup too, earlier in the page, and an id in it would be the one found.
+  const D: Data = JSON.parse(d.currentScript!.previousElementSibling!.textContent || "{}");
   const L = D.links, B = D.boil;
   const objs = [...d.querySelectorAll<SVGGElement>(".obj")];
   const turbs = [...d.querySelectorAll<SVGFETurbulenceElement>("filter.boil feTurbulence")];

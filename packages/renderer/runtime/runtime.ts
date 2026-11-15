@@ -1,7 +1,7 @@
 // Page runtime. Browser code, compiled and minified by scripts/build-runtime.ts into
 // src/runtime.generated.ts; renderPage() inlines it, hashed for the page CSP.
-// Budget: 5 KB minified. It reads its data from <script type="application/json" id="sd">
-// (see RuntimeData in src/render.ts).
+// Budget: 5 KB minified. It reads its data from <script type="application/json" id="sd">,
+// the element renderPage writes just before this script (see RuntimeData in src/render.ts).
 
 interface Link { t: string; d: string; c: string; u: string; s?: string; sc?: string; m?: string }
 interface Data {
@@ -11,13 +11,17 @@ interface Data {
   demo: boolean;
   /** studio preview only: ignore the OS reduced-motion setting */
   force?: 1;
+  /** the studio's Preview only: tell the studio which drawing was activated, and keep the page's place when it is rendered again */
+  ed?: 1;
 }
 type Nav = Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
 
 (() => {
   const d = document, R = d.documentElement, N = navigator as Nav, W = window, ds = R.dataset;
   const $ = (i: string) => d.getElementById(i)!;
-  const D: Data = JSON.parse($("sd").textContent || "{}");
+  // The data block is found by its place, the element just before this script, and not by its
+  // id. A drawing is markup too, earlier in the page, and an id in it would be the one found.
+  const D: Data = JSON.parse(d.currentScript!.previousElementSibling!.textContent || "{}");
   const L = D.links, B = D.boil;
   const objs = [...d.querySelectorAll<SVGGElement>(".obj")];
   const turbs = [...d.querySelectorAll<SVGFETurbulenceElement>("filter.boil feTurbulence")];
@@ -107,7 +111,7 @@ type Nav = Navigator & { deviceMemory?: number; connection?: { saveData?: boolea
 
   /* ---------- selection and the tag panel ---------- */
   const hint = $("hint"), body = $("tb"), tt = $("tt"), ts = $("ts"), tx = $("tx"), btn = $("tbtn") as HTMLAnchorElement;
-  const sel = (key: string | undefined) => {
+  let sel = (key: string | undefined) => {
     const l = key ? L[key] : undefined;
     if (!key || !l) return;
     objs.forEach((o) => {
@@ -165,5 +169,39 @@ type Nav = Navigator & { deviceMemory?: number; connection?: { saveData?: boolea
       clearTimeout(tm);
       tm = setTimeout(() => toast.classList.remove("show"), 2800);
     });
+  }
+
+  /* ---------- the studio's Preview only (RenderOptions.editorPreview): a published page runs none of this ---------- */
+  if (D.ed) {
+    // Tell the studio which link a drawing is when it is activated, so it can bring up that
+    // link's form. Every activation goes through sel, so sel is wrapped. The message is the slot
+    // id, read off the drawing, and nothing else from the page. The frame's origin is opaque and
+    // the studio may be a file:// page, so there is no origin to name as the target: "*" is safe
+    // because a slot id is all the message holds.
+    const pick = sel;
+    sel = (k) => {
+      pick(k);
+      const o = d.querySelector<HTMLElement>(".obj.selected");
+      if (o && o.dataset.k == k) {
+        W.name = ""; // a drawing was just activated: the page that follows shows its panel
+        parent.postMessage({ type: "scena:tap", slot: o.dataset.k }, "*");
+      }
+    };
+    // After an edit the studio renders the page again with the tapped drawing selected, and the
+    // frame starts again at its top. A frame keeps its name across that, so the place the page was
+    // last scrolled to is kept in it and put back: the page does not move under a person who has
+    // scrolled it, to the plain list for one. Right after a tap there is no such place yet. Then
+    // the open panel is brought into view, and once more when the typeface has arrived and moved
+    // it, unless the page has been scrolled in between.
+    W.addEventListener("scroll", () => { W.name = "" + W.scrollY; }, { passive: true });
+    if (!body.hidden) {
+      if (W.name) W.scrollTo(0, +W.name);
+      else {
+        const back = () => body.parentElement!.scrollIntoView({ block: "nearest" });
+        back();
+        const y = W.scrollY;
+        d.fonts.ready.then(() => { if (W.scrollY == y) back(); });
+      }
+    }
   }
 })();

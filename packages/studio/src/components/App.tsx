@@ -125,7 +125,8 @@ export function App() {
             ))}
           </div>
         ) : null}
-        <Inspector hidden={narrow && tab !== "inspect"} tabbed={narrow} />
+        {/* in Preview the inspector is beside the page, or under it on a phone, with no tabs */}
+        <Inspector hidden={narrow && view === "edit" && tab !== "inspect"} tabbed={narrow && view === "edit"} />
         <div className="drop-veil" aria-hidden="true"><p>Drop to add your drawings</p></div>
       </div>
       <input ref={importInput} type="file" id="import-file" accept=".json,application/json" multiple hidden

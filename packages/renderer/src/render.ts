@@ -39,6 +39,14 @@ export interface RenderOptions {
    * motion, so a presenter can show the boil. Never used for export.
    */
   forceMotion?: boolean;
+  /**
+   * The studio's Preview only: when a drawing is activated, the runtime posts its slot id to the
+   * frame's parent, so the studio can bring up that link's form; and a page rendered with a
+   * drawing `selected` keeps its place as it loads: where it was last scrolled to, or its open
+   * panel in view right after a tap. Never used for export, the scene picker's cards or a
+   * published page, which post nothing and never scroll themselves.
+   */
+  editorPreview?: boolean;
 }
 
 /** Per-slot panel data the runtime reads from <script type="application/json" id="sd">. */
@@ -58,6 +66,8 @@ export interface RuntimeData {
   motion: PageDocument["motion"];
   demo: boolean;
   force?: 1;
+  /** RenderOptions.editorPreview: absent from every other page */
+  ed?: 1;
 }
 
 export interface RenderedParts {
@@ -537,6 +547,7 @@ export function renderParts(scene: SceneDocument, page: PageDocument | undefined
     motion: page?.motion || "auto",
     demo: !!opts.demo,
     ...(opts.forceMotion ? { force: 1 as const } : {}),
+    ...(opts.editorPreview ? { ed: 1 as const } : {}),
   };
   const data = jsonForScript(runtimeData);
 

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Maximize2, RotateCw, Shapes, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Maximize2, RotateCw, Shapes, Trash2 } from "lucide-react";
 import { LIMITS, safeHref, type CommissionStatus, type Layer, type LinkContent, type Motion, type ObjectLayer, type SlotKind } from "@scena/scene";
 import { store, useStudio } from "../store.ts";
+import { useNarrow, useReducedMotion } from "../hooks.ts";
 import { CANVASES, KIND_LABELS, SURFACES, canTurnOff, currentSurface, defaultLink, getLayer, isBuiltIn, offeredPalettes, slotOf, type Surface } from "../model.ts";
 import { drawingThumb, thumbTheme } from "../thumbs.ts";
 import { assetSummary } from "../describe.ts";
 import * as actions from "../actions.ts";
 import { APPEARANCE, SceneNameInput, setAppearance } from "./TopBar.tsx";
-import { IconButton, NumberField, Section, Segmented, SelectField, Switch, TextField } from "./ui.tsx";
+import { Button, IconButton, NumberField, Section, Segmented, SelectField, Switch, TextField } from "./ui.tsx";
 import { FramesSection } from "./FramesSection.tsx";
 import { BackgroundInspector, LetteringSection, TypefaceSection, UseAsSection } from "./BoardSections.tsx";
 import { isBackground } from "../board.ts";
@@ -16,15 +17,60 @@ const HANDLE = /^[a-z0-9][a-z0-9_-]{1,29}$/;
 const MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 
 export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
-  const { scene, sel } = useStudio();
+  const { scene, sel, focus, view } = useStudio();
+  const narrow = useNarrow();
+  const reduced = useReducedMotion();
+  const panel = useRef<HTMLElement>(null);
   const locked = isBuiltIn(scene);
   const picked = getLayer(scene, sel);
   // a built-in scene offers its links and the page; nothing else on it is there to select
   const layer = locked && picked?.type !== "object" ? undefined : picked;
   const label = !layer ? "Page settings" : locked ? "Link settings" : isBackground(scene, layer) ? "Background settings" : "Drawing settings";
+
+  // A drawing tapped in the preview asks for its link's title (actions.editLink). The field takes
+  // the focus and is scrolled into this panel. On a narrow screen it goes to the top of the form,
+  // right under the Page settings row, so it stays above the on-screen keyboard that the focus
+  // raises. A link the page has nothing for yet has no field: the panel takes the focus. A request
+  // made before this panel was on screen (the web app mounts the studio again on the way back to
+  // it) is not acted on.
+  const handled = useRef(focus?.n);
+  useEffect(() => {
+    if (focus?.n === handled.current) return;
+    handled.current = focus?.n;
+    if (focus?.target !== "title" || focus.id !== sel) return;
+    const field = panel.current?.querySelector<HTMLInputElement>('input[name="link-title"]');
+    if (!field) { panel.current?.focus(); return; }
+    field.focus({ preventScroll: true });
+    (field.closest(".field") || field).scrollIntoView({ block: narrow ? "start" : "nearest", behavior: reduced ? "auto" : "smooth" });
+  }, [focus?.n]);
+
+  // In Preview, the way back from a drawing to the page's settings. Edit has the canvas for it (a
+  // press on the empty workspace, Escape on a drawing) and, on a phone, the tabs. Preview has
+  // neither: on a phone the page fills its pane edge to edge, and on a wide screen a press around
+  // the page is for a pointer only. The panel then takes the focus, at its top: not the Name
+  // field, which would raise a phone's keyboard for what is only a change of panel. Its row stays
+  // at the top of the panel while the form scrolls under it, and says which drawing the form is
+  // for: a tap in the preview scrolls the form to the Title, past the drawing's own heading.
+  const toPage = () => {
+    store.select(null);
+    requestAnimationFrame(() => {
+      const p = panel.current;
+      if (!p) return;
+      p.scrollTop = 0;
+      p.focus();
+    });
+  };
+
   return (
-    <aside className="panel panel-right" id="inspector" tabIndex={-1} aria-label={label} hidden={props.hidden}
+    <aside className="panel panel-right" id="inspector" ref={panel} tabIndex={-1} aria-label={label} hidden={props.hidden}
       {...(props.tabbed ? { role: "tabpanel", "aria-labelledby": "tab-inspect" } : {})}>
+      {view === "preview" && layer ? (
+        <div className="insp-back">
+          <Button variant="ghost" icon={ArrowLeft} onClick={toPage} data-ui="to-page">Page settings</Button>
+          {/* the heading below says it to a screen reader */}
+          <span className="insp-back-name" aria-hidden="true">{layer.name || layer.id}</span>
+        </div>
+      ) : null}
       {!layer ? <PageInspector />
         : locked && layer.type === "object" ? <SlotInspector key={layer.id} layer={layer} />
         : isBackground(scene, layer) ? <BackgroundInspector key={layer.id} layer={layer} />

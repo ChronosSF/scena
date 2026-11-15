@@ -14,7 +14,8 @@ export type Zoom = "fit" | number;
 export type Tab = "layers" | "inspect";
 
 export interface FocusRequest {
-  target: "layer" | "list";
+  /** "title": the Title field of the link of the drawing `id`, in the inspector. */
+  target: "layer" | "list" | "title";
   id: string;
   n: number;
 }
@@ -40,6 +41,12 @@ export interface StudioState {
   framesOpen: boolean;
   /** Bumps on every change; the documents themselves are mutated in place. */
   rev: number;
+  /**
+   * Bumps only when the documents change: an edit, undo or redo, other documents opened. The
+   * selection, the view and focus requests leave it alone, so the preview renders the page
+   * again only when the page can have changed.
+   */
+  docRev: number;
   canUndo: boolean;
   canRedo: boolean;
   /** "not-valid": the documents would not open again, so the last work that does is kept instead. */
@@ -138,7 +145,7 @@ class StudioStore {
     const storage = browserStorage();
     const opened = storage ? openSaved(storage) : { docs: null, setAside: false };
     this.setAsideOnLoad = opened.setAside;
-    this.state = { ...(opened.docs || blankDocs()), view: "edit", phone: true, forceMotion: false, zoom: "fit", tab: "layers", playFrames: true, frameAt: 0, framesOpen: true, rev: 0, canUndo: false, canRedo: false, saveStatus: "saved", setAside: !!asideText(), focus: null };
+    this.state = { ...(opened.docs || blankDocs()), view: "edit", phone: true, forceMotion: false, zoom: "fit", tab: "layers", playFrames: true, frameAt: 0, framesOpen: true, rev: 0, docRev: 0, canUndo: false, canRedo: false, saveStatus: "saved", setAside: !!asideText(), focus: null };
   }
 
   /** The saved work that was set aside, with the reasons it does not open, or null when there is none. */
@@ -211,7 +218,7 @@ class StudioStore {
       setTimeout(() => toast(FIXED_SCENE, "error"), 0);
       return false;
     }
-    this.emit(patch);
+    this.emit({ ...patch, docRev: this.state.docRev + 1 });
     this.save();
     return true;
   }
@@ -252,7 +259,7 @@ class StudioStore {
     to.push(this.snap());
     const d = JSON.parse(s) as Docs;
     this.lastEdit = 0;
-    this.emit({ scene: d.scene, page: d.page, stash: d.stash || {}, sel: d.sel && getLayer(d.scene, d.sel) ? d.sel : null });
+    this.emit({ scene: d.scene, page: d.page, stash: d.stash || {}, sel: d.sel && getLayer(d.scene, d.sel) ? d.sel : null, docRev: this.state.docRev + 1 });
     this.save();
     return true;
   }

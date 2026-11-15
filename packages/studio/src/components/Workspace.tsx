@@ -86,7 +86,9 @@ export function Workspace() {
   if (view === "preview") {
     return (
       <main className="workspace" id="workspace" aria-label="Preview">
-        <div className="workspace-scroll"><Preview /></div>
+        {/* As on the canvas, a press on the workspace around the page clears the selection, and the inspector shows the
+            page: with the main button only, and not on this scroller's own scrollbar, where the press is on the scroller itself. */}
+        <div className="workspace-scroll" onPointerDown={(e) => { if (e.button === 0 && e.target !== e.currentTarget && !(e.target as Element).closest(".device, .browser")) store.select(null); }}><Preview /></div>
       </main>
     );
   }

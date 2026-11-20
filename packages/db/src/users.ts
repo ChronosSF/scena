@@ -4,6 +4,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { LIMITS as FORMAT } from "@scena/scene";
 import type { Database } from "./client.ts";
+import { UNSTORABLE } from "./draft.ts";
 import { brokenUnique, isUuid, refuse, type Result } from "./result.ts";
 import { users } from "./schema.ts";
 
@@ -26,8 +27,10 @@ export interface NewUser {
 
 // Each of these has one way to match any text, so it runs in linear time on what a provider
 // or a browser sends: the address splits at its only "@", and each part of a language tag
-// starts with its own "-".
-const EMAIL = /^[^\s@]+@[^\s@]+$/;
+// starts with its own "-". An address has no control character in it and no half of a
+// surrogate pair: Postgres refuses the first of them, U+0000, in text, and would keep half a
+// pair as another character, which is another address.
+const EMAIL = /^[^\s@\p{Cc}\p{Cs}]+@[^\s@\p{Cc}\p{Cs}]+$/u;
 const LOCALE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{1,8})*$/;
 const LIMITS = { email: 254, locale: 35 } as const;
 
@@ -35,14 +38,17 @@ const LIMITS = { email: 254, locale: 35 } as const;
 // (LIMITS.displayName in the scene package), not to one of its own. It comes from the auth
 // provider and the person did not type it here, so a longer one is cut to fit, between
 // characters and never inside one, and is not refused: nobody should fail to sign in over the
-// length of their name, and they can change it on their page.
+// length of their name, and they can change it on their page. For the same reason a character
+// Postgres cannot keep (U+0000, half of a surrogate pair) is left out of it, where a draft
+// that has one is refused.
 function fits(text: string, max: number): string {
   let out = "";
   for (const character of text) {
+    if (UNSTORABLE.test(character)) continue;
     if (out.length + character.length > max) break;
     out += character;
   }
-  return out.trimEnd();
+  return out.trim();
 }
 
 const PROFILE = { id: users.id, email: users.email, displayName: users.displayName, locale: users.locale, createdAt: users.createdAt };

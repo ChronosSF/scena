@@ -58,7 +58,7 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 261 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, and the database package (17 of them need a database, below)
+pnpm test         # 265 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, and the database package (22 of them need a database, below)
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
 pnpm check        # typecheck + db:check + test + build
 
@@ -79,7 +79,7 @@ docker compose down -v        # remove it and its data, for a clean start
 
 Everything reads the database's address from `DATABASE_URL`; `.env.example` has the local one.
 Set it in your shell (`export DATABASE_URL=…`, or `$env:DATABASE_URL = "…"` in PowerShell). With
-it set, `pnpm test` and `pnpm check` also run the 21 database tests, each run in a database of
+it set, `pnpm test` and `pnpm check` also run the 22 database tests, each run in a database of
 its own that it makes, migrates and removes, so the tests neither read nor leave anything in
 yours. A run that is cut short leaves its database behind; the next run removes it once it is
 an hour old. Without `DATABASE_URL`, Vitest reports those 21 as skipped. CI runs them against a

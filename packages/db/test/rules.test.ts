@@ -5,10 +5,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { HANDLE_RULE, validatePage } from "@scena/scene";
+import { HANDLE_MAX, HANDLE_RULE, validatePage } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import { changeHandle, createPage, createUser, handleProblem, RESERVED_HANDLES, saveDraft, type Database } from "../src/index.ts";
-import { checkDraft, DRAFT_MAX_BYTES, DRAFT_MAX_DEPTH } from "../src/draft.ts";
+import { checkDraft, DRAFT_MAX_BYTES, DRAFT_MAX_DEPTH, withHandle } from "../src/draft.ts";
 import { isReserved } from "../src/handles.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
@@ -32,6 +32,12 @@ describe("the handle rule", () => {
 
   test.each(broken)("%j breaks the rule", (h) => {
     expect(handleProblem(h)).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
+  });
+
+  test("the longest handle is as long as the rule says, and one more character breaks it", () => {
+    expect(handleProblem("x".repeat(HANDLE_MAX))).toBeNull();
+    expect(handleProblem("x".repeat(HANDLE_MAX + 1))?.reason).toBe("invalid");
+    expect(HANDLE_RULE).toContain(`to ${HANDLE_MAX} characters`);
   });
 
   test("anything but text breaks the rule", () => {
@@ -132,6 +138,20 @@ describe("a draft is validated before the database is asked anything", () => {
     if (!r.ok) expect(r.problems).toEqual([expect.stringMatching(/^page: \d+ KB, the limit for a saved page is 64 KB$/)]);
   });
 
+  test("the size limit is for the draft as it is stored, whatever handle the page has", () => {
+    // A draft is stored with the page's handle in place of the one it was sent with, so it is
+    // measured with the longest a handle can be: a short handle sent with it buys no room.
+    const longest = "h".repeat(HANDLE_MAX);
+    const bytes = (v: unknown) => new TextEncoder().encode(JSON.stringify(v)).length;
+    const padded = (padding: number) => checkDraft({ ...clone(PIA_PAGE), handle: "ab", notes: "x".repeat(padding) });
+    const stored = (padding: number) => { const r = padded(padding); return r.ok ? bytes(withHandle(r.draft, longest)) : r.problems; };
+
+    const room = DRAFT_MAX_BYTES - (stored(0) as number);
+    expect(room).toBeGreaterThan(0);
+    expect(stored(room)).toBe(DRAFT_MAX_BYTES);
+    expect(padded(room + 1).ok).toBe(false);
+  });
+
   test("a draft nested deeper than any page is refused, however deep, and never runs out of stack", () => {
     // a field the validators do not know, with text at the bottom of `levels` arrays
     const nested = (levels: number) => { let v: unknown = "x"; for (let i = 0; i < levels; i++) v = [v]; return v; };
@@ -164,6 +184,14 @@ describe("a draft is validated before the database is asked anything", () => {
       "email: expected an email address",
       "locale: expected a language tag such as en or it-IT",
     ] });
+  });
+
+  test("an address with a character no address has is refused, not sent to the database to fail there", async () => {
+    // U+0000 is one Postgres refuses in text; half of an emoji would be kept as another character
+    const not = ["a\u0000b@example.com", "ab@exa\u0000mple.com", "a\u0001b@example.com", "ab@example.com\u007F", "ha\uD83Dlf@example.com", "half@exam\uDD8Dple.com"];
+    for (const email of not) {
+      expect(await createUser(untouchable, { id: USER_ID, email }), JSON.stringify(email)).toEqual({ ok: false, reason: "invalid", problems: ["email: expected an email address"] });
+    }
   });
 });
 

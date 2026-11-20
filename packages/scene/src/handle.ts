@@ -14,6 +14,9 @@ export const HANDLE_PATTERN = "^[a-z0-9][a-z0-9_-]{1,29}$";
 
 const HANDLE = new RegExp(HANDLE_PATTERN);
 
+/** The longest a handle can be, in characters: what the pattern allows. */
+export const HANDLE_MAX = 30;
+
 /** What a handle may be, in words a person can act on. */
 export const HANDLE_RULE = "2 to 30 characters: lowercase letters, digits, - and _, starting with a letter or digit";
 

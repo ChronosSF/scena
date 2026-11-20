@@ -2,7 +2,7 @@
 // the definition of a valid one: nothing here restates the format. Every write of a draft goes
 // through checkDraft, and the draft column's type takes only what checkDraft returns.
 
-import { isHandle, migrate, validatePage, type PageDocument } from "@scena/scene";
+import { HANDLE_MAX, isHandle, migrate, validatePage, type PageDocument } from "@scena/scene";
 import { BUILT_IN_SCENES } from "@scena/scenes";
 
 declare const checked: unique symbol;
@@ -20,8 +20,10 @@ export const DRAFT_MAX_BYTES = 64 * 1024;
 
 // The handle a draft is checked with. A draft's handle is not the caller's to choose: the
 // page's own handle is written into it before it is stored (withHandle), so the one it arrives
-// with is never kept, and is not checked.
-const ANY_HANDLE = "page";
+// with is never kept, and is not checked. This one is as long as a handle can be, so that the
+// size measured below is the most the stored draft can come to, whatever handle the page has
+// or moves to.
+const ANY_HANDLE = "a".repeat(HANDLE_MAX);
 
 /** The deepest a draft may nest. A page document goes four levels down; this leaves room to spare. */
 export const DRAFT_MAX_DEPTH = 32;
@@ -81,8 +83,8 @@ export function withHandle(draft: CheckedDraft, handle: string): CheckedDraft {
 // Postgres's jsonb cannot hold the character U+0000, nor half of a surrogate pair (half of an
 // emoji, as text cut in the wrong place leaves it). The validators accept both, and the write
 // would then fail inside the database, so they are refused here with their path. The pattern
-// has no repetition, so it runs in linear time.
-const UNSTORABLE = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+// has no repetition, so it runs in linear time. A profile's text is held to it too (users.ts).
+export const UNSTORABLE = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 const PLAIN_KEY = /^[A-Za-z_$][\w$]*$/;
 const CANNOT_SAVE = "contains a character that cannot be saved (a null character, or half of an emoji); remove it";
 

@@ -142,7 +142,11 @@ The details the plan leaves open:
 - **A display name is held to the page format's limit** (`LIMITS.displayName` in the scene
   package, 40), because it is the name a page's profile starts with. It comes from the auth
   provider, so a longer one is cut to fit, between characters, and not refused: nobody should
-  fail to sign in over the length of their name.
+  fail to sign in over the length of their name. For the same reason a character Postgres cannot
+  keep in text (U+0000, half of a surrogate pair) is left out of the name.
+- **An email address with such a character, or any control character, is refused** as not an
+  address, before the database is asked. The insert would otherwise fail inside Postgres on
+  U+0000, and half a pair would be stored as another character, which is another address.
 - **`status` is a Postgres enum.** Adding a value later is one statement.
 - **Foreign keys.** A page goes with its account (cascade). An audit entry outlives the account
   it names (set null).
@@ -194,7 +198,10 @@ runs the validators. Revisit if an API ever needs types or documentation generat
 - Three more checks, for storage. A draft nests at most 32 levels deep: this is checked first,
   and without recursion, because everything after it walks the document by calling itself and
   would run out of stack on one nested deep enough. A draft is at most 64 KB as JSON (the
-  validators read the fields they know, so a field they do not know could carry anything). And
+  validators read the fields they know, so a field they do not know could carry anything). It
+  is measured with the longest handle there can be (`HANDLE_MAX` in the scene package, 30),
+  because the page's own handle is written into it before it is stored: the limit then holds
+  for what is stored, and a change of handle can never take a draft over it. And
   text Postgres cannot keep in jsonb (the character U+0000, half of a surrogate pair) is refused
   with its path rather than failing inside the database.
 - An invalid draft writes nothing. The answer is `{ ok: false, reason: "invalid", problems }`,
@@ -275,24 +282,33 @@ newer build, take one that has been public for a week, as for a package, and cha
 
 ## Checks
 
-- `pnpm check` runs 75 tests of the database package, besides the 186 there were. 21 of them need
-  the database. With `DATABASE_URL` unset they are reported as skipped; with it set, all 261 pass.
+- `pnpm check` runs 79 tests of the database package, besides the 186 there were. 22 of them need
+  the database. With `DATABASE_URL` unset they are reported as skipped; with it set, all 265 pass.
   It also runs `pnpm db:check` once, before the tests.
-- Without a database: the handle rule (accepted and refused handles, the reserved words and their
-  capitals), every refusal of the draft before a query (a draft nested too deep among them), the
-  profile's fields, that nothing which runs in a browser imports the package, that the handle
-  pattern is written once, and that `compose.yaml` and CI name the same image by its digest.
+- Without a database: the handle rule (accepted and refused handles, the longest one, the
+  reserved words and their capitals), every refusal of the draft before a query (a draft nested
+  too deep among them, and the size limit at its edge with the longest handle), the profile's
+  fields (an address with a character no address has among them), that nothing which runs in a
+  browser imports the package, that the handle pattern is written once, and that `compose.yaml`
+  and CI name the same image by its digest.
 - With a database: migrations from empty and twice, the column types, profiles (a deleted
-  account, a long name), a draft saved and read back unchanged, an invalid draft refused with
-  the validators' messages and nothing written, the stored draft's handle, a page saved only by
-  its own account, a taken handle refused by the database in any case, the handle rule held by
-  the database with the scene package's answers, a reserved handle refused from the list and
-  from the table, a second page refused, a handle change (also with a stored draft a newer rule
-  would refuse), the audit log, a test database left behind, and row-level security.
+  account, a long name, a name with a character Postgres cannot keep), a draft saved and read
+  back unchanged, an invalid draft refused with the validators' messages and nothing written,
+  the stored draft's handle, a page saved only by its own account, a taken handle refused by the
+  database in any case, the handle rule held by the database with the scene package's answers, a
+  reserved handle refused from the list and from the table, a second page refused, a handle
+  change (also with a stored draft a newer rule would refuse), the audit log, a test database
+  left behind, and row-level security.
 - After the review, each of its fixes was taken back out in turn (the handle change checking
   the draft again, the deleted account's answer, the database's handle rule, the depth check,
   the removal of test databases left behind, the cut of a long name, and the image named by its
   tag or by another digest), and each made a test fail.
+- Three comments on the pull request led to two more fixes: the size limit measured with the
+  longest handle, and the characters in a profile. Each was taken back out in turn, in seven
+  changes (the short handle in the measurement, the address pattern without control characters
+  and then without half pairs only, the name keeping such characters, the name trimmed at one
+  end, and `HANDLE_MAX` one short and one long), and each made a test fail. The third comment,
+  on the reserved table, is answered under Costs and risks.
 - Each of 22 deliberate breaks was run once against the tests, and each made at least one fail:
   the validation call removed (from `checkDraft`, `saveDraft` and `createPage` in turn), the
   reserved list and the reserved table not read, each unique constraint removed from the
@@ -345,6 +361,11 @@ the issue that needs it.
 - A draft on a ready-made scene is checked against that scene as it ships now. If a scene drops a
   palette, drafts that use it stop saving until they change it. Scene versions will need a rule.
 - The validators do not refuse fields they do not know, so a draft can carry up to 64 KB of them.
+- The reserved table is read and the page is then written, with nothing locked between the two.
+  A word added to the table at that instant leaves a page that has it, exactly as a page made a
+  moment earlier would. No lock changes that second case, so whatever adds a reserved word has
+  to look for a page that already has it. `pnpm db:migrate` cannot cause it: every word it
+  writes is refused from the list in the code, before the table is read.
 - A page on a scene of the person's own is checked on its own: there is nowhere to store its
   scene yet, and issue 11 does not list a table for scenes.
 - A transaction-mode pooler and prepared statements do not mix; the option has to be set when

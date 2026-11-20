@@ -138,6 +138,20 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       const exact = await createUser(db, { id: randomUUID(), email: "exact-name@example.com", displayName: "E".repeat(limit) });
       expect(exact.ok && exact.user.displayName).toBe("E".repeat(limit));
     });
+
+    test("a name with a character Postgres cannot keep is stored without it, and the sign-in does not fail", async () => {
+      const stored = async (displayName: string, email = `name${++people}@example.com`) => {
+        const made = await createUser(db, { id: randomUUID(), email, displayName });
+        if (!made.ok) throw new Error(made.problems.join("; "));
+        return made.user;
+      };
+      expect((await stored("Ada\u0000 Lovelace")).displayName).toBe("Ada Lovelace");
+      // half of an emoji, as text cut in the wrong place leaves it
+      expect((await stored("\u0000 Ada \uD83D")).displayName).toBe("Ada");
+      expect((await stored("\u0000")).displayName).toBeNull();
+      // a whole emoji stays, in a name and in an address
+      expect(await stored("Ada 🖍", "ada🖍@example.com")).toMatchObject({ displayName: "Ada 🖍", email: "ada🖍@example.com" });
+    });
   });
 
   describe("drafts", () => {

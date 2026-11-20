@@ -1,0 +1,37 @@
+# The local database for packages/db: Postgres 17, the major a new Supabase project runs
+# (docs/adr/0005-database-package.md). One container, reachable from this machine only.
+#
+#   docker compose up -d --wait   start it (and wait until it accepts connections)
+#   docker compose stop           stop it; the data stays
+#   docker compose down -v        remove it and its data, for a clean start
+#
+# The password is for this local container alone and is not a secret: it is the one in
+# .env.example. Nothing hosted uses it, and no code or test has it written in: they read
+# DATABASE_URL from the environment.
+name: scena
+
+services:
+  postgres:
+    # Named by its digest, so that everyone runs the build that was tried and not whatever the
+    # tag points at that day: Postgres 17.11, built on 21 October 2026, for every platform the
+    # tag has. The CI workflow names the same image, and a test fails when the two differ.
+    image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
+    container_name: scena-postgres
+    environment:
+      POSTGRES_USER: scena
+      POSTGRES_PASSWORD: scena-local-only
+      POSTGRES_DB: scena
+    ports:
+      # 127.0.0.1 only: other machines on the network cannot reach it. 5435, because 5432 to
+      # 5434 are often taken by other projects' databases.
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scena -d scena"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres-data:

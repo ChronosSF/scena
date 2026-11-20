@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Server-only: Node's types and no DOM, so a browser API here is a type error.
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": ["src", "test", "scripts", "drizzle.config.ts"]
+}

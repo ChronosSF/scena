@@ -5,3 +5,10 @@ packages:
 # esbuild ships its binary as an optional dependency; its install script only verifies it.
 onlyBuiltDependencies:
   - esbuild
+
+# drizzle-kit (packages/db) loads its TypeScript config through @esbuild-kit, a deprecated
+# loader that asks for esbuild 0.18.20, a release with an advisory against its development
+# server (GHSA-67mh-4wv8-2f99). It is given the esbuild that drizzle-kit itself uses instead.
+# Drop this when drizzle-kit no longer brings @esbuild-kit.
+overrides:
+  "@esbuild-kit/core-utils>esbuild": 0.25.12

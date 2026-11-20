@@ -1,0 +1,25 @@
+{
+  "name": "@scena/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The database, server-only: the Drizzle schema for users, pages, reserved handles and the audit log, its migrations, and typed queries that write a page's draft only once the scene package has validated it.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "generate": "drizzle-kit generate",
+    "migrate": "node scripts/migrate.ts",
+    "check:migrations": "node scripts/check-migrations.ts"
+  },
+  "dependencies": {
+    "@scena/scene": "workspace:*",
+    "@scena/scenes": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11"
+  }
+}

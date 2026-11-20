@@ -35,10 +35,16 @@ tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/
   hash, at build time. The web app names its scripts by a nonce made for each request, and the
   page runtime by hash. The Vite dev server has no policy; `pnpm verify:studio` and
   `pnpm verify:web` check the builds in a browser.
+- `@scena/db` is the database, for server code only: Postgres 17 through Drizzle ORM and
+  postgres.js, with migrations written by drizzle-kit from the schema. It holds users, pages,
+  reserved handles and the audit log. A page's draft is stored as the PageDocument it is, and
+  only once the scene package's validators have passed it. Nothing uses it yet: the web app's
+  routes arrive with sign-in. Locally it runs in Docker (below).
 - Vitest for tests, `tsc` 7 for type checks, headless Chrome over CDP for end-to-end checks.
 
 Why this and not the plan's full stack yet: [docs/adr/0001-tech-stack.md](docs/adr/0001-tech-stack.md).
 How the studio came to run in two apps: [docs/adr/0004-one-studio-two-apps.md](docs/adr/0004-one-studio-two-apps.md).
+The database package, its schema and why: [docs/adr/0005-database-package.md](docs/adr/0005-database-package.md).
 
 ## Commands
 
@@ -52,11 +58,37 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 186 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering
+pnpm test         # 265 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, and the database package (22 of them need a database, below)
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
-pnpm check        # typecheck + test + build
+pnpm check        # typecheck + db:check + test + build
 
 pnpm lint:scene packages/scenes/desk.scene.json packages/scenes/pia.page.json
+```
+
+### The local database
+
+Needs Docker. `compose.yaml` runs Postgres 17 as one container, `scena-postgres`, on
+`127.0.0.1:5435`, reachable from this machine only. The image is named by its digest, the same
+one CI uses, so everyone runs the build that was tried:
+
+```sh
+docker compose up -d --wait   # start it, and wait until it takes connections
+docker compose stop           # stop it; the data stays
+docker compose down -v        # remove it and its data, for a clean start
+```
+
+Everything reads the database's address from `DATABASE_URL`; `.env.example` has the local one.
+Set it in your shell (`export DATABASE_URL=…`, or `$env:DATABASE_URL = "…"` in PowerShell). With
+it set, `pnpm test` and `pnpm check` also run the 22 database tests, each run in a database of
+its own that it makes, migrates and removes, so the tests neither read nor leave anything in
+yours. A run that is cut short leaves its database behind; the next run removes it once it is
+an hour old. Without `DATABASE_URL`, Vitest reports those 21 as skipped. CI runs them against a
+Postgres 17 service.
+
+```sh
+pnpm db:migrate   # applies the migrations the database at DATABASE_URL has not had, then the reserved handles; safe to repeat
+pnpm db:generate  # after a change to packages/db/src/schema.ts: writes the migration for it into packages/db/migrations
+pnpm db:check     # fails when the schema and the migrations disagree (needs no database; pnpm check runs it too)
 ```
 
 Other tools, all optional:
@@ -90,12 +122,16 @@ packages/
                samples.json (the steaming mug), their encoders, and testing/ (a second scene for the checks)
   studio/      the studio as a React component, with its store, stylesheet and tests;
                src/ingest/ has the SVG sanitiser and the PNG pipeline
+  db/          the database (server only): src/schema.ts (the tables), the typed queries, the
+               reserved handles; migrations/ (written by drizzle-kit, checked in); scripts/
+               for db:migrate and db:check
 apps/
   studio/      the studio as one HTML file (Vite): the entry point, the build and its policy
   web/         the web app (Next.js): the studio at /studio, and the policy sent with every page
 fixtures/      test drawings; reference/ has the original prototype and its rendered output
 tools/         lint CLI, fixture generator, parity and headless-Chrome checks
 docs/          development plan, architecture decisions, and design/ (the studio's design system)
+compose.yaml   the local database (Postgres 17 in Docker)
 ```
 
 ## Pitching it
@@ -186,8 +222,10 @@ understates a budget Android.
 ## Not built yet
 
 On purpose, for the pitch: accounts, publishing, analytics, billing and custom domains (see the
-plan). The web app is a shell for them: it has no sign-in, no database and no hosting yet, and
-the studio in it keeps work in the browser, as the single-file build does. Also not built: the
+plan). The web app is a shell for them: it has no sign-in and no hosting yet, and the studio in
+it keeps work in the browser, as the single-file build does. The database package is built, but
+nothing calls it: a route that saves drafts waits for sign-in, so that it knows whose draft it
+is, and no Supabase project exists yet. Also not built: the
 pinboard and the shop window (the scene picker lists the desk alone until they are
 drawn); keeping a page's links when another scene is chosen (it starts a new page, after
 asking); the Open Graph image; the badge

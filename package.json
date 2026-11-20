@@ -19,7 +19,7 @@
     "typecheck": "pnpm gen && pnpm -r --no-bail typecheck && tsc --noEmit -p tools",
     "test": "pnpm gen && vitest run",
     "test:watch": "vitest",
-    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm typecheck && pnpm db:check && pnpm test && pnpm build",
     "lint:scene": "node tools/lint-scene.ts",
     "encode:desk": "node packages/scenes/scripts/encode-desk.ts",
     "encode:samples": "node packages/scenes/scripts/encode-samples.ts",
@@ -29,6 +29,9 @@
     "verify:studio": "node tools/verify-studio.ts",
     "verify:runtime": "node tools/verify-runtime.ts",
     "verify:web": "node tools/verify-web.ts",
+    "db:generate": "pnpm --filter @scena/db generate",
+    "db:migrate": "pnpm --filter @scena/db migrate",
+    "db:check": "pnpm --filter @scena/db check:migrations",
     "shots": "node tools/design-shots.ts"
   },
   "devDependencies": {

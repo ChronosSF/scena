@@ -1,0 +1,35 @@
+/* The account slot in the studio's top bar. It sits among the studio's own controls, so it
+   takes their measures and colours from the studio's tokens (packages/studio/src/studio.css,
+   docs/design/studio-ui.md), with the same values written after each one for a page that has
+   not loaded that stylesheet. As the window narrows the address goes first, then the words
+   give way to the icon, as the studio's own buttons do; both stay for screen readers. */
+.account { display: inline-flex; align-items: center; gap: var(--ui-1, 4px); min-width: 0; }
+.button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--ui-h-control, 28px); padding: 0 10px;
+  border: 1px solid transparent; border-radius: var(--ui-r, 6px);
+  background: transparent; color: var(--ui-text, #18181b);
+  font: inherit; font-weight: 500; white-space: nowrap; text-decoration: none; cursor: pointer;
+}
+.button:hover { background: var(--ui-hover, rgba(24, 24, 27, 0.05)); }
+.button:active { background: var(--ui-pressed, rgba(24, 24, 27, 0.09)); }
+.button:focus-visible { outline: 2px solid var(--ui-accent, #1f6feb); outline-offset: 2px; }
+.icon { width: 16px; height: 16px; flex: none; }
+.who {
+  max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ui-text-2, #52525b);
+}
+.hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* The bar's right-hand side has room for the address on a wide window only: below that the
+   studio's own controls need the space, and the address stays in the button's tooltip and for
+   screen readers. */
+@media (max-width: 1399.98px) {
+  .who { display: none; }
+}
+/* Below the width where the studio starts to shorten its own buttons (studio.css, "squeeze"),
+   and on its narrow layout, the words give way to the icon. */
+@media (max-width: 1179.98px) {
+  .button { width: var(--ui-h-control, 28px); padding: 0; }
+  .label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}

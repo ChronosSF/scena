@@ -135,7 +135,10 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 /* ------------------------------------------------------------------ top bar */
 .bar {
   grid-area: bar;
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--ui-3);
+  /* The right-hand side is never narrower than what is in it: with the host app's controls
+     there too (StudioProps.account) it can need more than half of what the centre leaves, and
+     then the centre moves left instead of being run over. */
+  display: grid; grid-template-columns: 1fr auto minmax(max-content, 1fr); align-items: center; gap: var(--ui-3);
   padding: 0 var(--ui-2) 0 var(--ui-3);
   background: var(--ui-panel); border-bottom: 1px solid var(--ui-line);
   min-width: 0;

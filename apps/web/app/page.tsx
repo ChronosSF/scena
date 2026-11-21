@@ -1,5 +1,5 @@
-// A placeholder until the app has a first screen of its own (sign-in and the dashboard, issue 10
-// onwards). The landing page is a separate piece of work (issue 48).
+// A placeholder until the app has a first screen of its own (the dashboard). The landing page is
+// a separate piece of work (issue 48).
 import Link from "next/link";
 import styles from "./home.module.css";
 
@@ -11,7 +11,7 @@ export default function Home() {
       <p>
         <Link className={styles.open} href="/studio">Open the studio</Link>
       </p>
-      <p className={styles.note}>Accounts and publishing are not built yet. The studio keeps your work in this browser.</p>
+      <p className={styles.note}>Publishing is not built yet. The studio keeps your work in this browser.</p>
     </main>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { pageCss, resolvePalette } from "@scena/renderer";
 import { store, useStudio, type Tab } from "../store.ts";
 import * as actions from "../actions.ts";
@@ -16,7 +16,16 @@ import { TooltipProvider, hasFiles } from "./ui.tsx";
 
 const inField = (t: EventTarget | null) => !!(t as Element | null)?.closest?.("input, textarea, select, [contenteditable]");
 
-export function App() {
+export interface StudioProps {
+  /**
+   * What the app that mounts the studio shows about the person's account, at the end of the top
+   * bar: the web app's sign-in link, or who is signed in and a way to sign out. The studio
+   * knows nothing about accounts; the single-file build has none and leaves this out.
+   */
+  account?: ReactNode;
+}
+
+export function App({ account }: StudioProps = {}) {
   const { sel, view, rev, forceMotion, tab, scene, page } = useStudio();
   // A built-in scene is filled in, not designed: its links instead of layers, and a canvas that
   // only selects (model.ts, isBuiltIn).
@@ -110,7 +119,7 @@ export function App() {
       <div className={`app${dropping ? " dropping" : ""}`} data-view={view}>
         <a className="skip" href="#stage">Skip to the canvas</a>
         <a className="skip" href="#inspector">Skip to the inspector</a>
-        <TopBar onExport={() => setExportOpen(true)} onImport={() => importInput.current?.click()} onReset={() => setResetOpen(true)} onSetAside={() => setSetAsideOpen(true)} />
+        <TopBar onExport={() => setExportOpen(true)} onImport={() => importInput.current?.click()} onReset={() => setResetOpen(true)} onSetAside={() => setSetAsideOpen(true)} account={account} />
         {locked
           ? <LinksPanel hidden={narrow && tab !== "layers"} tabbed={narrow} />
           : <LayersPanel hidden={narrow && tab !== "layers"} tabbed={narrow} />}

@@ -57,8 +57,28 @@ export interface Page {
   close: () => Promise<void>;
 }
 
+/** A cookie as the browser holds it (the protocol's Network.Cookie). */
+export interface Cookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires: number;
+  httpOnly: boolean;
+  secure: boolean;
+  session: boolean;
+  sameSite?: "Strict" | "Lax" | "None";
+}
+
 export interface Browser {
-  newPage: () => Promise<Page>;
+  /** A page in the default profile, or in the browser context `context` (from newContext). */
+  newPage: (context?: string) => Promise<Page>;
+  /** A browser context of its own: no cookies, no storage, nothing shared with the others, like a fresh browser. */
+  newContext: () => Promise<string>;
+  closeContext: (context: string) => Promise<void>;
+  /** Every cookie the default profile, or the context, holds. */
+  cookies: (context?: string) => Promise<Cookie[]>;
+  setCookies: (cookies: (Partial<Cookie> & { name: string; value: string })[], context?: string) => Promise<void>;
   trace: <T>(fn: () => Promise<T>, categories: string[]) => Promise<{ result: T; events: Json[] }>;
   close: () => Promise<void>;
 }
@@ -147,8 +167,8 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
     ws.send(JSON.stringify({ id: mid, method, params, ...(sessionId ? { sessionId } : {}) }));
   });
 
-  async function newPage(): Promise<Page> {
-    const { targetId } = await send("Target.createTarget", { url: "about:blank" });
+  async function newPage(context?: string): Promise<Page> {
+    const { targetId } = await send("Target.createTarget", { url: "about:blank", ...(context ? { browserContextId: context } : {}) });
     const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
     const s = (m: string, p?: Json) => send(m, p, sessionId);
     await s("Page.enable");
@@ -275,5 +295,14 @@ export async function launch({ port = 9333, headed = false, gpu = true, fileAcce
     proc.kill();
     try { rmSync(profile, { recursive: true, force: true }); } catch { /* Windows may hold the lock briefly */ }
   }
-  return { newPage, trace, close };
+  const inContext = (context?: string) => (context ? { browserContextId: context } : {});
+  return {
+    newPage,
+    trace,
+    close,
+    newContext: async () => (await send("Target.createBrowserContext", {})).browserContextId,
+    closeContext: async (context) => { await send("Target.disposeBrowserContext", { browserContextId: context }); },
+    cookies: async (context) => (await send("Storage.getCookies", inContext(context))).cookies,
+    setCookies: async (cookies, context) => { await send("Storage.setCookies", { cookies, ...inContext(context) }); },
+  };
 }

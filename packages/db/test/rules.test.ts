@@ -219,6 +219,23 @@ describe("where the rules live", () => {
     expect(ci).toBe(local);
   });
 
+  test("the admin flag is read by the package and set by nothing in it or in the web app", () => {
+    // The column is named in the schema and read with a profile. A query that wrote it, or SQL in
+    // the web app that named it, would let code grant what only a person at an SQL prompt may.
+    const lines = (dirs: string[]) => dirs.flatMap(sources).flatMap((f) =>
+      readFileSync(join(ROOT, f), "utf8").split("\n").map((text, i) => ({ at: `${f}:${i + 1}`, text: text.trim() })));
+    const named = lines(["packages/db/src", "apps/web/app", "apps/web/auth"]).filter((l) => /is_?admin/i.test(l.text) && !l.text.startsWith("//") && !l.text.startsWith("*") && !l.text.startsWith("/*"));
+    const reads = [
+      /^isAdmin: boolean\("is_admin"\)\.notNull\(\)\.default\(false\),$/, // the column, in schema.ts
+      /^isAdmin: boolean;$/, // the profile's type, in users.ts
+      /^const PROFILE = \{ .*isAdmin: users\.isAdmin.* \};$/, // the read of a profile, in users.ts
+      /\.isAdmin\b/, // the web app reading the profile it was given
+    ];
+    expect(named.length).toBeGreaterThan(2);
+    const writes = /is_admin\s*=|isAdmin\s*(?::\s*true|=(?!=))|set\(\s*\{[^}]*isAdmin/;
+    expect(named.filter((l) => !reads.some((r) => r.test(l.text)) || writes.test(l.text))).toEqual([]);
+  });
+
   test("the handle pattern is written in one place", () => {
     const pattern = "[a-z0-9_-]{1," + "29}"; // in two pieces, so this file is not a copy
     const copies = ["packages", "apps", "tools"].flatMap(sources).filter((f) => readFileSync(join(ROOT, f), "utf8").includes(pattern));

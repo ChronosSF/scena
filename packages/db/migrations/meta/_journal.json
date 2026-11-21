@@ -22,6 +22,13 @@
       "when": 1794760541593,
       "tag": "0002_handle_rule",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795168821998,
+      "tag": "0003_admin_flag",
+      "breakpoints": true
     }
   ]
 }

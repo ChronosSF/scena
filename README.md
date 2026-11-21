@@ -15,8 +15,9 @@ The studio also has the plan's first product in it, a links-only mode: a ready-m
 drawings are fixed, where a person fills in the links, the words and the colours. The scene is
 chosen in a picker whose cards are the page itself, live, not pictures of it.
 The studio runs in two places from the same code: as one HTML file that opens from disk, for
-pitching, and inside the web app, which is where sign-in, saved drafts and publishing will be
-built. Today the web app is a shell around the studio.
+pitching, and inside the web app, which is where sign-in, saved drafts and publishing are built.
+Today the web app has the studio and sign-in: a visitor tries the studio first and signs in
+from its top bar, by an emailed link or code, or by Google, and comes back to their work.
 The product plan is in [docs/development-plan.md](docs/development-plan.md); the work it describes is
 tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/milestones).
 
@@ -38,13 +39,18 @@ tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/
 - `@scena/db` is the database, for server code only: Postgres 17 through Drizzle ORM and
   postgres.js, with migrations written by drizzle-kit from the schema. It holds users, pages,
   reserved handles and the audit log. A page's draft is stored as the PageDocument it is, and
-  only once the scene package's validators have passed it. Nothing uses it yet: the web app's
-  routes arrive with sign-in. Locally it runs in Docker (below).
+  only once the scene package's validators have passed it. The web app makes a person's profile
+  with it at their first sign-in. Locally it runs in Docker (below).
+- Sign-in is Supabase Auth, used from the web app's server alone through `@supabase/ssr`: the
+  session is in an `HttpOnly` cookie of the app's own host, renewed by `proxy.ts`, and no
+  Supabase client or key reaches a browser. It is built and checked against Supabase's local
+  stack in Docker (below); no hosted Supabase project exists yet.
 - Vitest for tests, `tsc` 7 for type checks, headless Chrome over CDP for end-to-end checks.
 
 Why this and not the plan's full stack yet: [docs/adr/0001-tech-stack.md](docs/adr/0001-tech-stack.md).
 How the studio came to run in two apps: [docs/adr/0004-one-studio-two-apps.md](docs/adr/0004-one-studio-two-apps.md).
 The database package, its schema and why: [docs/adr/0005-database-package.md](docs/adr/0005-database-package.md).
+Sign-in, the session cookie, the local stack, and what a hosted Supabase project will need: [docs/adr/0006-sign-in.md](docs/adr/0006-sign-in.md).
 
 ## Commands
 
@@ -58,7 +64,7 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 265 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, and the database package (22 of them need a database, below)
+pnpm test         # 334 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, sign-in's rules (the way back, the session cookie, the configuration, what a person is told, the profile, the renewal of a session, what a browser is given, the local stack's settings), and the database package (23 of them need a database, below)
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
 pnpm check        # typecheck + db:check + test + build
 
@@ -79,10 +85,10 @@ docker compose down -v        # remove it and its data, for a clean start
 
 Everything reads the database's address from `DATABASE_URL`; `.env.example` has the local one.
 Set it in your shell (`export DATABASE_URL=…`, or `$env:DATABASE_URL = "…"` in PowerShell). With
-it set, `pnpm test` and `pnpm check` also run the 22 database tests, each run in a database of
+it set, `pnpm test` and `pnpm check` also run the 23 database tests, each run in a database of
 its own that it makes, migrates and removes, so the tests neither read nor leave anything in
 yours. A run that is cut short leaves its database behind; the next run removes it once it is
-an hour old. Without `DATABASE_URL`, Vitest reports those 21 as skipped. CI runs them against a
+an hour old. Without `DATABASE_URL`, Vitest reports those 23 as skipped. CI runs them against a
 Postgres 17 service.
 
 ```sh
@@ -90,6 +96,41 @@ pnpm db:migrate   # applies the migrations the database at DATABASE_URL has not 
 pnpm db:generate  # after a change to packages/db/src/schema.ts: writes the migration for it into packages/db/migrations
 pnpm db:check     # fails when the schema and the migrations disagree (needs no database; pnpm check runs it too)
 ```
+
+### Sign-in and the local Supabase stack
+
+Needs Docker. `supabase/config.toml` describes a local Supabase stack with only what sign-in
+uses: Supabase Auth, the gateway in front of it, its Postgres, and Mailpit, a mail catcher that
+keeps every email the stack sends. The Supabase CLI runs at one pinned version, fetched by pnpm
+the first time (`tools/stack.ts`); it is not installed with the workspace.
+
+```sh
+pnpm stack:start            # start it, and apply the app's migrations to its database (the first start pulls about 2 GB of images)
+pnpm stack:stop             # stop it; the data stays in its Docker volume
+pnpm stack:remove           # stop it and remove its volume, for a clean start
+pnpm stack:env              # the web app's variables for it, as KEY=value lines (--powershell: $env:KEY = "value")
+pnpm stack:env --write      # the same, into apps/web/.env.local, which Next.js reads and git ignores; the file's other lines stay
+```
+
+To try sign-in: `pnpm stack:start`, then `pnpm stack:env --write`, then `pnpm dev:web`, and open
+http://localhost:3100/studio. The emails arrive at http://127.0.0.1:54424, and the sign-in page
+offers to type the code from them. The stack's containers are `supabase_db_scena`,
+`supabase_auth_scena`, `supabase_kong_scena` and `supabase_inbucket_scena`, on ports 54421 (the
+gateway), 54422 (Postgres) and 54424 (the mail catcher). **The CLI publishes them on every
+network interface, not on 127.0.0.1 alone, and its database password is a well-known local
+one**: stop the stack on a network you do not trust.
+
+`/admin` opens for a profile with `is_admin` set, which nothing in the app sets. On the local
+stack, after signing in once:
+
+```sh
+docker exec supabase_db_scena psql -U postgres -c "update users set is_admin = true where email = 'you@example.com'"
+```
+
+Google sign-in is off unless switched on in both places: the app with `SCENA_GOOGLE_SIGN_IN=on`,
+and the stack by starting it with `SUPABASE_AUTH_EXTERNAL_GOOGLE_ENABLED=true` and the client id
+and secret from Google's console in `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` and
+`SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET`. No Google credentials exist for this project yet.
 
 Other tools, all optional:
 
@@ -101,7 +142,7 @@ Other tools, all optional:
 | `pnpm fixtures` | Regenerates the test drawings in `fixtures/`, including the mug's three SVG frames, a blinking face as a PNG sequence and as an animated PNG, a paper texture, a drawn desk top and a lettered "Pia" (SVG and PNG) |
 | `pnpm parity` | Confirms the renderer reproduces the prototype's `demo-desk.html` (apart from the runtime) |
 | `pnpm verify:studio [url]` | Drives the studio in headless Chrome through real mouse, touch, keyboard and file-chooser input, including taps in the preview that bring up a link's form and keep its panel open, and the page in its place, while it is edited, on a desktop and at 375 px, and the way back to the page's settings. Default target: the build from file://. Run `pnpm build` first |
-| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends with every page, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview that opens the page's panel and brings up the link's form, a reload, markup and added scripts that try to run, and the home page before and after a visit to the studio. Run `pnpm build` first. With a URL it checks a server that is already running, such as `pnpm dev:web` |
+| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends with every page, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview that opens the page's panel and brings up the link's form, a reload, markup and added scripts that try to run, and the home page before and after a visit to the studio. Then sign-in against the local stack, each person in a browser of their own, reading the emails from the mail catcher: from the studio and back with the work by the link and by the code, the link in a second browser, wrong, used and older links and codes, the cookie as the browser holds it, a session renewed by the proxy, `/admin`, sign-out, the refusals, Google, a phone, and the studio's top bar at the widths between a phone and a wide window. Run `pnpm build` and `pnpm stack:start` first; without the stack the sign-in checks are reported as skipped. With a URL it checks a server that is already running, such as `pnpm dev:web` with the stack's variables |
 | `pnpm verify:runtime` | Checks every branch of the boil control (lite mode, slow device, Save-Data, reduced motion, offscreen, hidden, idle) on the built demo page, that frames flip, hold frame 1 and pause with it on `demo-frames.html`, that the demo page in a frame posts nothing to its parent when a drawing is tapped and never scrolls itself (only the studio's preview renders a page that does either), and that the runtime reads the page's own data whatever ids its drawing holds |
 | `pnpm shots [url]` | Retakes the studio screenshots in `docs/design/` (desktop light and dark, 375 px). Default target: the build from file:// |
 | `pnpm measure [--soft]` | Boil frame cost at 375×812 @3x with 1×, 4× and 6× CPU slowdown, against the original prototype; then the desk with three objects flipping frames at 6 fps |
@@ -110,7 +151,8 @@ The Chrome-based tools use the installed Chrome or Edge (or set `CHROME_PATH`). 
 screenshots and exports to `tools/out/`, which git ignores.
 
 Next.js reports anonymous usage to its maker unless `NEXT_TELEMETRY_DISABLED=1` is set in the
-environment. CI sets it, and so does `pnpm verify:web` for the server it starts.
+environment. CI sets it, and so does `pnpm verify:web` for the server it starts. The Supabase CLI
+does the same unless `SUPABASE_TELEMETRY_DISABLED=1` is set; `pnpm stack:*` sets it.
 
 ## Layout
 
@@ -127,11 +169,14 @@ packages/
                for db:migrate and db:check
 apps/
   studio/      the studio as one HTML file (Vite): the entry point, the build and its policy
-  web/         the web app (Next.js): the studio at /studio, and the policy sent with every page
+  web/         the web app (Next.js): the studio at /studio, sign-in (/sign-in, /auth/*, /admin),
+               auth/ (the server side of sign-in), proxy.ts and the policy sent with every page
+supabase/      the local Supabase stack for sign-in: config.toml, the sign-in email, and the one
+               migration the stack's database needs before the app's own
 fixtures/      test drawings; reference/ has the original prototype and its rendered output
-tools/         lint CLI, fixture generator, parity and headless-Chrome checks
+tools/         lint CLI, fixture generator, parity and headless-Chrome checks, the stack's commands
 docs/          development plan, architecture decisions, and design/ (the studio's design system)
-compose.yaml   the local database (Postgres 17 in Docker)
+compose.yaml   the local database for the database package's tests (Postgres 17 in Docker)
 ```
 
 ## Pitching it
@@ -221,11 +266,10 @@ understates a budget Android.
 
 ## Not built yet
 
-On purpose, for the pitch: accounts, publishing, analytics, billing and custom domains (see the
-plan). The web app is a shell for them: it has no sign-in and no hosting yet, and the studio in
-it keeps work in the browser, as the single-file build does. The database package is built, but
-nothing calls it: a route that saves drafts waits for sign-in, so that it knows whose draft it
-is, and no Supabase project exists yet. Also not built: the
+On purpose, for the pitch: publishing, analytics, billing and custom domains (see the plan).
+The web app has sign-in, and no hosting and no Supabase project yet. The studio in it still
+keeps work in the browser, as the single-file build does: saving the draft to the account
+(issues 15 and 16), the handle picker (17), account deletion and export come next. Also not built: the
 pinboard and the shop window (the scene picker lists the desk alone until they are
 drawn); keeping a page's links when another scene is chosen (it starts a new page, after
 asking); the Open Graph image; the badge

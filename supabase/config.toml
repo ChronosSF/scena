@@ -1,0 +1,137 @@
+# The local Supabase stack for sign-in (docs/adr/0006-sign-in.md): Supabase Auth, the gateway in
+# front of it, its Postgres, and a mail catcher that keeps every email it is sent. Nothing else of
+# Supabase is started. It is for this machine and CI only: a hosted project is configured in its
+# dashboard, and the ADR lists what to set there.
+#
+#   pnpm stack:start   start it (Docker), and say where everything is
+#   pnpm stack:stop    stop it; the data stays
+#   pnpm stack:env     the variables the web app reads, for this stack
+#
+# The CLI is run at a pinned version (package.json, "stack:*"), and so is CI's.
+
+# The prefix of every container, volume and network the CLI makes: supabase_db_scena,
+# supabase_auth_scena and so on.
+project_id = "scena"
+
+[api]
+enabled = true
+# The gateway, which is how the web app reaches Supabase Auth. The ports are a block of their own,
+# 54420 to 54424, so that this stack does not collide with another project's stack on the
+# CLI's usual 54321 to 54327.
+port = 54421
+# Nothing is read through the Data API: the app reaches its tables through its own connection
+# (DATABASE_URL), and PostgREST is not started (pnpm stack:start leaves it out).
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54422
+shadow_port = 54420
+# The major a new hosted project runs (docs/adr/0005-database-package.md, Decision 7).
+major_version = 17
+
+[db.pooler]
+enabled = false
+
+[db.seed]
+enabled = false
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+
+# The mail catcher (Mailpit). Every email Supabase Auth sends goes here and nowhere else; its
+# page and its API are at http://127.0.0.1:54424. The checks read the sign-in emails from it.
+[local_smtp]
+enabled = true
+port = 54424
+
+[storage]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false
+
+[auth]
+enabled = true
+# The web app's address when it runs with `pnpm dev:web`. Supabase Auth accepts any address on
+# the same host as a place to send a person back to, so the build that `pnpm verify:web` serves
+# on port 3190 is accepted too; the list below says so in as many words.
+site_url = "http://localhost:3100"
+additional_redirect_urls = ["http://localhost:3100/**", "http://localhost:3190/**"]
+# An hour, as on a hosted project. The checks make a session run out by other means.
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+# Anyone may sign up: an email to an address that has no account yet starts one. Turning this
+# off would make the answer to a new address differ from the answer to a known one.
+enable_signup = true
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+
+# The local limits are far above a hosted project's, because the checks send many emails and
+# verify many codes from one address. A hosted project's are set in its dashboard.
+[auth.rate_limit]
+email_sent = 1000
+sms_sent = 0
+anonymous_users = 0
+token_refresh = 1000
+sign_in_sign_ups = 1000
+token_verifications = 1000
+web3 = 0
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+# As on a hosted project: an address is confirmed by the first email it is sent, which is why a
+# new address gets the confirmation template and a known one the magic-link template.
+enable_confirmations = true
+secure_password_change = false
+# How soon the same address may be sent another email. Short, so the checks can ask twice for
+# one address, and long enough that two requests in a row are refused even on a slow runner,
+# which a check relies on.
+max_frequency = "5s"
+otp_length = 6
+otp_expiry = 3600
+
+# Both templates carry the link and the code, and the link goes to this app's own confirm page,
+# which signs in only when the person presses its button (a POST). The address it starts from
+# is the one the app asked for ({{ .RedirectTo }}), so a link opened in another browser or on
+# another device works too: it carries the token's hash, and needs nothing kept where the email
+# was asked for.
+[auth.email.template.confirmation]
+subject = "Your Scena sign-in link and code"
+content_path = "./supabase/templates/sign-in.html"
+
+[auth.email.template.magic_link]
+subject = "Your Scena sign-in link and code"
+content_path = "./supabase/templates/sign-in.html"
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+
+[auth.mfa.totp]
+enroll_enabled = false
+verify_enabled = false
+
+[auth.mfa.phone]
+enroll_enabled = false
+verify_enabled = false
+
+# Google, switched on only where its credentials are given: set the three variables before
+# `pnpm stack:start`. The web app shows its button only when SCENA_GOOGLE_SIGN_IN is "on" as well.
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+redirect_uri = ""
+url = ""
+skip_nonce_check = false
+email_optional = false

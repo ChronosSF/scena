@@ -1,5 +1,5 @@
 import { BookOpen, Check, Download, Ellipsis, FileWarning, Import, LayoutTemplate, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { ThemeMode } from "@scena/scene";
 import { store, useStudio, type StudioState } from "../store.ts";
 import { isBuiltIn } from "../model.ts";
@@ -52,7 +52,7 @@ export function SceneNameInput({ className, id }: { className: string; id?: stri
   );
 }
 
-export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: () => void; onImport: () => void; onReset: () => void; onSetAside: () => void }) {
+export function TopBar({ onExport, onImport, onReset, onSetAside, account }: { onExport: () => void; onImport: () => void; onReset: () => void; onSetAside: () => void; account?: ReactNode }) {
   const { view, canUndo, canRedo, saveStatus, setAside, scene, phone, page } = useStudio();
   return (
     <header className="bar">
@@ -95,6 +95,8 @@ export function TopBar({ onExport, onImport, onReset, onSetAside }: { onExport: 
         </Tip>
         <Button className="hide-narrow" variant="ghost" icon={Import} onClick={onImport} data-ui="import"><span className="squeeze">Import</span></Button>
         <Button variant="primary" icon={Download} onClick={onExport} data-ui="export"><span className="hide-narrow">Export</span><span className="show-narrow sr-only">Export</span></Button>
+        {/* the host app's own controls (StudioProps.account); nothing at all when it has none */}
+        {account}
         <Menu>
           <Tip label="More">
             <MenuTrigger asChild>

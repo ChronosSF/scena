@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The web app: where sign-in, saved drafts and publishing will live. Today it runs the studio.",
+  "description": "The web app: the studio, sign-in, and later saved drafts and publishing.",
   "scripts": {
     "dev": "next dev --port 3100",
     "build": "next build",
@@ -11,8 +11,11 @@
     "typecheck": "next typegen && tsc --noEmit -p ."
   },
   "dependencies": {
+    "@scena/db": "workspace:*",
     "@scena/renderer": "workspace:*",
     "@scena/studio": "workspace:*",
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.119.0",
     "next": "16.4.5",
     "react": "19.3.1",
     "react-dom": "19.3.1"

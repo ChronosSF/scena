@@ -32,9 +32,14 @@
     "db:generate": "pnpm --filter @scena/db generate",
     "db:migrate": "pnpm --filter @scena/db migrate",
     "db:check": "pnpm --filter @scena/db check:migrations",
+    "stack:start": "node tools/stack.ts start",
+    "stack:stop": "node tools/stack.ts stop",
+    "stack:remove": "node tools/stack.ts remove",
+    "stack:env": "node tools/stack.ts env",
     "shots": "node tools/design-shots.ts"
   },
   "devDependencies": {
+    "@scena/db": "workspace:*",
     "@scena/renderer": "workspace:*",
     "@scena/scene": "workspace:*",
     "@scena/scenes": "workspace:*",

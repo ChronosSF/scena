@@ -15,6 +15,8 @@ export interface User {
   displayName: string | null;
   /** A language tag such as "en" or "it-IT". */
   locale: string;
+  /** May open /admin. Set by hand in SQL; nothing here writes it (docs/adr/0006-sign-in.md). */
+  isAdmin: boolean;
   createdAt: Date;
 }
 
@@ -51,7 +53,7 @@ function fits(text: string, max: number): string {
   return out.trim();
 }
 
-const PROFILE = { id: users.id, email: users.email, displayName: users.displayName, locale: users.locale, createdAt: users.createdAt };
+const PROFILE = { id: users.id, email: users.email, displayName: users.displayName, locale: users.locale, isAdmin: users.isAdmin, createdAt: users.createdAt };
 
 /** Makes the profile for a newly signed-in person. */
 export async function createUser(db: Database, input: NewUser): Promise<Result<{ user: User }>> {

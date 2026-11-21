@@ -1,0 +1,12 @@
+<!-- The sign-in email, for a new address (Supabase's "Confirm signup") and a known one ("Magic link")
+     alike, so that the two cannot drift apart. The link opens the web app's confirm page, which
+     signs in only when its button is pressed: a mail scanner that opens the link uses nothing.
+     The token's hash is after the "#", which a browser never sends to a server, so it is in no
+     request log; the confirm page reads it and takes it out of the address bar. The code is for
+     the device where the email was asked for. docs/adr/0006-sign-in.md -->
+<h2>Sign in to Scena</h2>
+<p>Open this link to sign in, on this device or any other:</p>
+<p><a href="{{ .RedirectTo }}#token_hash={{ .TokenHash }}">Sign in to Scena</a></p>
+<p>Or type this code on the page where you asked for this email:</p>
+<p style="font-size: 24px; letter-spacing: 4px;"><strong>{{ .Token }}</strong></p>
+<p>The link and the code work once, for an hour. If you did not ask to sign in, you can ignore this email: nothing happens until one of them is used.</p>

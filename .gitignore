@@ -7,6 +7,9 @@ next-env.d.ts
 .env
 .env.*
 !.env.example
+# the Supabase CLI's own state for the local stack (pnpm stack:start)
+supabase/.branches/
+supabase/.temp/
 *.tsbuildinfo
 .vite/
 coverage/

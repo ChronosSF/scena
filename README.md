@@ -64,7 +64,7 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 324 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, sign-in's rules (the way back, the session cookie, the configuration, what a person is told, the profile, what a browser is given, the local stack's settings), and the database package (23 of them need a database, below)
+pnpm test         # 334 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, sign-in's rules (the way back, the session cookie, the configuration, what a person is told, the profile, the renewal of a session, what a browser is given, the local stack's settings), and the database package (23 of them need a database, below)
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
 pnpm check        # typecheck + db:check + test + build
 
@@ -109,7 +109,7 @@ pnpm stack:start            # start it, and apply the app's migrations to its da
 pnpm stack:stop             # stop it; the data stays in its Docker volume
 pnpm stack:remove           # stop it and remove its volume, for a clean start
 pnpm stack:env              # the web app's variables for it, as KEY=value lines (--powershell: $env:KEY = "value")
-pnpm stack:env --write      # the same, into apps/web/.env.local, which Next.js reads and git ignores
+pnpm stack:env --write      # the same, into apps/web/.env.local, which Next.js reads and git ignores; the file's other lines stay
 ```
 
 To try sign-in: `pnpm stack:start`, then `pnpm stack:env --write`, then `pnpm dev:web`, and open

@@ -9,7 +9,8 @@ export function SignOutButton({ from, className = styles.secondary, title, child
   return (
     <form action={signOut}>
       <input type="hidden" name="next" value={from} />
-      <button type="submit" className={className} title={title} data-ui="sign-out">{children}</button>
+      {/* a title is also the button's name, for where its words are not shown (the studio's top bar) */}
+      <button type="submit" className={className} title={title} aria-label={title} data-ui="sign-out">{children}</button>
     </form>
   );
 }

@@ -127,6 +127,13 @@ repository does for Next.js.
   same; a used link and an older link read the same; the limits read "wait a minute"; a server
   that does not answer reads "try again in a moment". The sign-in page shows them in a live
   region that is in the page from the start.
+- **The code step is only for an address this page has sent an email to.** Supabase Auth gives
+  one code (`over_email_send_rate_limit`) for the limit per address, where an email went out a
+  moment ago, and for the project's own limit per hour, where none did. So the sentence for it
+  does not say an email was sent, and a first ask that is refused, for this address or for
+  another one typed from the code step, stays on the email step. Someone who reloads the page
+  and asks again within the minute is not offered the code field for it; the link in the email
+  they have still works.
 
 ## Decision 4: the session cookie
 
@@ -161,6 +168,16 @@ some callers). Static files are outside the proxy's matcher and never
 get a cookie. A renewal Supabase Auth refuses removes the session; one that throws (the
 configuration is wrong, the network is down) is logged and leaves the request as it came. Either
 way the page renders as for someone signed out, and the studio still opens.
+
+Two cases leave the session where it is, since neither says anything about it. A renewal
+refused as one too many (429) is not passed on: the library removes a session on any refusal,
+and Supabase Auth counts renewals by the server's address (Costs and risks), so a person would
+be signed out for a limit they never met. And a page never renews: the library renews a session
+that is about to run out wherever it is read, a page cannot send the new cookie, and the
+refresh token would be spent for nothing. `currentAccount` reads through a client whose request
+for a renewal is answered as refused without being sent (`auth/supabase.ts`). A session with
+time left is read as it is, one that has run out reads as no one signed in, and the proxy
+renews it in front of the next request.
 
 ## Decision 6: the way back is looked up, not parsed
 
@@ -241,7 +258,11 @@ of accounts.
 The slot gives way as the window narrows, before the studio's own controls do: the address is
 shown from 1400 px, the words "Sign in" and "Sign out" from 1180 px, and below that the icon
 alone, a person to sign in and a way out to sign out, with the address in the button's tooltip
-and, at every width, for screen readers. The studio's bar gained one rule for a slot of any
+and, at every width, for screen readers. The two widths depend on what the bar holds, so they
+are in the studio's stylesheet with the bar's own, not in the web app: the slot marks its
+address `account-wide` and its words `account-words`, and `studio.css` says where each is
+shown. A control added to the bar changes the numbers in the file that adds it. The studio's
+bar also gained one rule for a slot of any
 width: its right-hand side is never narrower than what is in it, so the centre moves left
 instead of being run over. Without a slot the right-hand side fits in its half, and the
 single-file build's bar lays out as it did.
@@ -308,8 +329,12 @@ one. The job's time limit went from 15 to 25 minutes for the first pull of the s
 
 ## Checks
 
-- `pnpm check` runs 324 tests, 59 more than before. Without `DATABASE_URL`, 23 database tests are
-  reported as skipped and 301 pass; with it, all 324 pass.
+- `pnpm check` runs 334 tests, 69 more than before. Without `DATABASE_URL`, 23 database tests are
+  reported as skipped and 311 pass; with it, all 334 pass.
+  - `apps/web/test/session.test.ts` (9), with a stand-in for Supabase Auth: the proxy's renewal
+    for a visitor, a session that has run out, one Supabase Auth no longer knows, and one
+    refused as one too many; a page reading a session without renewing it, by the client and
+    by `currentAccount`; the cookies and the cache headers on a response; the one database pool.
   - `apps/web/test/auth.test.ts` (35): the return address, by every kind of address that is not
     on the list; the cookie's name and attributes over https and http, the header as a browser
     gets it, and which names are its pieces; the configuration (on, off, half, a secret or
@@ -320,13 +345,14 @@ one. The job's time limit went from 15 to 25 minutes for the first pull of the s
     answer of `createUser`.
   - `apps/web/test/boundary.test.ts` (4): the walk of what the browser gets, and that it catches
     each kind of mistake.
-  - `apps/web/test/stack.test.ts` (8): the stack's name, ports and services, the pinned CLI, the
-    limits, Google off, and the one template with the link and the code.
+  - `apps/web/test/stack.test.ts` (9): the stack's name, ports and services, the pinned CLI, the
+    limits, Google off, the one template with the link and the code, and that writing the
+    stack's variables into `.env.local` keeps the file's other lines.
   - `apps/web/test/csp.test.ts` (6, one new): `form-action 'self'` and no host of Supabase's or
     Google's.
   - `packages/db`: the admin flag with a database (off, set by hand, read with the profile, gone
     with a deleted account) and without one (nothing writes it).
-- `pnpm verify:web`: 66 checks with Google on, as CI runs it (65 with it off), the 23 of before
+- `pnpm verify:web`: 67 checks with Google on, as CI runs it (66 with it off), the 23 of before
   and the rest for sign-in, against the stack, in browser contexts of their own, with the
   emails read from the mail catcher (about 80 seconds on this machine):
   - nothing sets a cookie for a visitor; `/admin` is a 404 for them; the return address;
@@ -337,6 +363,8 @@ one. The job's time limit went from 15 to 25 minutes for the first pull of the s
     nothing, and then still works;
   - the same visitor flow by the code, typed by the keyboard; a second email asked at once is
     answered with a sentence; a wrong code is refused with a sentence read where the field points;
+  - another address typed from the code step, when no email can go to it yet, stays on the
+    email step, and the page asks for no code it did not send;
   - the link opened in a second, fresh browser signs that one in and not the first; a way back
     changed in the link to another site lands in the studio; a used link and an older link are
     refused with a sentence;
@@ -431,13 +459,31 @@ was caught in the browser only through the verifier cookie at first: Chrome keep
 `Domain` names `localhost` itself as host-only, so "the cookie as the server writes it" was added
 to read the header.
 
+A code review of the pull request then found ten things, and each fix that changes what the
+app does was taken back out in turn:
+
+| Taken out | Caught by |
+|---|---|
+| a renewal refused as one too many passed on as a dead session (`auth/session.ts`) | 1 unit test |
+| `currentAccount` reading through a client that may renew | 1 unit test |
+| the reading client sending the renewal | 3 unit tests |
+| the limit's sentence saying an email was sent | 1 unit test |
+| the code step for any address whose send was refused (`auth/actions.ts`) | "another address that cannot be sent an email yet stays on the email step" |
+| the database pool in a variable of its module | 1 unit test |
+| `pnpm stack:env --write` replacing the file whole | 1 unit test |
+| a response given the session's cookies without the cache headers | 2 unit tests |
+| the studio's rule for where the address is shown | the top bar from 900 px up |
+
 ## Costs and risks
 
 - **Supabase Auth's limits per IP address see the app's server, not the visitor.** Every
-  sign-in call comes from the server, so those limits (sign-ins, verifications) count all
-  visitors together: one person hammering the form slows sign-in for everyone, and the limit is
-  not a limit per person. The app needs a limit of its own per visitor before launch. (The limit
-  per email address is not affected.)
+  sign-in call comes from the server, so those limits (sign-ins, verifications, renewals) count
+  all visitors together: one person hammering the form slows sign-in for everyone, and the
+  limit is not a limit per person. The app needs a limit of its own per visitor before launch.
+  (The limit per email address is not affected.) Renewals are counted the same way, and need no
+  form: a request with a made-up session cookie makes the proxy ask for one. While that limit
+  is used up, a person whose access token has run out is shown as signed out; they keep their
+  cookie and are signed in again once a renewal goes through (Decision 5).
 - **The link depends on the Site URL and the redirect list agreeing with `SCENA_SITE_URL`.** If
   Supabase Auth does not accept the address the app asks for, it puts its Site URL in its place
   and the link breaks (`https://app.example#token_hash=…`). Supabase Auth accepts any address on

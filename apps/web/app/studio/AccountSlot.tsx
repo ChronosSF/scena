@@ -14,6 +14,11 @@ export interface SignedIn {
   email: string;
 }
 
+// The studio's class names for what its bar has room for (StudioProps.account, studio.css): a
+// line of text on a wide window alone, and a control's words until they give way to its icon.
+// Where the words are not shown, the control's name is its title.
+const WIDE = "account-wide", WORDS = "account-words";
+
 const Person = () => (
   <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="8" r="4" />
@@ -34,21 +39,21 @@ const Leave = () => (
 export function AccountSlot({ signedIn }: { signedIn: SignedIn | null }) {
   if (!signedIn) {
     return (
-      <Link className={styles.button} href="/sign-in?next=%2Fstudio" prefetch={false} data-ui="sign-in" title="Sign in">
+      <Link className={styles.button} href="/sign-in?next=%2Fstudio" prefetch={false} data-ui="sign-in" title="Sign in" aria-label="Sign in">
         <Person />
-        <span className={styles.label}>Sign in</span>
+        <span className={WORDS}>Sign in</span>
       </Link>
     );
   }
   return (
     <span className={styles.account} data-ui="account">
       {/* the address on a wide window; a screen reader hears the sentence after it instead */}
-      <span className={styles.who} aria-hidden="true">{signedIn.email}</span>
+      <span className={`${styles.who} ${WIDE}`} aria-hidden="true">{signedIn.email}</span>
       <span className={styles.hidden}>Signed in as {signedIn.email}</span>
       {/* the button's tooltip says who is signed in, also where the address is not shown */}
       <SignOutButton from="/studio" className={styles.button} title={`Sign out (signed in as ${signedIn.email})`}>
         <Leave />
-        <span className={styles.label}>Sign out</span>
+        <span className={WORDS}>Sign out</span>
       </SignOutButton>
     </span>
   );

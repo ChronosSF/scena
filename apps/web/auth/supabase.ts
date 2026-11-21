@@ -11,6 +11,7 @@
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { NextResponse } from "next/server";
 import type { AuthConfig } from "./config.ts";
 
 /** A cookie to write, as @supabase/ssr hands it over: an empty value with no lifetime removes it. */
@@ -19,6 +20,9 @@ export interface CookieWrite {
   value: string;
   options: CookieOptions;
 }
+
+/** Whether a write takes its cookie away. */
+export const removes = (write: CookieWrite): boolean => !write.value || write.options.maxAge === 0;
 
 /**
  * The cookies of one request, with what this request has written on top. Reads see the
@@ -41,8 +45,7 @@ export class CookieJar {
 
   setAll = (writes: CookieWrite[], headers: Record<string, string>): void => {
     for (const w of writes) {
-      const removes = !w.value || w.options.maxAge === 0;
-      if (removes) this.view.delete(w.name); else this.view.set(w.name, w.value);
+      if (removes(w)) this.view.delete(w.name); else this.view.set(w.name, w.value);
       this.written.set(w.name, w);
       this.onWrite?.(w);
     }
@@ -51,8 +54,15 @@ export class CookieJar {
 
   /** What this request wrote, last write per name. */
   writes = (): CookieWrite[] => [...this.written.values()];
-  /** The headers @supabase/ssr asks for on a response that sets the session: no cache may keep it. */
-  headers = (): Record<string, string> => ({ ...this.cacheHeaders });
+  /**
+   * Puts what this request wrote onto its response: the cookies, and with them the headers
+   * @supabase/ssr asks for, so that no cache keeps a response that sets the session. The one
+   * way a response gets either, so that none gets the cookies without the headers.
+   */
+  applyTo = (response: NextResponse): void => {
+    for (const w of this.written.values()) response.cookies.set(w.name, w.value, w.options as Parameters<typeof response.cookies.set>[2]);
+    for (const [name, value] of Object.entries(this.cacheHeaders)) response.headers.set(name, value);
+  };
   /** The cookies as a Cookie request header, writes applied. */
   header = (): string => this.getAll().map(({ name, value }) => `${name}=${value}`).join("; ");
 }
@@ -62,11 +72,27 @@ export class CookieJar {
 const TIMEOUT_MS = 10_000;
 const timedFetch: typeof fetch = (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(TIMEOUT_MS) });
 
-export function sessionClient(config: AuthConfig, jar: CookieJar): SupabaseClient {
+/**
+ * For code that cannot set a cookie, which is a page once it renders: the session is read and
+ * never renewed. The library renews a session that is about to run out wherever it is read,
+ * and a renewal there would spend the refresh token, which is single-use, and lose the new
+ * one. So a request for a renewal is answered here, as refused, and never sent. A session
+ * that still has time is read as it is; one that has run out reads as no session. Either way
+ * the browser keeps its cookie, and proxy.ts renews it in front of the next request.
+ */
+const readingFetch: typeof fetch = (input, init) => {
+  const address = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  return URL.canParse(address) && new URL(address).searchParams.get("grant_type") === "refresh_token"
+    ? Promise.resolve(Response.json({ code: "renewal_not_made_here", message: "a page reads the session and does not renew it" }, { status: 400 }))
+    : timedFetch(input, init);
+};
+
+/** `renews: false` reads the session without ever renewing it (readingFetch). */
+export function sessionClient(config: AuthConfig, jar: CookieJar, { renews = true }: { renews?: boolean } = {}): SupabaseClient {
   return createServerClient(config.supabaseUrl, config.publishableKey, {
     cookieOptions: { name: config.cookie.name, ...config.cookie.options },
     cookies: { getAll: jar.getAll, setAll: jar.setAll },
-    global: { fetch: timedFetch },
+    global: { fetch: renews ? timedFetch : readingFetch },
   });
 }
 

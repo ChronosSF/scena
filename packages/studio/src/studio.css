@@ -661,6 +661,16 @@ dialog.picker[open] { display: flex; flex-direction: column; }
   .app[data-view="preview"] .bar .squeeze { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .app[data-view="preview"] .bar .btn:has(.squeeze) { width: var(--ui-h-control); padding: 0; justify-content: center; }
 }
+/* The host app's part of the bar (StudioProps.account). What there is room for depends on what
+   this bar holds, so the widths are here, with the bar's own, and not in the host's stylesheet:
+   .account-wide is for a line of text that fits on a wide window alone, and .account-words for
+   the words of a link or a button, which give way to its icon. A control added to the bar
+   changes these two numbers with it. */
+@media (max-width: 1399.98px) { .bar .account-wide { display: none; } }
+@media (max-width: 1179.98px) {
+  .bar .account-words { display: none; }
+  .bar :is(a, button):has(> .account-words) { width: var(--ui-h-control); padding: 0; }
+}
 @media (max-width: 420px) { .bar .seg-item span { padding: 0 8px; } }
 
 @media (prefers-reduced-motion: reduce) {

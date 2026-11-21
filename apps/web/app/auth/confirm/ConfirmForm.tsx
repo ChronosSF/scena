@@ -7,10 +7,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { confirmLink } from "../../../auth/actions.ts";
 import type { ReturnPath } from "../../../auth/return-to.ts";
-import styles from "../../_ui/account.module.css";
-
 // the shape of a token hash, so that nothing else is put into the form
-const TOKEN_HASH = /^[A-Za-z0-9_-]{16,128}$/;
+import { TOKEN_HASH } from "../../../auth/token-hash.ts";
+import styles from "../../_ui/account.module.css";
 
 export function ConfirmForm({ next }: { next: ReturnPath }) {
   // null until the address has been read; "" when it holds no token

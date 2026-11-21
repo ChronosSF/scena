@@ -10,7 +10,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 // the generated module alone: this file runs in front of every request, and needs one constant of the renderer
 import { RUNTIME_SHA256 } from "@scena/renderer/runtime";
-import { renewSession, type Renewal } from "./auth/session.ts";
+import { renewSession } from "./auth/session.ts";
+import type { CookieJar } from "./auth/supabase.ts";
 import { newNonce, policyFor } from "./csp.ts";
 
 export async function proxy(request: NextRequest) {
@@ -23,7 +24,7 @@ export async function proxy(request: NextRequest) {
   // First, so that the request's cookies are the renewed ones when its headers are copied below.
   // A renewal that fails leaves the request as it came: the page then asks Supabase Auth itself
   // and finds no one signed in, rather than the whole app failing with it.
-  let renewal: Renewal | null = null;
+  let renewal: CookieJar | null = null;
   try {
     renewal = await renewSession(request);
   } catch (e) {
@@ -34,10 +35,7 @@ export async function proxy(request: NextRequest) {
   headers.set("Content-Security-Policy", policy);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set("Content-Security-Policy", policy);
-  if (renewal) {
-    for (const w of renewal.writes) response.cookies.set(w.name, w.value, w.options as Parameters<typeof response.cookies.set>[2]);
-    for (const [name, value] of Object.entries(renewal.headers)) response.headers.set(name, value);
-  }
+  renewal?.applyTo(response);
   return response;
 }
 

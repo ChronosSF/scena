@@ -13,14 +13,13 @@ import { returnPath, type ReturnPath } from "./return-to.ts";
 import { actionClient, settleSignIn } from "./server.ts";
 import type { SignInState } from "./sign-in-state.ts";
 import { mailClient } from "./supabase.ts";
+import { TOKEN_HASH } from "./token-hash.ts";
 
 // One "@" with text around it, and no space: linear on any input. Supabase Auth checks the rest.
 const EMAIL = /^[^\s@]+@[^\s@]+$/;
 const EMAIL_MAX = 254;
 // A code is digits; people paste it with spaces or a dash in the middle.
 const CODE_SHAPE = /^\d{6,10}$/;
-// The hash in an email's link: hexadecimal today, and never more than this.
-const TOKEN_HASH = /^[A-Za-z0-9_-]{16,128}$/;
 
 const field = (form: FormData, name: string): string => {
   const v = form.get(name);
@@ -60,8 +59,10 @@ export async function signIn(previous: SignInState, form: FormData): Promise<Sig
   });
   if (error) {
     const problem = sendProblem(error);
-    // asked again too soon: the last email is on its way, so its code is what to type
-    const step = problem === SEND.wait ? "code" : previous.step === "code" && problem !== SEND.invalid ? "code" : "email";
+    // The code step is for an address this page has sent an email to: asked again from there,
+    // the last email is the one to use. Any other address stays on the email step, since
+    // nothing says an email ever went to it (the limit may be the project's own).
+    const step = previous.step === "code" && previous.email === email && problem !== SEND.invalid ? "code" : "email";
     return { step, email, problem, field: problem === SEND.invalid ? "email" : null, sent };
   }
   return { step: "code", email, problem: null, field: null, sent: sent + 1 };

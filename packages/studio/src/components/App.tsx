@@ -21,6 +21,11 @@ export interface StudioProps {
    * What the app that mounts the studio shows about the person's account, at the end of the top
    * bar: the web app's sign-in link, or who is signed in and a way to sign out. The studio
    * knows nothing about accounts; the single-file build has none and leaves this out.
+   *
+   * The bar says what it has room for through two class names (studio.css): give a line of
+   * text that needs a wide window `account-wide`, and the words inside a link or a button
+   * `account-words`, as a direct child of it next to its icon. Neither is shown where the bar
+   * is too narrow, so each control needs a name of its own (an `aria-label`).
    */
   account?: ReactNode;
 }

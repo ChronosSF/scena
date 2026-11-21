@@ -31,8 +31,10 @@ export interface AuthProblem {
 
 export const SEND = {
   invalid: "Enter an email address, such as name@example.com.",
-  // per address, and the project's own limit per hour: neither says anything about an account
-  wait: "An email was sent to this address a moment ago. Use the link or the code in it, or wait a minute and ask again.",
+  // Supabase Auth gives one code for two limits: per address (an email went out a moment ago)
+  // and the project's own per hour (none did). The sentence is true of both, and neither says
+  // anything about an account.
+  wait: "We cannot send another email to this address just yet. If one has reached you, use the link or the code in it. If not, wait a minute and ask again.",
   busy: NOTICES.busy,
   undeliverable: "We could not send an email to that address. Check it for a typo, or try another address.",
   unavailable: NOTICES.unavailable,

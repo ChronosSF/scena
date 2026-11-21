@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { LEFT_OUT, SUPABASE_CLI } from "../../../tools/stack.ts";
+import { LEFT_OUT, SUPABASE_CLI, envFileWith } from "../../../tools/stack.ts";
 
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const config = readFileSync(join(ROOT, "supabase", "config.toml"), "utf8");
@@ -53,6 +53,19 @@ describe("the local stack", () => {
     expect(Number(setting("auth.rate_limit", "token_verifications"))).toBeGreaterThanOrEqual(1000);
     expect(Number(setting("auth.rate_limit", "sign_in_sign_ups"))).toBeGreaterThanOrEqual(1000);
     expect(setting("auth.email", "max_frequency")).toBe('"5s"');
+  });
+
+  test("writes its variables into the web app's .env.local once each, and leaves the file's other lines as they were", () => {
+    const vars = { SUPABASE_URL: "http://127.0.0.1:54421", SCENA_SITE_URL: "http://localhost:3100" };
+    const settings = (file: string) => file.split("\n").filter((line) => line && !line.startsWith("#"));
+    const first = envFileWith("", vars);
+    expect(settings(first)).toEqual(["SUPABASE_URL=http://127.0.0.1:54421", "SCENA_SITE_URL=http://localhost:3100"]);
+    // a developer's own lines, an older value of one of the stack's, and Windows line ends
+    const second = envFileWith(`${first}SCENA_GOOGLE_SIGN_IN=on\r\n# mine\r\nSUPABASE_URL=http://old.example\r\nconstructor=kept\r\n`, vars);
+    expect(settings(second)).toEqual(["SUPABASE_URL=http://127.0.0.1:54421", "SCENA_SITE_URL=http://localhost:3100", "SCENA_GOOGLE_SIGN_IN=on", "constructor=kept"]);
+    expect(second).toContain("\n# mine\n");
+    // and written again, nothing moves or doubles
+    expect(envFileWith(second, vars)).toBe(second);
   });
 
   test("keeps Google off unless the environment switches it on, and reads its client from the environment", () => {

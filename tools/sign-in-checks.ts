@@ -293,6 +293,27 @@ export async function signInChecks({ chrome, origin, stack, google, check, out }
     check("the code, typed by the keyboard, signs the visitor in and brings them back to the studio with their edit",
       boBack.path === "/studio" && boBack.draft.title === "Letters from Bo" && boBack.account.includes(boAddress), boBack);
 
+    // ── another address from the code step, when no email can go to it ────────────────────
+    // Supabase Auth refuses a second email to one address within a few seconds, with the code
+    // it also gives when the project's own limit per hour is reached. An address that was
+    // asked for elsewhere a moment ago is refused that way here: the page goes back to the
+    // email step, and does not ask for a code it never sent.
+    const gus = await open(), gusAddress = newAddress("gus"), gusOther = newAddress("gus-other");
+    await gus.page.goto(`${origin}/sign-in`);
+    await askForEmail(gus, gusAddress);
+    await fetch(`${stack.apiUrl}/auth/v1/otp`, { method: "POST", headers: { apikey: stack.publishableKey, "Content-Type": "application/json" }, body: JSON.stringify({ email: gusOther, create_user: true }) });
+    await gus.keys.clickOn('[data-ui="code-form"] button[type="button"]');
+    await settled(() => gus.page.eval<boolean>(`!!document.querySelector('[data-ui="email-form"] #email')`), (ok) => ok);
+    await gus.keys.typeInto("#email", gusOther);
+    await pressEnter(gus);
+    const refusedSend = await settled(async () => ({
+      said: await message(gus),
+      ...(await gus.page.eval<{ emailStep: boolean; codeStep: boolean; typed: string }>(`({ emailStep: !!document.querySelector('[data-ui="email-form"]'), codeStep: !!document.querySelector('[data-ui="code-form"]'), typed: (document.querySelector("#email") || {}).value || "" })`)),
+    }), (o) => o.said === SEND.wait);
+    await mailTo(gusOther);
+    check("another address that cannot be sent an email yet stays on the email step: the page asks for no code it did not send",
+      refusedSend.said === SEND.wait && refusedSend.emailStep && !refusedSend.codeStep && refusedSend.typed === gusOther && (await mailsTo(gusOther)).length === 1, refusedSend);
+
     // ── the link in a second browser, and a used one ──────────────────────────────────────
     const cy = await open(), cyAddress = newAddress("cy");
     await cy.page.goto(`${origin}/sign-in?next=%2Fstudio`);

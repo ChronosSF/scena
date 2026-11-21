@@ -134,6 +134,8 @@ describe("what a person is told", () => {
     expect(sendProblem({ code: "signup_disabled", status: 422 })).toBe(SEND.unavailable);
     expect(sendProblem({ code: "otp_disabled", status: 422 })).toBe(SEND.unavailable);
     for (const s of Object.values(SEND)) expect(s).not.toMatch(/no account|not registered|unknown|already|exists|new account/i);
+    // one code covers the limit per address and the project's own per hour, where no email went out
+    expect(SEND.wait).not.toMatch(/was sent|we sent|sent to|on its way/i);
   });
 
   test("a wrong code and an expired one get the same sentence; a link that is not accepted gets the link notice", () => {

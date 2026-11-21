@@ -30,7 +30,6 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
   }
   const response = NextResponse.redirect(to, 303);
-  for (const w of jar.writes()) response.cookies.set(w.name, w.value, w.options as Parameters<typeof response.cookies.set>[2]);
-  for (const [name, value] of Object.entries(jar.headers())) response.headers.set(name, value);
+  jar.applyTo(response);
   return response;
 }

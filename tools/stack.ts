@@ -7,14 +7,15 @@
 //   pnpm stack:remove   stop it and remove its volumes, for a clean start
 //   pnpm stack:env      the variables the web app reads, for this stack (KEY=value lines;
 //                       --powershell writes them as $env:KEY = "value", and --write puts
-//                       them in apps/web/.env.local, which Next.js reads and git ignores)
+//                       them in apps/web/.env.local, which Next.js reads and git ignores,
+//                       leaving the file's other lines as they were)
 //
 // The keys it prints are the CLI's local ones, made for this machine's stack. None is written
 // into a file of the repository. The secret key is never printed by this script and never given
 // to the app.
 
 import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "./cdp.ts";
 
@@ -79,6 +80,22 @@ export const appEnv = (stack: Stack, site = "http://localhost:3100"): Record<str
   SCENA_SITE_URL: site,
 });
 
+const ENV_FILE_NOTE = [
+  "# The local Supabase stack, for pnpm dev:web: written by `pnpm stack:env --write`, ignored by git.",
+  "# These are the CLI's local values for this machine's stack, and no hosted project's.",
+];
+
+/**
+ * apps/web/.env.local with the stack's variables in it. Whatever else the file had stays, after
+ * them: only the lines that set one of these variables, and this script's own note, are replaced.
+ */
+export function envFileWith(existing: string, vars: Record<string, string>): string {
+  const kept = existing.split(/\r?\n/).filter((line) => !ENV_FILE_NOTE.includes(line) && !Object.hasOwn(vars, line.split("=")[0]!.trim()));
+  while (kept.length && !kept[0]!.trim()) kept.shift();
+  while (kept.length && !kept.at(-1)!.trim()) kept.pop();
+  return [...ENV_FILE_NOTE, ...Object.entries(vars).map(([name, value]) => `${name}=${value}`), ...(kept.length ? ["", ...kept] : []), ""].join("\n");
+}
+
 function fail(message: string): never {
   console.error(`stack: ${message}`);
   process.exit(1);
@@ -120,13 +137,8 @@ async function main(command: string | undefined, flags: string[]): Promise<void>
     if (flags.includes("--write")) {
       // the file Next.js reads for the web app (pnpm dev:web); git ignores it
       const file = join(repoRoot, "apps", "web", ".env.local");
-      writeFileSync(file, [
-        "# The local Supabase stack, for pnpm dev:web: written by `pnpm stack:env --write`, ignored by git.",
-        "# These are the CLI's local values for this machine's stack, and no hosted project's.",
-        ...Object.entries(vars).map(([name, value]) => `${name}=${value}`),
-        "",
-      ].join("\n"));
-      console.log(`stack: wrote ${Object.keys(vars).join(", ")} to apps/web/.env.local`);
+      writeFileSync(file, envFileWith(existsSync(file) ? readFileSync(file, "utf8") : "", vars));
+      console.log(`stack: wrote ${Object.keys(vars).join(", ")} to apps/web/.env.local, and left its other lines as they were`);
       return;
     }
     const powershell = flags.includes("--powershell");

@@ -38,7 +38,8 @@ export const currentAccount = cache(async (): Promise<Account | null> => {
   if (!config) return null;
   const all = (await cookies()).getAll();
   if (!all.some((c) => isSessionCookie(c.name, config.cookie))) return null;
-  const { data, error } = await sessionClient(config, new CookieJar(all)).auth.getUser();
+  // read, never renewed: nothing here can send a renewed cookie to the browser (supabase.ts)
+  const { data, error } = await sessionClient(config, new CookieJar(all), { renews: false }).auth.getUser();
   if (error || !data.user?.email) return null;
   const profile = await getProfile(database(), data.user.id);
   if (!profile) return null;

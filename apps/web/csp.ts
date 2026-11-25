@@ -28,7 +28,8 @@ const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
  * The policy for one request. The scripts that run are the ones Next.js rendered for it, which
  * carry the nonce, and this origin's own script files, which those load ('self'); the page
  * runtime runs in a frame. No inline handlers, no javascript: URLs and, outside the dev server,
- * no eval. Nothing loads from anywhere but this origin and the places the studio needs.
+ * no eval. Nothing loads from anywhere but this origin and the places the studio needs, and a
+ * form posts to this origin alone.
  *
  * There is no 'strict-dynamic'. It would let any script that running code adds through the DOM
  * run, inline or from any host, and the single-file build's policy allows neither. If the
@@ -44,7 +45,11 @@ export function policyFor({ nonce, pageRuntimeSha256, dev = false }: PolicyInput
     // this origin's own stylesheets, typefaces, images and requests, and what the studio needs
     ...STUDIO_DIRECTIVES.map((d) => `${d} 'self' ${STUDIO_SOURCES[d].join(" ")}`),
     "base-uri 'none'",
-    "form-action 'none'",
+    // Sign-in posts forms (the email, the code, the confirm button, sign-out), each to this
+    // origin and to nothing else. Chrome holds the redirects that follow a form to this too, so
+    // none of the app's forms leads off this origin: the way to Google is a link
+    // (app/auth/google/route.ts), and every action redirects to a path of this app.
+    "form-action 'self'",
     "frame-ancestors 'none'",
   ].join("; ");
 }

@@ -1,0 +1,25 @@
+/* The account slot in the studio's top bar. It sits among the studio's own controls, so it
+   takes their measures and colours from the studio's tokens (packages/studio/src/studio.css,
+   docs/design/studio-ui.md), with the same values written after each one for a page that has
+   not loaded that stylesheet. As the window narrows the address goes first, then the words
+   give way to the icon. At which widths is the studio's to say, since it depends on what its
+   bar holds: AccountSlot.tsx gives the address and the words the studio's two class names for
+   that (studio.css, "account-wide" and "account-words"), and nothing here names a width. A
+   screen reader hears who is signed in, and each control's name, at every width. */
+.account { display: inline-flex; align-items: center; gap: var(--ui-1, 4px); min-width: 0; }
+.button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--ui-h-control, 28px); padding: 0 10px;
+  border: 1px solid transparent; border-radius: var(--ui-r, 6px);
+  background: transparent; color: var(--ui-text, #18181b);
+  font: inherit; font-weight: 500; white-space: nowrap; text-decoration: none; cursor: pointer;
+}
+.button:hover { background: var(--ui-hover, rgba(24, 24, 27, 0.05)); }
+.button:active { background: var(--ui-pressed, rgba(24, 24, 27, 0.09)); }
+.button:focus-visible { outline: 2px solid var(--ui-accent, #1f6feb); outline-offset: 2px; }
+.icon { width: 16px; height: 16px; flex: none; }
+.who {
+  max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ui-text-2, #52525b);
+}
+.hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

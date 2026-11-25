@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { LIMITS, isHandle, validatePage, type PageDocument } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { changeHandle, createPage, createUser, getPageByHandle, getPageByUser, getUser, saveDraft, writeAudit, RESERVED_HANDLES, type Database, type Page } from "../src/index.ts";
+import { changeHandle, createPage, createUser, getPageByHandle, getPageByUser, getUser, saveDraft, writeAudit, RESERVED_HANDLES, type Database, type NewUser, type Page } from "../src/index.ts";
 import { checkDraft, type CheckedDraft } from "../src/draft.ts";
 import { isReserved } from "../src/handles.ts";
 import { migrate, MIGRATIONS_FOLDER } from "../src/migrate.ts";
@@ -106,7 +106,7 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
     test("are made and read back", async () => {
       const id = randomUUID();
       const made = await createUser(db, { id, email: "Ada@Example.com", displayName: "  Ada  ", locale: "it-IT" });
-      expect(made).toEqual({ ok: true, user: { id, email: "Ada@Example.com", displayName: "Ada", locale: "it-IT", createdAt: expect.any(Date) } });
+      expect(made).toEqual({ ok: true, user: { id, email: "Ada@Example.com", displayName: "Ada", locale: "it-IT", isAdmin: false, createdAt: expect.any(Date) } });
       expect(await getUser(db, id)).toEqual(made.ok ? made.user : null);
       expect(await getUser(db, randomUUID())).toBeNull();
       expect(await getUser(db, "not-a-uuid")).toBeNull();
@@ -137,6 +137,25 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       expect(validatePage({ ...clone(PIA_PAGE), profile: { displayName: name, bio: "" } }, DESK_SCENE)).toEqual([]);
       const exact = await createUser(db, { id: randomUUID(), email: "exact-name@example.com", displayName: "E".repeat(limit) });
       expect(exact.ok && exact.user.displayName).toBe("E".repeat(limit));
+    });
+
+    test("the admin flag is off for a new profile, is set only by hand, and comes with the profile", async () => {
+      const id = randomUUID();
+      // a caller that sends the flag along with the profile does not get it: createUser writes
+      // the fields it names and no others
+      const made = await createUser(db, { id, email: "not-yet-admin@example.com", isAdmin: true } as NewUser);
+      expect(made.ok && made.user.isAdmin).toBe(false);
+      expect((await getUser(db, id))!.isAdmin).toBe(false);
+      const [column] = await rows<{ type: string; nullable: string; fallback: string }>(
+        sql`select data_type as type, is_nullable as nullable, column_default as fallback from information_schema.columns where table_schema = 'public' and table_name = 'users' and column_name = 'is_admin'`);
+      expect(column).toEqual({ type: "boolean", nullable: "NO", fallback: "false" });
+
+      // the way the ADR says to set it: one statement, by hand
+      await db.execute(sql`update users set is_admin = true where id = ${id}`);
+      expect((await getUser(db, id))!.isAdmin).toBe(true);
+      // and a deleted account is nobody's admin: it has no profile to read
+      await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, id));
+      expect(await getUser(db, id)).toBeNull();
     });
 
     test("a name with a character Postgres cannot keep is stored without it, and the sign-in does not fail", async () => {

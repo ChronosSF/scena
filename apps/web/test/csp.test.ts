@@ -19,12 +19,17 @@ describe("the policy", () => {
     // this origin's script files, and nothing a running script adds from elsewhere or inline: no 'strict-dynamic'
     expect(d["script-src"]).toEqual([`'nonce-${NONCE}'`, "'self'", `'sha256-${RUNTIME_SHA256}'`]);
     expect(d["base-uri"]).toEqual(["'none'"]);
-    expect(d["form-action"]).toEqual(["'none'"]);
     expect(d["frame-ancestors"]).toEqual(["'none'"]);
     // 'unsafe-inline' is for styles only; nothing is evaluated, and no host is named but the typefaces'
     expect(policy.match(/'unsafe-inline'/g)).toHaveLength(1);
     expect(d["style-src"]).toContain("'unsafe-inline'");
     expect(policy).not.toMatch(/strict-dynamic|unsafe-eval|unsafe-hashes|\*|https?:(?!\/\/fonts\.g(oogleapis|static)\.com)/);
+  });
+
+  test("lets a form post to this origin and nowhere else, Google and Supabase Auth included", () => {
+    // sign-in's forms post here; the way to Google is a link, so no host of theirs is named
+    expect(d["form-action"]).toEqual(["'self'"]);
+    expect(policy).not.toMatch(/supabase|google\.com|accounts\./);
   });
 
   test("only the dev server may evaluate, and nothing else changes there", () => {

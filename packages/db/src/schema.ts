@@ -12,7 +12,7 @@
 // outside it cannot write a table directly, around the checks in the queries.
 
 import { sql } from "drizzle-orm";
-import { bigint, check, customType, index, jsonb, pgEnum, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, customType, index, jsonb, pgEnum, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { HANDLE_PATTERN } from "@scena/scene";
 import type { CheckedDraft } from "./draft.ts";
 
@@ -32,6 +32,10 @@ export const users = pgTable("users", {
   email: citext("email").notNull(),
   displayName: text("display_name"),
   locale: text("locale").notNull().default("en"),
+  // Whoever may open /admin in the web app (plan §7.1). It is set by hand, in SQL, and nothing
+  // in this package or the app writes it: no query here names it outside the read of a
+  // profile. docs/adr/0006-sign-in.md
+  isAdmin: boolean("is_admin").notNull().default(false),
   createdAt: at("created_at").notNull().defaultNow(),
   deletedAt: at("deleted_at"),
 }, (t) => [

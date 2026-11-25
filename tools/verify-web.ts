@@ -1,11 +1,16 @@
 // End-to-end check of the web app (apps/web) in headless Chrome: the studio inside Next.js,
-// under the app's Content Security Policy, through real browser input.
+// under the app's Content Security Policy, through real browser input, and sign-in against the
+// local Supabase stack.
 //   node tools/verify-web.ts                         the production build (run pnpm build:web first);
 //                                                    this starts its server and stops it again
 //   node tools/verify-web.ts http://localhost:3100   a server that is already running (the dev server)
 // The studio itself is checked end to end in the single-file build (tools/verify-studio.ts).
-// This check is about what the web app adds: the server, the policy, and loading the studio
-// in the browser only. A screenshot goes to tools/out/.
+// This check is about what the web app adds: the server, the policy, loading the studio in the
+// browser only, and sign-in (tools/sign-in-checks.ts). A screenshot goes to tools/out/.
+//
+// Sign-in needs the local stack (pnpm stack:start). Without it, the sign-in checks are reported
+// as skipped, with the reason, and the rest run against a server that has no sign-in; on CI a
+// missing stack fails the run instead, since CI starts one.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -15,6 +20,8 @@ import { isDataBlock, scriptElements } from "@scena/studio/policy";
 import { RUNTIME_SHA256 } from "@scena/renderer";
 import { launch, repoRoot, sleep } from "./cdp.ts";
 import { checks, drawingInFrame, input, settled } from "./checks.ts";
+import { signInChecks } from "./sign-in-checks.ts";
+import { appEnv, stackStatus, type Stack } from "./stack.ts";
 
 const web = join(repoRoot, "apps", "web");
 const out = join(repoRoot, "tools", "out");
@@ -26,6 +33,23 @@ const origin = (given || `http://localhost:${PORT}`).replace(/\/+$/, "");
 
 const { check, failed } = checks();
 
+// ── the local stack, for sign-in ────────────────────────────────────────────────────────
+const found = stackStatus();
+const stack: Stack | null = "stack" in found ? found.stack : null;
+// Whether Google is switched on in the stack (supabase/config.toml): the app is started to match.
+let google = false;
+if (stack) {
+  try {
+    const settings = await (await fetch(`${stack.apiUrl}/auth/v1/settings`, { headers: { apikey: stack.publishableKey }, signal: AbortSignal.timeout(5000) })).json();
+    google = settings?.external?.google === true;
+  } catch { /* asked again by the checks, which then fail with the reason */ }
+}
+if ("why" in found) {
+  if (process.env.CI) console.log(`FAIL  sign-in needs the local stack, which CI starts: ${found.why}`);
+  else console.log(`SKIP  the sign-in checks: ${found.why}`);
+}
+const stackMissingOnCi = !stack && !!process.env.CI;
+
 // ── the server ──────────────────────────────────────────────────────────────────────────
 let server: ChildProcess | null = null;
 let said = "", ended = "";
@@ -34,9 +58,14 @@ if (!given) {
     console.error("apps/web is not built: run pnpm build:web first.");
     process.exit(1);
   }
+  // Sign-in on, against the stack, or off: whatever the shell has set is replaced, so the server
+  // is never half set up by a variable left over from something else.
+  const signIn: Record<string, string> = stack
+    ? { ...appEnv(stack, origin), SCENA_GOOGLE_SIGN_IN: google ? "on" : "off" }
+    : { SUPABASE_URL: "", SUPABASE_PUBLISHABLE_KEY: "", SCENA_SITE_URL: "", SCENA_GOOGLE_SIGN_IN: "" };
   // node runs Next.js's own entry, with no shell in between, so stopping this process stops the server
   server = spawn(process.execPath, [join(web, "node_modules", "next", "dist", "bin", "next"), "start", "--port", String(PORT)],
-    { cwd: web, env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+    { cwd: web, env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", ...signIn }, stdio: ["ignore", "pipe", "pipe"] });
   for (const stream of [server.stdout!, server.stderr!]) {
     stream.setEncoding("utf8");
     stream.on("data", (text: string) => { said = (said + text).slice(-4000); });
@@ -153,11 +182,18 @@ check("the studio loads in the web app, with its stylesheet and its typefaces, o
 // the scene picker, from the empty canvas: each card is the published page in a frame, and
 // that page's script is the one script here that carries no nonce
 await clickOn('[data-ui="empty-scenes"]');
-await sleep(1200);
-const cards = await page.eval<string[]>(`[...document.querySelectorAll("dialog.picker[open] [data-scene]")].map((c) => c.dataset.scene)`);
-const inCard = page.frameCount() ? await page.frameEval<any>(`({ boil: document.documentElement.dataset.boil || "", drawings: document.querySelectorAll(".obj[data-k]").length })`) : null;
+// Waited for, not slept through: this is the first thing the studio does after a server and a
+// browser have just started, and on a busy machine the cards took longer than any fixed pause.
+const { cards, inCard } = await settled(async () => ({
+  cards: await page.eval<string[]>(`[...document.querySelectorAll("dialog.picker[open] [data-scene]")].map((c) => c.dataset.scene)`),
+  inCard: page.frameCount()
+    ? await page.frameEval<any>(`({ boil: document.documentElement.dataset.boil || "", drawings: document.querySelectorAll(".obj[data-k]").length })`).catch(() => null)
+    : null,
+}), (p) => p.cards.includes("desk") && !!p.inCard && p.inCard.boil !== "" && p.inCard.drawings > 0, 15_000);
 check("the scene picker opens, and the page in a card runs its runtime under the policy",
   cards.includes("desk") && !!inCard && inCard.boil !== "" && inCard.drawings > 0, { cards, inCard });
+// the dialog has finished opening before a card in it is clicked
+await sleep(600);
 
 await clickOn('dialog.picker [data-scene="desk"] [data-ui="scene-use"]');
 await sleep(400);
@@ -302,7 +338,20 @@ const phone = await page.eval<any>(`({ wide: document.documentElement.scrollWidt
 check("at 375 px the studio fits the screen", onPhone && phone.wide <= 375 && phone.more === true, phone);
 writeFileSync(join(out, "web-studio-375.png"), await page.screenshot());
 
+// ── sign-in, against the local stack ────────────────────────────────────────────────────
+// A server that was given has whatever sign-in it was started with: it is checked only when it
+// has the stack's (SCENA_SITE_URL set to its own address).
+const givenHasSignIn = !given || (await (await fetch(`${origin}/sign-in`)).text()).includes('data-ui="email-form"');
+const signInSkipped = !stack || !givenHasSignIn;
+if (!signInSkipped) {
+  console.log(`NOTE  sign-in against the local stack at ${stack.apiUrl}, Google ${google ? "on" : "off"}`);
+  await signInChecks({ chrome, origin, stack, google, check, out });
+} else if (stack) {
+  console.log(`SKIP  the sign-in checks: ${origin} has no sign-in set up for the local stack (pnpm stack:env)`);
+}
+
 await chrome.close();
 stop();
-console.log(failed() ? `\n${failed()} check(s) failed` : "\nall checks passed");
-process.exit(failed() ? 1 : 0);
+const failures = failed() + (stackMissingOnCi ? 1 : 0);
+console.log(failures ? `\n${failures} check(s) failed` : `\nall checks passed${signInSkipped ? ", and the sign-in checks were skipped" : ""}`);
+process.exit(failures ? 1 : 0);

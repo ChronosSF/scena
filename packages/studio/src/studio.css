@@ -135,7 +135,10 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 /* ------------------------------------------------------------------ top bar */
 .bar {
   grid-area: bar;
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--ui-3);
+  /* The right-hand side is never narrower than what is in it: with the host app's controls
+     there too (StudioProps.account) it can need more than half of what the centre leaves, and
+     then the centre moves left instead of being run over. */
+  display: grid; grid-template-columns: 1fr auto minmax(max-content, 1fr); align-items: center; gap: var(--ui-3);
   padding: 0 var(--ui-2) 0 var(--ui-3);
   background: var(--ui-panel); border-bottom: 1px solid var(--ui-line);
   min-width: 0;
@@ -657,6 +660,16 @@ dialog.picker[open] { display: flex; flex-direction: column; }
 @media (min-width: 900px) and (max-width: 1179.98px) {
   .app[data-view="preview"] .bar .squeeze { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .app[data-view="preview"] .bar .btn:has(.squeeze) { width: var(--ui-h-control); padding: 0; justify-content: center; }
+}
+/* The host app's part of the bar (StudioProps.account). What there is room for depends on what
+   this bar holds, so the widths are here, with the bar's own, and not in the host's stylesheet:
+   .account-wide is for a line of text that fits on a wide window alone, and .account-words for
+   the words of a link or a button, which give way to its icon. A control added to the bar
+   changes these two numbers with it. */
+@media (max-width: 1399.98px) { .bar .account-wide { display: none; } }
+@media (max-width: 1179.98px) {
+  .bar .account-words { display: none; }
+  .bar :is(a, button):has(> .account-words) { width: var(--ui-h-control); padding: 0; }
 }
 @media (max-width: 420px) { .bar .seg-item span { padding: 0 8px; } }
 

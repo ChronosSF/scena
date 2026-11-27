@@ -133,8 +133,9 @@ meet the rows in opposite orders, and without the `ORDER BY` Postgres finds a de
   changes are not limited. One address and one held handle at a time, never more.
 - **The release reads the page row's `updated_at` alone**, so a person who signs in every day
   but writes nothing to that row can lose their address: someone working on a page of their own
-  drawings, which the account does not store yet, or someone only looking. A last-seen time on
-  the account, written by the web app, would close it; the founder decides.
+  drawings, which the account does not store yet, or someone only looking. The founder decided
+  on 27 November 2026 that signing in counts: part 2 gives the account a last-seen time, written
+  at most once a day when the studio opens, and the release will also need 90 days without one.
 - **The owner of a released page is not told.** They find their page without an address and the
   handle in their draft taken. The page was never published, so nothing public breaks.
 - **The live check tells whether an unpublished page has a handle.** Part 2 should limit how

@@ -19,6 +19,7 @@ import { connect, disconnect } from "@scena/db";
 import { CODE, NOTICES, SEND } from "../apps/web/auth/messages.ts";
 import { sessionCookie } from "../apps/web/auth/cookie.ts";
 import { sleep, type Browser, type Cookie, type Page } from "./cdp.ts";
+import { putPickerOff } from "./autosave-checks.ts";
 import { input, settled } from "./checks.ts";
 import type { Stack } from "./stack.ts";
 
@@ -126,6 +127,8 @@ export async function signInChecks({ chrome, origin, stack, google, check, out }
   /** Asks for the email on the sign-in page that is open. */
   async function askForEmail(p: Person, address: string): Promise<void> {
     await settled(() => p.page.eval<boolean>(`!!document.querySelector('[data-ui="email-form"] #email')`), (ok) => ok);
+    // these checks are about signing in: the address picker does not open over the studio
+    await putPickerOff(p.page);
     await p.keys.typeInto("#email", address);
     await spaced(address);
     await p.keys.pressEnter();

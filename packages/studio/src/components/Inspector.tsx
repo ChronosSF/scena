@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowUp, Maximize2, RotateCw, Shapes, Trash2 } from "lucide-react";
-import { HANDLE_RULE, LIMITS, isHandle, safeHref, type CommissionStatus, type Layer, type LinkContent, type Motion, type ObjectLayer, type SlotKind } from "@scena/scene";
-import { store, useStudio } from "../store.ts";
+import { ADDRESS_PREFIX, HANDLE_RULE, LIMITS, isHandle, safeHref, type CommissionStatus, type Layer, type LinkContent, type Motion, type ObjectLayer, type SlotKind } from "@scena/scene";
+import { addressOf, store, useStudio } from "../store.ts";
+import type { StudioAddress } from "../host.ts";
 import { useNarrow, useReducedMotion } from "../hooks.ts";
 import { CANVASES, KIND_LABELS, SURFACES, canTurnOff, currentSurface, defaultLink, getLayer, isBuiltIn, offeredPalettes, slotOf, type Surface } from "../model.ts";
 import { drawingThumb, thumbTheme } from "../thumbs.ts";
@@ -15,7 +16,7 @@ import { isBackground } from "../board.ts";
 
 const MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 
-export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
+export function Inspector(props: { hidden?: boolean; tabbed?: boolean; address?: StudioAddress | undefined }) {
   const { scene, sel, focus, view } = useStudio();
   const narrow = useNarrow();
   const reduced = useReducedMotion();
@@ -70,7 +71,7 @@ export function Inspector(props: { hidden?: boolean; tabbed?: boolean }) {
           <span className="insp-back-name" aria-hidden="true">{layer.name || layer.id}</span>
         </div>
       ) : null}
-      {!layer ? <PageInspector />
+      {!layer ? <PageInspector address={props.address} />
         : locked && layer.type === "object" ? <SlotInspector key={layer.id} layer={layer} />
         : isBackground(scene, layer) ? <BackgroundInspector key={layer.id} layer={layer} />
         : <LayerInspector key={layer.id} layer={layer} />}
@@ -315,8 +316,10 @@ function LayerInspector({ layer }: { layer: Layer }) {
 
 // ------------------------------------------------------------------ the page
 
-function PageInspector() {
-  const { scene, page } = useStudio();
+function PageInspector({ address }: { address: StudioAddress | undefined }) {
+  const studio = useStudio();
+  const { scene, page } = studio;
+  const shown = addressOf(studio);
   // A built-in scene leaves the page its words, its palette and its motion. The lettering, the
   // typeface and the board belong to the scene, so those sections are not shown.
   const locked = isBuiltIn(scene);
@@ -325,12 +328,12 @@ function PageInspector() {
     <div>
       <div className="panel-head">
         <h2 className="panel-title">Page</h2>
-        <span className="faint num" style={{ fontSize: 12 }}>scena.example/{page.handle}</span>
+        {shown ? <span className="faint num" style={{ fontSize: 12 }}>{ADDRESS_PREFIX}{shown}</span> : null}
       </div>
       <Section title="Profile">
         <NameField name={page.profile.displayName} />
         <TextField label="Bio" value={page.profile.bio} max={LIMITS.bio} multiline name="bio" onChange={(v) => store.change(({ page: p }) => { p.profile.bio = v; })} />
-        <HandleField handle={page.handle} />
+        {address ? <AddressRow address={address} /> : <HandleField handle={page.handle} />}
       </Section>
 
       {locked ? null : <LetteringSection />}
@@ -417,6 +420,27 @@ function NameField({ name }: { name: string }) {
     <TextField label="Name" value={draft} max={LIMITS.displayName} name="display-name"
       check={(v) => (v.trim() ? null : { level: "error", text: `A page needs a name. It keeps "${name}" until you type one.` })}
       onChange={(v) => type(v, v.trim() ? v : undefined)} />
+  );
+}
+
+/**
+ * The page's address where the host gives it (StudioProps.address): shown, not typed, with the
+ * host's control beside it. A long address is cut short with an ellipsis, so the control stays
+ * in the panel. The row is a group named by its label, which the address and the hint describe.
+ */
+function AddressRow({ address }: { address: StudioAddress }) {
+  const id = useId();
+  return (
+    <div className="field" role="group" aria-labelledby={`${id}-l`} aria-describedby={`${id}-v ${id}-h`} data-ui="address-row">
+      <span className="field-label" id={`${id}-l`}>Page address</span>
+      <div className="addr">
+        {address.handle
+          ? <span className="addr-value" id={`${id}-v`} title={ADDRESS_PREFIX + address.handle}><span className="addr-host">{ADDRESS_PREFIX}</span>{address.handle}</span>
+          : <span className="addr-value addr-none" id={`${id}-v`}>{address.none}</span>}
+        {address.action}
+      </div>
+      <p className="field-hint" id={`${id}-h`}>{address.hint}</p>
+    </div>
   );
 }
 

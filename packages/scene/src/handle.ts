@@ -14,11 +14,21 @@ export const HANDLE_PATTERN = "^[a-z0-9][a-z0-9_-]{1,29}$";
 
 const HANDLE = new RegExp(HANDLE_PATTERN);
 
+/** What comes before a handle in a page's address, as a person reads it: scena.example/<handle>. */
+export const ADDRESS_PREFIX = "scena.example/";
+
 /** The longest a handle can be, in characters: what the pattern allows. */
 export const HANDLE_MAX = 30;
 
 /** What a handle may be, in words a person can act on. */
 export const HANDLE_RULE = "2 to 30 characters: lowercase letters, digits, - and _, starting with a letter or digit";
+
+/**
+ * How long a page holds the handle it moved away from, counted from the change: nobody else can
+ * take it meanwhile, its owner can go back to it, and its redirect lasts as long. The rule that
+ * reads it is the database package's (heldHandle); it is here so that the picker can say it.
+ */
+export const HANDLE_HOLD_DAYS = 30;
 
 /** Whether `v` follows the handle rule. Reserved words are the database package's to refuse. */
 export function isHandle(v: unknown): v is string {

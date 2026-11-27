@@ -7,9 +7,12 @@
 // against a moment, the database's own clock (pages.ts), and nothing runs on a schedule.
 // docs/adr/0008-handles.md
 
-import { HANDLE_RULE, isHandle } from "@scena/scene";
+import { HANDLE_HOLD_DAYS, HANDLE_RULE, isHandle } from "@scena/scene";
 import { RESERVED_HANDLES } from "./reserved.ts";
 import { refuse, type Refusal, type Result } from "./result.ts";
+
+// The hold's length is the scene package's, beside the handle rule, so that the picker in the
+// browser can say it (apps/web/address); the rule that reads it is heldHandle, below.
 
 const RESERVED = new Set(RESERVED_HANDLES.map((h) => h.toLowerCase()));
 
@@ -34,14 +37,9 @@ export function handleProblem(handle: unknown): Refusal | null {
 }
 
 /**
- * How long a page holds the handle it moved away from, counted from handle_changed_at: nobody
- * else can take it meanwhile, its owner can go back to it, and its redirect lasts as long.
- */
-export const HANDLE_HOLD_DAYS = 30;
-
-/**
- * How long a page that was never published keeps its address with nothing done to it, counted
- * from updated_at. After that, someone who claims the address takes it.
+ * How long a page that was never published keeps its address with nothing done to it and its
+ * owner not seen, counted from updated_at and from the owner's last_seen_at. After that, someone
+ * who claims the address takes it.
  */
 export const HANDLE_RELEASE_DAYS = 90;
 
@@ -76,26 +74,39 @@ interface Claimant {
   updatedAt: Date;
 }
 
-// An address nobody used: the page was never published, and nothing was done to it for
-// HANDLE_RELEASE_DAYS. A page that was published once keeps its address, taken down or not.
-const unused = (page: Claimant, at: Date): boolean =>
-  page.status === "draft" && at.getTime() - page.updatedAt.getTime() >= HANDLE_RELEASE_DAYS * DAY_MS;
+/**
+ * A page as a claim finds it: with the moment to read the rules at, and when its owner was last
+ * seen (users.last_seen_at), null when they have not been since that time was first kept.
+ */
+export interface Found<P extends Claimant> {
+  page: P;
+  now: Date;
+  ownerSeen: Date | null;
+}
+
+// An address nobody used: the page was never published, and for HANDLE_RELEASE_DAYS nothing was
+// done to it and its owner was not seen. An owner never seen counts from the page alone, so no
+// address is kept for good by a time that was never written. A page that was published once
+// keeps its address, taken down or not.
+const unused = ({ page, now, ownerSeen }: Found<Claimant>): boolean =>
+  page.status === "draft" && [page.updatedAt, ownerSeen].every((t) => t === null || now.getTime() - t.getTime() >= HANDLE_RELEASE_DAYS * DAY_MS);
 
 /**
  * Who has a claim on `handle`, given the pages that may have one (the page at it, the pages that
- * left it, and the asker's), each with the moment to read it at, and which page is the asker's.
+ * left it, and the asker's), each as it was found (Found), and which page is the asker's.
  * A page claims the handle while it is its address and not unused, and while it holds it as its
  * previous handle (heldHandle). Anyone else's claim answers as taken, whichever it is, so the
  * answer never says that a page has just moved. Someone else's unused address answers as free,
  * and comes back as the page to release: the write takes the address from it.
  */
-export function claimOn<P extends Claimant>(found: { page: P; now: Date }[], handle: string, mine: (page: P) => boolean): { answer: HandleAvailability; release?: P } {
+export function claimOn<P extends Claimant>(found: Found<P>[], handle: string, mine: (page: P) => boolean): { answer: HandleAvailability; release?: P } {
   let answer: HandleAvailability = { ok: true, state: "free" };
   let release: P | undefined;
-  for (const { page, now } of found) {
+  for (const row of found) {
+    const { page, now } = row;
     if (page.handle === handle) {
       if (mine(page)) answer = { ok: true, state: "yours" };
-      else if (unused(page, now)) release = page;
+      else if (unused(row)) release = page;
       else return { answer: takenRefusal(handle) };
     } else if (page.previousHandle?.toLowerCase() === handle) {
       // compared as the citext column compares it; handle follows the rule, so it is lowercase

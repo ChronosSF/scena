@@ -15,6 +15,9 @@ export interface SignedIn {
   email: string;
 }
 
+/** The way to sign in from the studio, and back to it. */
+export const SIGN_IN = "/sign-in?next=%2Fstudio";
+
 // The studio's class names for what its bar has room for (StudioProps.account, studio.css): a
 // line of text on a wide window alone, and a control's words until they give way to its icon.
 // Where the words are not shown, the control's name is its title. The controls are the theme's
@@ -24,7 +27,7 @@ const WIDE = "account-wide", WORDS = "account-words", BUTTON = "btn btn-ghost";
 export function AccountSlot({ signedIn }: { signedIn: SignedIn | null }) {
   if (!signedIn) {
     return (
-      <Link className={BUTTON} href="/sign-in?next=%2Fstudio" prefetch={false} data-ui="sign-in" title="Sign in" aria-label="Sign in">
+      <Link className={BUTTON} href={SIGN_IN} prefetch={false} data-ui="sign-in" title="Sign in" aria-label="Sign in">
         <UserRound aria-hidden="true" strokeWidth={1.75} />
         <span className={WORDS}>Sign in</span>
       </Link>

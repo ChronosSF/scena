@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { pageCss, resolvePalette } from "@scena/renderer";
 import { store, useStudio, type Tab } from "../store.ts";
-import { hostHooks, type StudioControl, type StudioSaving } from "../host.ts";
+import { hostHooks, type StudioAddress, type StudioControl, type StudioSaving } from "../host.ts";
 import { toast } from "../ui.ts";
 import * as actions from "../actions.ts";
 import { useNarrow } from "../hooks.ts";
@@ -39,6 +39,15 @@ export interface StudioProps {
    * then says "Saved in this browser", as it always has.
    */
   saving?: StudioSaving;
+  /**
+   * The page's address, where the host gives pages their addresses (the web app, from the
+   * person's account; host.ts says what each part is). The inspector's "Page address" field
+   * becomes a row that shows it, with the host's control beside it; the frame label, the
+   * Preview's address bar, the Page panel's head and the export's file names show it, or none;
+   * and the draft carries it. The single-file build leaves it out, and the field stays, the
+   * draft's handle being the address, as it always was.
+   */
+  address?: StudioAddress;
 }
 
 /** What the host may ask of the studio (host.ts). */
@@ -48,7 +57,7 @@ const control: StudioControl = {
   say: (text, tone = "") => toast(text, tone),
 };
 
-export function App({ account, saving }: StudioProps = {}) {
+export function App({ account, saving, address }: StudioProps = {}) {
   const { sel, view, rev, forceMotion, tab, scene, page, asideN } = useStudio();
 
   // The host's callbacks, for the store to call (host.ts). The latest props are read each time,
@@ -63,6 +72,10 @@ export function App({ account, saving }: StudioProps = {}) {
     host.current?.onOpen?.(control);
     return () => { hostHooks.changed = null; hostHooks.saved = null; };
   }, [hosted]);
+  // The host's address, for what shows it and for the draft (store.ts, setAddress): before the
+  // first paint, so that no address the page does not have is shown for a frame.
+  const handle = address ? address.handle : undefined;
+  useLayoutEffect(() => { store.setAddress(handle); }, [handle]);
   // A built-in scene is filled in, not designed: its links instead of layers, and a canvas that
   // only selects (model.ts, isBuiltIn).
   const locked = isBuiltIn(scene);
@@ -180,7 +193,7 @@ export function App({ account, saving }: StudioProps = {}) {
           </div>
         ) : null}
         {/* in Preview the inspector is beside the page, or under it on a phone, with no tabs */}
-        <Inspector hidden={narrow && view === "edit" && tab !== "inspect"} tabbed={narrow && view === "edit"} />
+        <Inspector hidden={narrow && view === "edit" && tab !== "inspect"} tabbed={narrow && view === "edit"} address={address} />
         <div className="drop-veil" aria-hidden="true"><p>Drop to add your drawings</p></div>
       </div>
       <input ref={importInput} type="file" id="import-file" accept=".json,application/json" multiple hidden

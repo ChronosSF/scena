@@ -1,7 +1,7 @@
 // A person's profile, made from a signed-in session: the id and the email come from the auth
 // provider, and this table mirrors them with what the app keeps about the person.
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { LIMITS as FORMAT } from "@scena/scene";
 import type { Database } from "./client.ts";
 import { UNSTORABLE } from "./draft.ts";
@@ -18,6 +18,8 @@ export interface User {
   /** May open /admin. Set by hand in SQL; nothing here writes it (docs/adr/0006-sign-in.md). */
   isAdmin: boolean;
   createdAt: Date;
+  /** When the studio last opened for them, signed in (noteSeen); null before it first did. */
+  lastSeenAt: Date | null;
 }
 
 export interface NewUser {
@@ -53,7 +55,7 @@ function fits(text: string, max: number): string {
   return out.trim();
 }
 
-const PROFILE = { id: users.id, email: users.email, displayName: users.displayName, locale: users.locale, isAdmin: users.isAdmin, createdAt: users.createdAt };
+const PROFILE = { id: users.id, email: users.email, displayName: users.displayName, locale: users.locale, isAdmin: users.isAdmin, createdAt: users.createdAt, lastSeenAt: users.lastSeenAt };
 
 /** Makes the profile for a newly signed-in person. */
 export async function createUser(db: Database, input: NewUser): Promise<Result<{ user: User }>> {
@@ -90,4 +92,27 @@ export async function getUser(db: Database, id: string): Promise<User | null> {
   if (!isUuid(id)) return null;
   const [user] = await db.select(PROFILE).from(users).where(and(eq(users.id, id), isNull(users.deletedAt)));
   return user ?? null;
+}
+
+/** The least time between two writes of a person's last-seen time: a day. */
+const SEEN_EVERY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Notes that the person was seen: the studio opened for them, signed in. While they come back,
+ * an address of theirs nobody used is not released (handles.ts), whether or not they write to
+ * their page. Written at most once a day: `user` is the profile the caller has just read
+ * (getUser), and when it says they were seen within the day before `at`, the database is not
+ * asked. Two studios opened at once read the same profile; the write is made only while the
+ * row is still due, so the second finds the first's time and writes nothing. The time written
+ * is the database's own, the clock the release reads it against, to the millisecond, as a Date
+ * holds it: the time a profile reads back is the time that was written. Answers whether it wrote.
+ */
+export async function noteSeen(db: Database, user: Pick<User, "id" | "lastSeenAt">, at = new Date()): Promise<boolean> {
+  const dayBefore = new Date(at.getTime() - SEEN_EVERY_MS);
+  if (user.lastSeenAt !== null && user.lastSeenAt > dayBefore) return false;
+  if (!isUuid(user.id)) return false;
+  const written = await db.update(users).set({ lastSeenAt: sql`date_trunc('milliseconds', now())` })
+    .where(and(eq(users.id, user.id), or(isNull(users.lastSeenAt), lte(users.lastSeenAt, dayBefore))))
+    .returning({ id: users.id });
+  return written.length > 0;
 }

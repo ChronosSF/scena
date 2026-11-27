@@ -81,17 +81,19 @@ function browserGraph(entries: string[], read = onDisk, exists: (file: string) =
   return { modules: [...seen].map(rel), problems };
 }
 
-const all = [...sources(join(WEB, "app")), ...sources(join(WEB, "auth")), ...sources(join(WEB, "drafts"))];
+const all = [...sources(join(WEB, "app")), ...sources(join(WEB, "auth")), ...sources(join(WEB, "drafts")), ...sources(join(WEB, "address"))];
 const clientEntries = all.filter((f) => directive(readFileSync(f, "utf8")) === "use client");
 
 describe("what the browser gets of the web app", () => {
   test("no client component reaches the database, a Supabase client, the session's modules or the environment", () => {
     const { modules, problems } = browserGraph(clientEntries);
     // the walk did see the app's client components and the studio behind them
-    expect(clientEntries.map(rel).sort()).toEqual(expect.arrayContaining(["apps/web/app/sign-in/SignInForm.tsx", "apps/web/app/studio/AccountSlot.tsx", "apps/web/app/studio/MountedStudio.tsx"]));
-    expect(modules).toEqual(expect.arrayContaining(["packages/studio/src/index.ts", "packages/studio/src/store.ts", "apps/web/auth/sign-in-state.ts", "apps/web/drafts/autosave.ts", "apps/web/drafts/messages.ts"]));
-    // the server actions that keep the draft are a reference in the browser: the walk stops there
-    expect(modules).not.toContain("apps/web/drafts/save.ts");
+    expect(clientEntries.map(rel).sort()).toEqual(expect.arrayContaining(["apps/web/app/sign-in/SignInForm.tsx", "apps/web/app/studio/AccountSlot.tsx", "apps/web/app/studio/MountedStudio.tsx", "apps/web/app/studio/AddressDialog.tsx"]));
+    expect(modules).toEqual(expect.arrayContaining(["packages/studio/src/index.ts", "packages/studio/src/store.ts", "apps/web/auth/sign-in-state.ts", "apps/web/drafts/autosave.ts", "apps/web/drafts/messages.ts",
+      "apps/web/address/picker.ts", "apps/web/address/messages.ts"]));
+    // the server actions that keep the draft and give the page its address are a reference in the
+    // browser: the walk stops there
+    for (const server of ["apps/web/drafts/save.ts", "apps/web/address/choose.ts"]) expect(modules).not.toContain(server);
     expect(problems).toEqual([]);
   });
 
@@ -120,6 +122,7 @@ describe("what the browser gets of the web app", () => {
   test("the server action modules are marked as such, and the session's modules cannot be bundled for a browser", () => {
     expect(directive(readFileSync(join(WEB, "auth", "actions.ts"), "utf8"))).toBe("use server");
     expect(directive(readFileSync(join(WEB, "drafts", "actions.ts"), "utf8"))).toBe("use server");
+    expect(directive(readFileSync(join(WEB, "address", "actions.ts"), "utf8"))).toBe("use server");
     // Next.js fails a build in which a client module imports one of these
     for (const f of ["server.ts", "db.ts"]) expect(readFileSync(join(WEB, "auth", f), "utf8"), f).toMatch(/^import "server-only";$/m);
   });

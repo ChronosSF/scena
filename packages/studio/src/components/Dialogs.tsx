@@ -18,7 +18,7 @@ export function ExportDialog({ open, onClose, onImport }: { open: boolean; onClo
     setSize(kb(html.length));
     void gzipSize(html).then((gz) => { if (gz) setSize(`${kb(html.length)} · ${kb(gz)} gzipped`); });
   }, [open]);
-  const handle = page.handle || "page";
+  const handle = actions.fileBase();
   return (
     <Dialog open={open} onClose={onClose} labelledBy="export-h">
       <div className="dlg-body">

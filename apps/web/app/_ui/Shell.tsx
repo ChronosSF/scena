@@ -39,7 +39,7 @@ export function Message({ id, text, kind = "problem", atField = false }: { id?: 
   return (
     <div className={styles.live} aria-live="polite" aria-atomic="true" data-ui="message">
       {!text ? null : atField ? <p id={id} className="sr-only">{text}</p> : (
-        <p id={id} className={styles.message} data-kind={kind}>
+        <p id={id} className="message" data-kind={kind}>
           {kind === "news" ? <Info aria-hidden="true" strokeWidth={1.75} /> : <CircleAlert aria-hidden="true" strokeWidth={1.75} />}{text}
         </p>
       )}

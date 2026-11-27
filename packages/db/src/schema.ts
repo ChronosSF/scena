@@ -38,6 +38,11 @@ export const users = pgTable("users", {
   isAdmin: boolean("is_admin").notNull().default(false),
   createdAt: at("created_at").notNull().defaultNow(),
   deletedAt: at("deleted_at"),
+  // When the person was last seen: the studio opened for them, signed in, written at most once
+  // a day (users.ts, noteSeen). An address of theirs nobody used is released only once neither
+  // their page nor they have been seen for a while (handles.ts). Null until they first are, and
+  // the release then goes by the page alone, as it did before this was kept. docs/adr/0008-handles.md
+  lastSeenAt: at("last_seen_at"),
 }, (t) => [
   // One live account per address. An account marked deleted lets go of its address, so the
   // person can sign up again while the deletion is carried out.

@@ -12,7 +12,7 @@ import { SaveIndicator } from "../src/components/TopBar.tsx";
 import { TooltipProvider } from "../src/components/ui.tsx";
 import { hostHooks, type SaveWords, type StudioWork } from "../src/host.ts";
 import { builtInDocs, deskDocs } from "../src/model.ts";
-import { openSaved, store } from "../src/store.ts";
+import { addressOf, openSaved, store } from "../src/store.ts";
 import { canonicalJson } from "../src/util.ts";
 
 const KEY = "scene-studio/v1", ASIDE = "scene-studio/v1/set-aside", WHY = "scene-studio/v1/set-aside/why";
@@ -34,6 +34,7 @@ beforeEach(() => {
   store.discardSetAside();
 });
 afterEach(() => {
+  store.setAddress(undefined);
   hostHooks.changed = null;
   hostHooks.saved = null;
   vi.useRealTimers();
@@ -196,5 +197,55 @@ describe("the save indicator", () => {
     expect(html).toContain("Not saved: something here would not open again");
     // said through the studio's live region as it comes (an effect), not by the indicator
     expect(html).not.toMatch(/role="status"|aria-live/);
+  });
+});
+
+// StudioProps.address: a host that gives pages their addresses (the web app, from the account).
+// The web app's use of it is checked in apps/web/test/drafts.test.ts and tools/address-checks.ts.
+describe("the page's address, where the host gives it", () => {
+  const stored = () => JSON.parse(s.items.get(KEY) ?? "null")?.page.handle;
+
+  test("is written into the draft with no undo step, and is no edit: the host is not told, and it goes into this browser with the next save", () => {
+    const changed: string[] = [], saved: string[] = [];
+    hostHooks.changed = (w) => changed.push(w.page.handle);
+    hostHooks.saved = (w) => saved.push(w.page.handle);
+    // from work with nothing to undo
+    expect(store.replaceForHost(builtInDocs(DESK_SCENE), null)).toBe("opened");
+    changed.length = saved.length = 0;
+    const before = stored();
+    expect(store.getSnapshot().canUndo).toBe(false);
+    store.setAddress("pia-m");
+    vi.advanceTimersByTime(400);
+    // a tab that only heard of the address writes nothing in this browser over another tab's work
+    expect([store.getSnapshot().page.handle, store.getSnapshot().canUndo, changed, saved, stored()]).toEqual(["pia-m", false, [], [], before]);
+    store.change(({ page }) => { page.links.newsletter!.title = "Letters"; });
+    vi.advanceTimersByTime(400);
+    expect([changed, saved, stored()]).toEqual([["pia-m"], ["pia-m"], "pia-m"]);
+  });
+
+  test("stays in the draft whatever brings a page in: an edit, undo, redo, other work", () => {
+    store.setAddress("pia-m");
+    store.change(({ page }) => { page.links.newsletter!.title = "Letters"; });
+    store.change(({ page }) => { page.handle = "typed-over"; }); // nothing in the studio types it, but nothing could keep it either
+    expect(store.getSnapshot().page.handle).toBe("pia-m");
+    store.undo();
+    expect(store.getSnapshot().page.handle).toBe("pia-m");
+    store.redo();
+    expect(store.getSnapshot().page.handle).toBe("pia-m");
+    store.change(() => ({ ...builtInDocs(DESK_SCENE), sel: null, stash: {} }));
+    expect(store.getSnapshot().page.handle).toBe("pia-m");
+    vi.advanceTimersByTime(400);
+    expect(stored()).toBe("pia-m");
+  });
+
+  test("none, when the host says the page has none: the draft keeps its own text, and nothing shows it as the address", () => {
+    const text = store.getSnapshot().page.handle;
+    store.setAddress(null);
+    expect([store.getSnapshot().page.handle, addressOf(store.getSnapshot())]).toEqual([text, null]);
+    // and without such a host, as in the single-file build, the draft's handle is the address
+    store.setAddress(undefined);
+    expect(addressOf(store.getSnapshot())).toBe(text);
+    store.setAddress("pia-m");
+    expect(addressOf(store.getSnapshot())).toBe("pia-m");
   });
 });

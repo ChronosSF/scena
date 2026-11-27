@@ -267,6 +267,13 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
    the panel while the form scrolls under it, with the drawing's name, so both are in view after a tap in the preview. */
 .insp-back { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--ui-2); padding: var(--ui-1); border-bottom: 1px solid var(--ui-line); background: var(--ui-panel); }
 .insp-back-name { min-width: 0; padding-right: var(--ui-2); font-size: var(--ui-sm); color: var(--ui-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The page's address, where the host gives it (StudioProps.address): the address, or what stands
+   for it, and the host's control on one line. A long address is cut short, and the control keeps
+   its room in the panel. */
+.addr { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-2); min-width: 0; }
+.addr > * { flex: none; }
+.addr > .addr-value { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.addr-host, .addr-none { color: var(--ui-text-3); }
 .empty-insp { padding: var(--ui-4); }
 .empty-insp p { color: var(--ui-text-2); font-size: var(--ui-sm); line-height: var(--ui-sm-lh); }
 .kbd-list { list-style: none; margin: var(--ui-3) 0 0; padding: 0; display: grid; gap: 6px; font-size: var(--ui-sm); color: var(--ui-text-3); }

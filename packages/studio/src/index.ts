@@ -8,6 +8,9 @@
 // The studio reads localStorage and the document, so it renders in a browser only. An app that
 // renders on a server has to load this module on the client (apps/web/app/studio).
 export { App as Studio, type StudioProps } from "./components/App.tsx";
-export type { SaveWords, StudioControl, StudioSaving, StudioWork } from "./host.ts";
+export type { SaveWords, StudioAddress, StudioControl, StudioSaving, StudioWork } from "./host.ts";
+// for a host's own dialog over the studio (the web app's address picker), in the studio's style
+export { Dialog } from "./components/Dialog.tsx";
+export { Button } from "./components/ui.tsx";
 export { showMoreFaces } from "./more-faces.ts";
 export { exposeForChecks } from "./handle.ts";

@@ -4,7 +4,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ImagePlus, Minus, Plus, Upload } from "lucide-react";
-import { store, useStudio } from "../store.ts";
+import { ADDRESS_PREFIX } from "@scena/scene";
+import { addressOf, store, useStudio } from "../store.ts";
 import { useNarrow, useReducedMotion } from "../hooks.ts";
 import { openPicker, toast } from "../ui.ts";
 import { drawings } from "../model.ts";
@@ -21,7 +22,9 @@ export const zoomIn = (s: number) => store.set({ zoom: STEPS.find((z) => z > s +
 export const zoomOut = (s: number) => store.set({ zoom: [...STEPS].reverse().find((z) => z < s - 0.001) ?? STEPS[0]! });
 
 export function Workspace() {
-  const { view, zoom, scene, page, forceMotion } = useStudio();
+  const studio = useStudio();
+  const { view, zoom, scene, page, forceMotion } = studio;
+  const shown = addressOf(studio);
   const empty = drawings(scene).length === 0;
   const reduced = useReducedMotion();
   const narrow = useNarrow();
@@ -100,7 +103,7 @@ export function Workspace() {
         <div className="canvas-area" onPointerDown={(e) => { if (!(e.target as Element).closest("#stage, .empty-card, .frame-label")) store.select(null); }}>
           <div>
             <div className="frame-label" style={{ width: PAGE_W * s }}>
-              <span className="frame-url">scena.example/{page.handle}</span>
+              <span className="frame-url">{shown === null ? null : <>{ADDRESS_PREFIX}{shown}</>}</span>
               <span>{scene.canvas.width} × {scene.canvas.height}</span>
             </div>
             <div className="zoom-box" style={{ width: PAGE_W * s, height: nat.h * s }}>

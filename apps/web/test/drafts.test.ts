@@ -7,8 +7,9 @@ import { createPage, saveDraft, type Database, type Page, type Result } from "@s
 import { validatePage, type PageDocument } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import type { SaveWords, StudioControl, StudioWork } from "@scena/studio";
+import type { ClaimAnswer } from "../address/answer.ts";
 import type { AccountPage, DraftToSave, RevisionAnswer, SaveAnswer } from "../drafts/answer.ts";
-import { AccountAutosave, LOOK_EVERY_MS, canonical, onReadyMadeScene, readRecord, whichOpens, type Browser, type Failure, type InStep } from "../drafts/autosave.ts";
+import { AccountAutosave, LOOK_EVERY_MS, RECORD_KEY, canonical, onReadyMadeScene, readRecord, whichOpens, type Browser, type Failure, type Heard, type InStep } from "../drafts/autosave.ts";
 import { NOTICES, REFUSED_LEAD, WORDS, refusedNotice } from "../drafts/messages.ts";
 import { accountRevision, baseOf, onOwnScene, saveToAccount, whatFailed, type Asking, type DraftQueries } from "../drafts/save.ts";
 
@@ -51,13 +52,13 @@ describe("what the server decides (drafts/save.ts)", () => {
   test("the person's page is found from the session: an account or a page named in what was sent is not read", async () => {
     const { q, asked } = queries();
     const answer = await saveToAccount(q, { page: clone(PIA_PAGE), base: 3, pageId: OTHER, userId: OTHER });
-    expect(answer).toEqual({ ok: true, pageId: PAGE, revision: 4, replaced: false });
+    expect(answer).toEqual({ ok: true, pageId: PAGE, revision: 4, replaced: false, address: null });
     expect(asked).toEqual([`pageOf ${USER}`, `save ${PAGE} ${USER} 3`]);
   });
 
   test("the first save makes the page, and says so with its id and first revision", async () => {
     const { q, asked } = queries({ pageOf: async () => null });
-    expect(await saveToAccount(q, { page: clone(PIA_PAGE), base: null })).toEqual({ ok: true, pageId: PAGE, revision: 1, replaced: false });
+    expect(await saveToAccount(q, { page: clone(PIA_PAGE), base: null })).toEqual({ ok: true, pageId: PAGE, revision: 1, replaced: false, address: null });
     expect(asked).toEqual([`create ${USER}`]);
   });
 
@@ -132,12 +133,18 @@ describe("what the server decides (drafts/save.ts)", () => {
   });
 
   test("a tab asks for the revision of the person's own page, or hears there is none", async () => {
-    expect(await accountRevision(queries().q)).toEqual({ ok: true, pageId: PAGE, revision: 3 });
-    expect(await accountRevision(queries({ pageOf: async () => null }).q)).toEqual({ ok: true, pageId: null, revision: null });
+    expect(await accountRevision(queries().q)).toEqual({ ok: true, pageId: PAGE, revision: 3, address: null });
+    expect(await accountRevision(queries({ pageOf: async () => null }).q)).toEqual({ ok: true, pageId: null, revision: null, address: null });
+  });
+
+  test("every answer says the page's address as it is now: another tab or device may have changed it", async () => {
+    const at = queries({ pageOf: async () => pageRow({ handle: "pia" }), save: async () => ({ ok: true, page: pageRow({ handle: "pia-m", draftRevision: 5 }), replaced: false }) }).q;
+    expect(await accountRevision(at)).toEqual({ ok: true, pageId: PAGE, revision: 3, address: "pia" });
+    expect(await saveToAccount(at, { page: clone(PIA_PAGE), base: 4 })).toEqual({ ok: true, pageId: PAGE, revision: 5, replaced: false, address: "pia-m" });
   });
 });
 
-const account = (revision = 3, page: PageDocument = clone(PIA_PAGE)): AccountPage => ({ pageId: PAGE, revision, page });
+const account = (revision = 3, page: PageDocument = clone(PIA_PAGE), address: string | null = null): AccountPage => ({ pageId: PAGE, revision, page, address });
 const edited = (title: string): PageDocument => { const p = clone(PIA_PAGE); p.links.newsletter!.title = title; return p; };
 /** The record of work typed here and not yet sent; `unsent: false` makes it a version the account took. */
 const record = (over: Partial<InStep> = {}): InStep => ({ pageId: PAGE, base: 3, local: canonical(edited("Typed here")), sent: null, unsent: true, ...over });
@@ -194,6 +201,18 @@ describe("which work opens (whichOpens)", () => {
     expect(whichOpens(account(5, edited("Sent")), edited("Typed here"), record({ sent: canonical(edited("Sent")) }))).toBe("account");
   });
 
+  test("pages that differ by their handle alone are the same work: the account's address, the studio's draft and the record need not agree on it", () => {
+    const at = (handle: string, page: PageDocument = clone(PIA_PAGE)): PageDocument => ({ ...page, handle });
+    // the work here read before the studio took the account's address in
+    expect(whichOpens(account(3, at("pia-d"), "pia-d"), at("pia-b"), null)).toBe("same");
+    // a record written under an address another device has changed since
+    const typed = edited("Typed here");
+    expect(whichOpens(account(3, at("pia-d"), "pia-d"), at("pia-b", typed), record({ local: canonical(at("pia-c", typed)) }))).toBe("ahead");
+    expect(whichOpens(account(2, at("pia-d"), "pia-d"), at("pia-b", typed), record({ base: 5, local: canonical(at("pia-c", typed)), unsent: false }))).toBe("newer");
+    // and work that differs is still told apart
+    expect(whichOpens(account(3, at("pia-d"), "pia-d"), at("pia-d", typed), null)).toBe("account");
+  });
+
   test("a record that is not one reads as none; one that does not say whether its work was sent reads as not sent", () => {
     const s = (v: string | null) => ({ getItem: () => v, setItem: () => {} });
     expect(readRecord(s(JSON.stringify(record({ unsent: false }))))).toEqual(record({ unsent: false }));
@@ -218,27 +237,31 @@ function fakeStudio(work: StudioWork, replace: "opened" | "set-aside" | "refused
   return { control, said, replaced, set: (w: StudioWork) => { open = w; }, now: () => open };
 }
 
-/** The browser and the server, as stand-ins; `respond` answers each save in turn. */
+/** The browser and the server, as stand-ins; `respond` answers each save in turn, and `claimWith` each claim. */
 function fakeBrowser(respond: (draft: DraftToSave, n: number) => Promise<SaveAnswer> | SaveAnswer, storage = new Map<string, string>()) {
   const sent: { draft: DraftToSave; at: number }[] = [];
   const looked: number[] = [];
-  let revisionAnswer: RevisionAnswer = { ok: true, pageId: PAGE, revision: 3 };
+  const claimed: { address: string; at: number; sending: number }[] = [];
+  let revisionAnswer: RevisionAnswer = { ok: true, pageId: PAGE, revision: 3, address: null };
   let failure: Failure = "no-answer";
+  let claimAnswer: (address: string) => Promise<ClaimAnswer> | ClaimAnswer = () => ({ ok: false, reason: "unavailable" });
   const browser: Browser = {
     save: async (draft) => { sent.push({ draft, at: Date.now() }); return respond(draft, sent.length); },
     failed: () => failure,
     revision: async () => { looked.push(Date.now()); return revisionAnswer; },
+    // `sending`: how many saves had gone when the claim went
+    claim: async (address) => { claimed.push({ address, at: Date.now(), sending: sent.length }); return claimAnswer(address); },
     storage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => { storage.set(k, v); } },
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
     now: () => Date.now(),
     signedOut: vi.fn(),
   };
-  return { browser, sent, looked, storage, answerRevision: (a: RevisionAnswer) => { revisionAnswer = a; }, failAs: (f: Failure) => { failure = f; } };
+  return { browser, sent, looked, claimed, storage, answerRevision: (a: RevisionAnswer) => { revisionAnswer = a; }, failAs: (f: Failure) => { failure = f; }, claimWith: (a: typeof claimAnswer) => { claimAnswer = a; } };
 }
 
 const desk = (page: PageDocument = clone(PIA_PAGE)): StudioWork => ({ scene: DESK_SCENE, page });
-const okAnswer = (revision: number, replaced = false): SaveAnswer => ({ ok: true, pageId: PAGE, revision, replaced });
+const okAnswer = (revision: number, replaced = false, address: string | null = null): SaveAnswer => ({ ok: true, pageId: PAGE, revision, replaced, address });
 
 /** A person's edit, as the studio makes it: the change at once, the save in this browser 350 ms later. */
 async function edit(keeper: AccountAutosave, studio: ReturnType<typeof fakeStudio>, title: string) {
@@ -252,11 +275,11 @@ async function edit(keeper: AccountAutosave, studio: ReturnType<typeof fakeStudi
 function started(acct: AccountPage | null, here: StudioWork, b: ReturnType<typeof fakeBrowser>, replace?: "opened" | "set-aside" | "refused") {
   const keeper = new AccountAutosave(acct, b.browser);
   const studio = fakeStudio(here, replace);
-  const told: string[] = [];
+  const told: string[] = [], tells: Heard[] = [];
   keeper.open(studio.control);
-  keeper.attach((heard) => told.push(`${heard.pageId} ${heard.revision}`));
+  keeper.attach((heard) => { told.push(`${heard.pageId} ${heard.revision}`); tells.push(heard); });
   const words = () => keeper.getWords();
-  return { keeper, studio, told, words };
+  return { keeper, studio, told, tells, words };
 }
 
 describe("the autosave in the browser (AccountAutosave)", () => {
@@ -309,7 +332,7 @@ describe("the autosave in the browser (AccountAutosave)", () => {
     const first = fakeBrowser(() => okAnswer(4), storage);
     const tab = started(account(3), desk(), first);
     await edit(tab.keeper, tab.studio, "Typed, then reloaded");
-    expect(readRecord(first.browser.storage)).toEqual({ pageId: PAGE, base: 3, local: canonical(edited("Typed, then reloaded")), sent: null, unsent: true });
+    expect(readRecord(first.browser.storage)).toEqual({ pageId: PAGE, base: 3, local: canonical(edited("Typed, then reloaded")), sent: null, unsent: true, address: null });
     await vi.advanceTimersByTimeAsync(500); // reloaded before the two seconds were up
     tab.keeper.detach();
     expect(first.sent).toEqual([]);
@@ -474,6 +497,9 @@ describe("the autosave in the browser (AccountAutosave)", () => {
   test("the account's page opens over other work, which the studio sets aside with the reason; nothing is sent", async () => {
     const b = fakeBrowser(() => okAnswer(4));
     const { studio, words } = started(account(3, edited("In the account")), desk(edited("In this browser")), b);
+    // and the opening says so, for the host to open nothing over the studio's dialog; one that sets nothing aside does not
+    expect(new AccountAutosave(account(3, edited("In the account")), fakeBrowser(() => okAnswer(4)).browser).open(fakeStudio(desk(edited("In this browser"))).control)).toBe(true);
+    expect(new AccountAutosave(account(3), fakeBrowser(() => okAnswer(4)).browser).open(fakeStudio(desk()).control)).toBe(false);
     expect(studio.replaced.map((r) => [r.work.page.links.newsletter!.title, r.why])).toEqual([["In the account", NOTICES["set-aside"]]]);
     expect(studio.replaced[0]!.work.scene.id).toBe("desk");
     await vi.advanceTimersByTimeAsync(5000);
@@ -566,7 +592,7 @@ describe("the autosave in the browser (AccountAutosave)", () => {
     (await savedToFive(storage)).keeper.detach();
     // the studio again, handed the page as the server sent it at revision 3
     const b = fakeBrowser(() => okAnswer(6), storage);
-    b.answerRevision({ ok: true, pageId: PAGE, revision: 5 });
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 5, address: null });
     const back = started(account(3), desk(edited("Two")), b);
     await vi.advanceTimersByTimeAsync(5000);
     expect([back.studio.replaced, back.studio.said, b.sent, back.words(), b.looked.length]).toEqual([[], [], [], WORDS.saved, 1]);
@@ -579,7 +605,7 @@ describe("the autosave in the browser (AccountAutosave)", () => {
 
     // and when the account has moved on since, the answer to that question says so
     const moved = fakeBrowser(() => okAnswer(9), storage);
-    moved.answerRevision({ ok: true, pageId: PAGE, revision: 8 });
+    moved.answerRevision({ ok: true, pageId: PAGE, revision: 8, address: null });
     const behind = started(account(3), desk(edited("Three")), moved);
     await vi.advanceTimersByTimeAsync(0);
     expect([behind.studio.replaced, behind.words(), behind.studio.said]).toEqual([[], WORDS.behind, [[NOTICES.behind, "error"]]]);
@@ -615,7 +641,7 @@ describe("the autosave in the browser (AccountAutosave)", () => {
     const storage = new Map<string, string>();
     (await savedToFive(storage)).keeper.detach();
     const b = fakeBrowser(() => okAnswer(3), storage);
-    b.answerRevision({ ok: true, pageId: PAGE, revision: 2 });
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 2, address: null });
     const back = started(account(2, edited("An older copy")), desk(edited("Two")), b);
     expect(back.words()).toBe(WORDS.saved); // as the record has it, until the server has answered
     await vi.advanceTimersByTimeAsync(0);
@@ -641,7 +667,7 @@ describe("the autosave in the browser (AccountAutosave)", () => {
 
   test("after a try that got no answer the server is not asked whether the account has moved on: it may have, by this tab's own save", async () => {
     const b = fakeBrowser(() => { throw new Error("no answer"); });
-    b.answerRevision({ ok: true, pageId: PAGE, revision: 4 }); // the try did reach the account
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 4, address: null }); // the try did reach the account
     const { keeper, studio, words } = started(account(3), desk(), b);
     await edit(keeper, studio, "Sent, and the answer lost");
     await vi.advanceTimersByTimeAsync(1650);
@@ -671,7 +697,7 @@ describe("the autosave in the browser (AccountAutosave)", () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect([b.sent.length, words(), studio.said.length]).toEqual([3, WORDS.outdated, 2]);
     // the record goes on, as work not sent: loaded again, it opens and goes at once
-    expect(readRecord(b.browser.storage)).toEqual({ pageId: PAGE, base: 3, local: canonical(edited("Typed after")), sent: null, unsent: true });
+    expect(readRecord(b.browser.storage)).toEqual({ pageId: PAGE, base: 3, local: canonical(edited("Typed after")), sent: null, unsent: true, address: null });
     const again = fakeBrowser(() => okAnswer(4), b.storage);
     const reloaded = started(account(3), desk(edited("Typed after")), again);
     await vi.advanceTimersByTimeAsync(0);
@@ -761,7 +787,7 @@ describe("the autosave in the browser (AccountAutosave)", () => {
     expect(b.looked).toHaveLength(1);
     expect(words()).toBe(WORDS.saved);
     await vi.advanceTimersByTimeAsync(LOOK_EVERY_MS);
-    b.answerRevision({ ok: true, pageId: PAGE, revision: 7 });
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 7, address: null });
     await keeper.looked();
     expect(b.looked).toHaveLength(2);
     expect(words()).toBe(WORDS.behind);
@@ -794,6 +820,258 @@ describe("the autosave in the browser (AccountAutosave)", () => {
     keeper.attach(null);
     await vi.advanceTimersByTimeAsync(0);
     expect(b.sent).toHaveLength(1);
+  });
+});
+
+describe("the page's address, in the autosave (AccountAutosave)", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const took = (address: string, revision: number, held: { address: string; until: Date } | null = null): ClaimAnswer => ({ ok: true, address, revision, held });
+  /** The studio's draft taking the address, as it does when the row shows it (StudioProps.address): no edit, so the host is not told. */
+  function pin(studio: ReturnType<typeof fakeStudio>, address: string) {
+    studio.set({ ...studio.now(), page: { ...studio.now().page, handle: address } });
+  }
+  /** An edit, as edit() makes it, with the handle the draft has: the studio keeps the address in it (store.ts). */
+  async function editKeeping(keeper: AccountAutosave, studio: ReturnType<typeof fakeStudio>, title: string) {
+    const work = { ...studio.now(), page: { ...edited(title), handle: studio.now().page.handle } };
+    studio.set(work);
+    keeper.changed(work);
+    await vi.advanceTimersByTimeAsync(350);
+    keeper.saved(work);
+  }
+
+  test("a claim moves this tab on to the revision it made: the address follows, the studio's draft taking it sends nothing, and the next save says nothing of replacing a version", async () => {
+    // the draft's handle is "pia", text and no address, until the page takes one
+    const b = fakeBrowser((_, n) => okAnswer(4 + n, false, "pia-m"));
+    b.claimWith(() => took("pia-m", 4));
+    const { keeper, studio, tells, words } = started(account(3), desk(), b);
+    expect(keeper.getAddress()).toBeNull();
+    expect(await keeper.claim("pia-m")).toEqual(took("pia-m", 4));
+    expect(keeper.getAddress()).toBe("pia-m");
+    // the other tabs of this browser are told that it was the address's alone
+    expect(tells.at(-1)).toEqual({ pageId: PAGE, revision: 4, address: "pia-m", moved: true });
+    pin(studio, "pia-m");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect([b.sent, words()]).toEqual([[], WORDS.saved]);
+    // the claim's own tab records where the account is now, with the work as the studio has it
+    expect(readRecord(b.browser.storage)).toEqual({ pageId: PAGE, base: 4, local: canonical({ ...clone(PIA_PAGE), handle: "pia-m" }), sent: null, unsent: false, address: "pia-m" });
+    await editKeeping(keeper, studio, "Typed after");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(b.sent.map((x) => [x.draft.base, x.draft.page.handle])).toEqual([[4, "pia-m"]]);
+    expect([words(), studio.said]).toEqual([WORDS.saved, []]);
+  });
+
+  test("a claim of the address the page has already is no move: an answer a revision on is another device's save, and the tab falls behind and says so", async () => {
+    // at revision 2 with its address; the phone saved revision 3 since; the claim changes nothing
+    const b = fakeBrowser(() => okAnswer(4, true, "pia"));
+    b.claimWith(() => took("pia", 3));
+    const { keeper, studio, words } = started(account(2, clone(PIA_PAGE), "pia"), desk(), b);
+    expect(await keeper.claim("pia")).toEqual(took("pia", 3));
+    expect([words(), studio.said]).toEqual([WORDS.behind, [[NOTICES.behind, "error"]]]);
+    // typed here after it: made from the revision this tab had, and said to replace the phone's
+    await editKeeping(keeper, studio, "From the laptop");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(b.sent.map((x) => x.draft.base)).toEqual([2]);
+    expect(studio.said.at(-1)).toEqual([NOTICES.replaced, ""]);
+  });
+
+  test("a claim after a try that got no answer takes the claim's revision and says nothing: the account may be a revision on by this tab's own save", async () => {
+    // the try reached the account as revision 4 and its answer was lost; the claim makes revision 5
+    const b = fakeBrowser((_, n) => (n === 1 ? Promise.reject(new TypeError("Failed to fetch")) : okAnswer(6, true, "pia-m")));
+    b.claimWith(() => took("pia-m", 5));
+    const { keeper, studio, words } = started(account(3), desk(), b);
+    await editKeeping(keeper, studio, "Lost on the way back");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(studio.said).toEqual([[NOTICES.offline, "error"]]);
+    await keeper.claim("pia-m");
+    pin(studio, "pia-m");
+    await vi.advanceTimersByTimeAsync(5000); // the try waiting goes, from the claim's revision
+    expect(b.sent.map((x) => x.draft.base)).toEqual([3, 5]);
+    expect([words(), studio.said]).toEqual([WORDS.saved, [[NOTICES.offline, "error"]]]);
+  });
+
+  test("the claim waits for a save on its way, and no save goes while the claim is on its way: one due meanwhile goes once it has its answer", async () => {
+    let answerSave: (a: SaveAnswer) => void = () => {}, answerClaim: (a: ClaimAnswer) => void = () => {};
+    const b = fakeBrowser((_, n) => (n === 1 ? new Promise<SaveAnswer>((r) => { answerSave = r; }) : okAnswer(6, false, "pia")));
+    b.claimWith(() => new Promise<ClaimAnswer>((r) => { answerClaim = r; }));
+    const { keeper, studio, words } = started(account(3), desk(), b);
+    await edit(keeper, studio, "On its way");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(b.sent).toHaveLength(1);
+    const claim = keeper.claim("pia");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(b.claimed).toEqual([]); // waits for the save's answer
+    answerSave(okAnswer(4));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(b.claimed.map((c) => [c.address, c.sending])).toEqual([["pia", 1]]);
+    // typed while the claim is on its way: its two seconds pass, and nothing goes
+    await edit(keeper, studio, "While claiming");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(b.sent).toHaveLength(1);
+    answerClaim(took("pia", 5));
+    await claim;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(b.sent.map((x) => [x.draft.page.links.newsletter!.title, x.draft.base])).toEqual([["On its way", 3], ["While claiming", 5]]);
+    expect([words(), studio.said]).toEqual([WORDS.saved, []]);
+  });
+
+  test("with no page in the account yet, the work here goes first, and its save makes the page the address is for", async () => {
+    const b = fakeBrowser(() => okAnswer(1));
+    b.claimWith(() => took("pia", 2));
+    const { keeper } = started(null, desk(), b);
+    // chosen before the first save has gone
+    expect(await keeper.claim("pia")).toEqual(took("pia", 2));
+    expect(b.sent.map((x) => x.draft.base)).toEqual([null]);
+    expect(b.claimed.map((c) => c.sending)).toEqual([1]);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(b.sent).toHaveLength(1);
+    expect(readRecord(b.browser.storage)).toMatchObject({ pageId: PAGE, base: 2, address: "pia" });
+  });
+
+  test("another tab's change of address, from the revision this tab has, is taken quietly: no Changed elsewhere, and the next save is made from it", async () => {
+    const b = fakeBrowser(() => okAnswer(5, false, "pia-m"));
+    const { keeper, studio, words } = started(account(3), desk(), b);
+    keeper.heard({ pageId: PAGE, revision: 4, address: "pia-m", moved: true });
+    expect([keeper.getAddress(), words(), studio.said]).toEqual(["pia-m", WORDS.saved, []]);
+    pin(studio, "pia-m");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(b.sent).toEqual([]);
+    await editKeeping(keeper, studio, "In the other tab");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(b.sent.map((x) => x.draft.base)).toEqual([4]);
+    expect([words(), studio.said]).toEqual([WORDS.saved, []]);
+    // a change of address from a revision this tab does not have is a version it does not have
+    const older = started(account(2), desk(), fakeBrowser(() => okAnswer(5)));
+    older.keeper.heard({ pageId: PAGE, revision: 4, address: "pia", moved: true });
+    expect([older.keeper.getAddress(), older.words()]).toEqual(["pia", WORDS.behind]);
+    // and a save heard from another tab is a save, whatever its address
+    const saved = started(account(3), desk(), fakeBrowser(() => okAnswer(5)));
+    saved.keeper.heard({ pageId: PAGE, revision: 4, address: null });
+    expect(saved.words()).toBe(WORDS.behind);
+  });
+
+  test("the address follows every answer of the server, the row's and the draft's with it, and the studio's draft taking it sends nothing", async () => {
+    const b = fakeBrowser(() => okAnswer(4, false, "pia-m"));
+    const { keeper, studio, words } = started(account(3, clone(PIA_PAGE), "pia"), desk(), b);
+    const heard: (string | null)[] = [];
+    keeper.subscribe(() => heard.push(keeper.getAddress()));
+    // a save's answer: another device moved it meanwhile
+    await edit(keeper, studio, "Saved");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(keeper.getAddress()).toBe("pia-m");
+    pin(studio, "pia-m");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect([b.sent.length, words()]).toEqual([1, WORDS.saved]);
+    // a look's answer at the same revision: released by another's claim, so no address
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 4, address: null });
+    await vi.advanceTimersByTimeAsync(LOOK_EVERY_MS);
+    await keeper.looked();
+    expect([keeper.getAddress(), words()]).toEqual([null, WORDS.saved]);
+    // and one at a later revision: another device's change, which this tab is behind, and shows
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 6, address: "pia-z" });
+    await vi.advanceTimersByTimeAsync(LOOK_EVERY_MS);
+    await keeper.looked();
+    expect([keeper.getAddress(), words()]).toEqual(["pia-z", WORDS.behind]);
+    pin(studio, "pia-z");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(b.sent).toHaveLength(1); // the draft taking the address sends nothing over the other device's version
+    expect(heard).toContain(null);
+  });
+
+  test("the studio opening with its work under another handle than the account's address: the same work, Saved, nothing sent, nothing set aside", async () => {
+    // reloaded after another device changed the address: this browser's copy has the old one
+    const storage = new Map<string, string>();
+    storage.set(RECORD_KEY, JSON.stringify({ pageId: PAGE, base: 6, local: canonical({ ...clone(PIA_PAGE), handle: "pia-c" }), sent: null, unsent: false, address: "pia-c" }));
+    const b = fakeBrowser(() => okAnswer(8), storage);
+    const { keeper, studio, words } = started(account(7, { ...clone(PIA_PAGE), handle: "pia-d" }, "pia-d"), desk({ ...clone(PIA_PAGE), handle: "pia-b" }), b);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect([keeper.getAddress(), studio.replaced, b.sent, words(), studio.said]).toEqual(["pia-d", [], [], WORDS.saved, []]);
+    // and what it records is the work with the account's address in it
+    expect(readRecord(b.browser.storage)).toMatchObject({ base: 7, address: "pia-d", local: canonical({ ...clone(PIA_PAGE), handle: "pia-d" }), unsent: false });
+    // before there is an address, the account's draft and the work here may carry different text
+    const quiet = fakeBrowser(() => okAnswer(4));
+    const noAddress = started(account(3, { ...clone(PIA_PAGE), handle: "your-name" }), desk(), quiet);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect([noAddress.words(), noAddress.studio.replaced, quiet.sent]).toEqual([WORDS.saved, [], []]);
+  });
+
+  test("Back and Forward after a claim: the route's copy is the same work with its older address, and is an old copy all the same: not behind, and the next save is made from the claim's revision", async () => {
+    const storage = new Map<string, string>();
+    const at = (handle: string): PageDocument => ({ ...clone(PIA_PAGE), handle });
+    storage.set(RECORD_KEY, JSON.stringify({ pageId: PAGE, base: 4, local: canonical(at("pia-c")), sent: null, unsent: false, address: "pia-c" }));
+    const b = fakeBrowser(() => okAnswer(5, false, "pia-c"), storage);
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 4, address: "pia-c" });
+    const back = started(account(3, at("pia-b"), "pia-b"), desk(at("pia-c")), b);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect([back.keeper.getAddress(), back.words(), back.studio.replaced, back.studio.said, b.sent, b.looked.length]).toEqual(["pia-c", WORDS.saved, [], [], [], 1]);
+    await editKeeping(back.keeper, back.studio, "After Back and Forward");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(b.sent.map((x) => x.draft.base)).toEqual([4]);
+    expect([back.words(), back.studio.said]).toEqual([WORDS.saved, []]);
+  });
+
+  test("a tab that only hears of an address writes nothing in this browser: the record stays the one of the tab the person works in", async () => {
+    const storage = new Map<string, string>();
+    const { keeper } = started(account(3), desk(), fakeBrowser(() => okAnswer(4), storage));
+    const before = storage.get(RECORD_KEY);
+    // quietly, from the revision it has; behind; and from the server's answer to a look
+    keeper.heard({ pageId: PAGE, revision: 4, address: "pia-m", moved: true });
+    keeper.heard({ pageId: PAGE, revision: 6, address: "pia-n", moved: true });
+    expect(storage.get(RECORD_KEY)).toBe(before);
+    const b2 = fakeBrowser(() => okAnswer(4), storage);
+    b2.answerRevision({ ok: true, pageId: PAGE, revision: 3, address: "pia-o" });
+    const other = started(account(3), desk(), b2);
+    const otherBefore = storage.get(RECORD_KEY);
+    await other.keeper.looked();
+    expect([keeper.getAddress(), other.keeper.getAddress()]).toEqual(["pia-n", "pia-o"]);
+    expect(storage.get(RECORD_KEY)).toBe(otherBefore);
+  });
+
+  test("an old copy of the route takes the address the record has, before the studio shows anything; a record from before addresses says nothing", () => {
+    const storage = new Map<string, string>();
+    storage.set(RECORD_KEY, JSON.stringify({ pageId: PAGE, base: 5, local: canonical(PIA_PAGE), sent: null, unsent: false, address: "pia-m" }));
+    expect(new AccountAutosave(account(3, clone(PIA_PAGE), "pia"), fakeBrowser(() => okAnswer(6), storage).browser).getAddress()).toBe("pia-m");
+    // the route as it is now, or newer: the route's
+    expect(new AccountAutosave(account(5, clone(PIA_PAGE), "pia"), fakeBrowser(() => okAnswer(6), storage).browser).getAddress()).toBe("pia");
+    storage.set(RECORD_KEY, JSON.stringify({ pageId: PAGE, base: 5, local: canonical(PIA_PAGE), sent: null, unsent: false }));
+    expect(new AccountAutosave(account(3, clone(PIA_PAGE), "pia"), fakeBrowser(() => okAnswer(6), storage).browser).getAddress()).toBe("pia");
+  });
+
+  test("a claim that finds the session over stops saving as a save would; one that gets no answer is told as could not just now", async () => {
+    const b = fakeBrowser(() => okAnswer(4));
+    b.claimWith(() => ({ ok: false, reason: "signed-out" }));
+    const { keeper, words } = started(account(3), desk(), b);
+    expect(await keeper.claim("pia")).toEqual({ ok: false, reason: "signed-out" });
+    expect(words()).toBe(WORDS["signed-out"]);
+    expect(b.browser.signedOut).toHaveBeenCalledOnce();
+    const lost = fakeBrowser(() => okAnswer(4));
+    lost.claimWith(() => Promise.reject(new TypeError("Failed to fetch")));
+    const other = started(account(3), desk(), lost);
+    expect(await other.keeper.claim("pia")).toEqual({ ok: false, reason: "unavailable" });
+    expect([other.keeper.getAddress(), other.words()]).toEqual([null, WORDS.saved]);
+  });
+
+  test("whether the work open is one the account keeps, for the row: a page on a ready-made scene as it ships", () => {
+    const own = { scene: { ...clone(DESK_SCENE), license: "private" as const }, page: clone(PIA_PAGE) };
+    // taken to be, until the studio has opened and said otherwise, which the row hears
+    const first = new AccountAutosave(account(3), fakeBrowser(() => okAnswer(4)).browser);
+    let heard = 0;
+    first.subscribe(() => { heard++; });
+    expect(first.getKept()).toBe(true);
+    first.open(fakeStudio(own).control);
+    expect([first.getKept(), heard > 0]).toEqual([false, true]);
+    const { keeper, words } = started(account(3), desk(), fakeBrowser(() => okAnswer(4)));
+    expect(keeper.getKept()).toBe(true);
+    keeper.changed(own);
+    expect(keeper.getKept()).toBe(false);
+    // the row is told even when the indicator's words stay as they are: behind, back on a ready-made scene
+    keeper.heard({ pageId: PAGE, revision: 5, address: null });
+    expect(words()).toBe(WORDS.behind);
+    let told = 0;
+    keeper.subscribe(() => { told++; });
+    keeper.changed(desk());
+    expect([keeper.getKept(), words(), told]).toEqual([true, WORDS.behind, 1]);
   });
 });
 

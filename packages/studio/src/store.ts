@@ -59,7 +59,16 @@ export interface StudioState {
   /** Bumps when the host sets the open work aside (replaceForHost), so the dialog that says so opens. */
   asideN: number;
   focus: FocusRequest | null;
+  /**
+   * The page's address as a host that gives pages their addresses has it (StudioProps.address):
+   * null while the page has none. Undefined without such a host, as in the single-file build,
+   * where the draft's own handle is the address.
+   */
+  address?: string | null;
 }
+
+/** The page's address as the studio shows it (the frame label, the export's file names): none when the host says the page has none. */
+export const addressOf = (s: Pick<StudioState, "address" | "page">): string | null => (s.address === null ? null : s.page.handle);
 
 type Docs = Pick<StudioState, "scene" | "page" | "sel" | "stash">;
 export interface ChangeOptions {
@@ -232,8 +241,27 @@ class StudioStore {
   };
 
   private emit(patch: Partial<StudioState> = {}): void {
-    this.state = { ...this.state, ...patch, rev: this.state.rev + 1, canUndo: this.past.length > 0, canRedo: this.future.length > 0 };
+    const next = { ...this.state, ...patch, rev: this.state.rev + 1, canUndo: this.past.length > 0, canRedo: this.future.length > 0 };
+    // The host's address is the page's (setAddress): whatever brings a page in, an edit, undo,
+    // redo or other work, carries it. The page is changed in place, as edits change it.
+    if (typeof next.address === "string") next.page.handle = next.address;
+    this.state = next;
     for (const l of this.listeners) l();
+  }
+
+  /**
+   * The page's address as the host has it (StudioProps.address), or undefined for no such host.
+   * A new address is written into the draft with no undo step (undo would bring back an address
+   * the page no longer has). It is not an edit: the host, which gave it, is not told, and nothing
+   * is saved for it. The draft carries it from now on, into this browser's storage with the next
+   * save of the work, and the host gives it again whenever the studio opens. A tab that is only
+   * open, behind another, must not write its work over the other's in this browser because it
+   * heard of a new address.
+   */
+  setAddress(address: string | null | undefined): void {
+    if (address === this.state.address) return;
+    const moves = typeof address === "string" && address !== this.state.page.handle;
+    this.emit({ address, ...(moves ? { docRev: this.state.docRev + 1 } : {}) });
   }
 
   /** An undo step: the documents, and the stash that goes with them (it is replaced when another scene is opened). */

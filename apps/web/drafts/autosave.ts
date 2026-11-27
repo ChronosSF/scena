@@ -24,12 +24,18 @@
 //   last did, and says so: at once from another tab of this browser (BroadcastChannel), when it
 //   is looked at again (one question to the server, at most every 15 seconds), and from the
 //   answer to its own next save, which replaces the other version and says that it did.
+// - The page's address (docs/adr/0008-handles.md) is the account's, and each answer from the
+//   server says what it is now; the studio shows it and its draft carries it. Choosing or
+//   changing it (claim) moves the account's draft on a revision, which this tab takes as its
+//   own: no save crosses the claim, and the other tabs of this browser are told that the change
+//   was the address's alone, so that none of them takes it for another tab's version.
 //
 // docs/adr/0007-server-autosave.md
 
 import { validatePage, type PageDocument, type SceneDocument } from "@scena/scene";
 import { BUILT_IN_SCENES } from "@scena/scenes";
 import type { SaveWords, StudioControl, StudioWork } from "@scena/studio";
+import type { ClaimAnswer } from "../address/answer.ts";
 import type { AccountPage, DraftToSave, RevisionAnswer, SaveAnswer } from "./answer.ts";
 import { NOTICES, WORDS, refusedNotice, refusedWords } from "./messages.ts";
 
@@ -61,12 +67,18 @@ export interface InStep {
    * nothing: a title typed back to what it was is a change, and not yet sent.
    */
   unsent: boolean;
+  /** The page's address at `base`, as this browser last heard; absent in a record from before addresses were kept. */
+  address?: string | null;
 }
 
-/** What one tab tells the others of this browser after a save. */
+/** What one tab tells the others of this browser after a save, or a change of address. */
 export interface Heard {
   pageId: string;
   revision: number;
+  /** The page's address at that revision; absent from a tab of an older build. */
+  address?: string | null;
+  /** The revision is a change of address alone (a claim), from the one before it. */
+  moved?: boolean;
 }
 
 /**
@@ -82,6 +94,8 @@ export interface Browser {
   /** What a `save` that threw means; the browser and the framework know, this class does not. */
   failed(error: unknown): Failure;
   revision(): Promise<RevisionAnswer>;
+  /** Gives the account's page the address, or moves it (address/actions.ts, claimAddress). */
+  claim(address: string): Promise<ClaimAnswer>;
   storage: Pick<Storage, "getItem" | "setItem"> | null;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(timer: unknown): void;
@@ -94,6 +108,25 @@ export interface Browser {
 export function canonical(v: unknown): string {
   return JSON.stringify(v, (_, x: unknown) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
 }
+
+/** A page's canonical JSON with `address` as its handle, as the account writes the address into every draft it keeps. */
+const withAddress = (json: string, address: string): string => canonical({ ...(JSON.parse(json) as object), handle: address });
+
+/**
+ * The person's work in a page, to compare: its canonical JSON without the handle. The handle is
+ * the account's address, which the account writes into every draft it keeps and the studio takes
+ * in when it is given it (docs/adr/0008-handles.md), or, before there is one, text nobody types
+ * in a studio that has an account. Two pages that differ by it alone are the same work, whichever
+ * address each was saved or recorded with.
+ */
+const workOf = (page: PageDocument | string): string => canonical({ ...(typeof page === "string" ? JSON.parse(page) as object : page), handle: null });
+
+/**
+ * Whether the record speaks of a newer version of the account's page than the one handed in: a
+ * draft's revision only goes up, so that page is an old copy (Opening, "newer").
+ */
+const newerThan = (account: AccountPage | null, record: InStep | null): record is InStep =>
+  !!account && !!record && record.pageId === account.pageId && record.base > account.revision;
 
 const shipped = new Map(BUILT_IN_SCENES.map((b) => [b.scene.id, b.scene]));
 const asShipped = new WeakMap<SceneDocument, boolean>();
@@ -147,14 +180,17 @@ export type Opening =
  */
 export function whichOpens(account: AccountPage | null, here: PageDocument, record: InStep | null): Opening {
   if (!account) return "browser";
-  const mine = canonical(here), theirs = canonical(account.page);
+  const mine = workOf(here), theirs = workOf(account.page);
+  const described = !!record && record.pageId === account.pageId && workOf(record.local) === mine;
+  // The account cannot have gone back: the page handed in is an old copy of it, not news. First,
+  // since an old copy can be the same work with only its address older (a claim moves the
+  // revision and nothing else).
+  if (described && record.base > account.revision) return "newer";
   if (mine === theirs) return "same";
-  if (!record || record.pageId !== account.pageId || record.local !== mine) return "account";
+  if (!described) return "account";
   if (record.base === account.revision) return "ahead";
   // the last save reached the account, and its answer did not reach this browser
-  if (record.sent !== null && record.base + 1 === account.revision && record.sent === theirs) return "ahead";
-  // the account cannot have gone back: the page handed in is an old copy of it, not news
-  if (record.base > account.revision) return "newer";
+  if (record.sent !== null && record.base + 1 === account.revision && workOf(record.sent) === theirs) return "ahead";
   // made from a version the account has moved on from: quiet only when nothing here is unsent
   return record.unsent ? "account" : "moved-on";
 }
@@ -163,8 +199,10 @@ export function readRecord(storage: Browser["storage"]): InStep | null {
   try {
     const r = JSON.parse(storage?.getItem(RECORD_KEY) ?? "null");
     if (!(r && typeof r.pageId === "string" && Number.isSafeInteger(r.base) && typeof r.local === "string" && (r.sent === null || typeof r.sent === "string"))) return null;
-    // a record that does not say reads as work not sent: the careful side
-    return { pageId: r.pageId, base: r.base, local: r.local, sent: r.sent, unsent: r.unsent !== false };
+    // a record that does not say reads as work not sent: the careful side; one that does not say
+    // what the address was says nothing of it
+    const address = typeof r.address === "string" || r.address === null ? { address: r.address as string | null } : {};
+    return { pageId: r.pageId, base: r.base, local: r.local, sent: r.sent, unsent: r.unsent !== false, ...address };
   } catch {
     return null;
   }
@@ -179,9 +217,13 @@ export class AccountAutosave {
   private base: number | null;
   /** The page at `base`, as far as this tab knows: canonical JSON. */
   private acked: string | null;
-  /** The page as the studio last saved it here, canonical JSON, and whether it is on a ready-made scene. */
+  /**
+   * The page as the studio last saved it here, canonical JSON, and whether it is on a ready-made
+   * scene: taken to be until the studio has opened and said (open), so that the address row is
+   * the account's from the first frame in the usual case, a person signing in from a scene.
+   */
   private local: string | null = null;
-  private readyMade = false;
+  private readyMade = true;
   private lastChange = 0;
   private timer: unknown = null;
   /** The page on its way to the account, canonical JSON, until its answer comes. */
@@ -210,6 +252,14 @@ export class AccountAutosave {
   private attached = false;
   private lastLook = Number.NEGATIVE_INFINITY;
   private tell: ((heard: Heard) => void) | null = null;
+  /** The account's page's address as this tab knows it, null while it has none. */
+  private address: string | null;
+  /** A claim of an address is on its way: no save goes meanwhile (claim). */
+  private claiming = false;
+  /** A save was due while the claim was on its way, and goes once it has its answer. */
+  private heldBack = false;
+  /** The save on its way, until its answer has been taken in. */
+  private sending: Promise<void> | null = null;
 
   private readonly account: AccountPage | null;
   private readonly browser: Browser;
@@ -220,18 +270,35 @@ export class AccountAutosave {
     this.pageId = account?.pageId ?? null;
     this.base = account?.revision ?? null;
     this.acked = account ? canonical(account.page) : null;
+    // Before the studio shows anything: the address of the newest version this browser knows.
+    // The route handed in may be an old copy (Opening, "newer"), whose address the page may no
+    // longer have; the record says what it has. A record from before addresses says nothing.
+    const record = readRecord(browser.storage);
+    this.address = newerThan(account, record) && record.address !== undefined ? record.address : account?.address ?? null;
   }
 
-  // ── what the studio's indicator reads ─────────────────────────────────────────────────
+  // ── what the studio's indicator and the address row read ──────────────────────────────
   getWords = (): SaveWords | null => this.words;
+  /** The account's page's address, as this tab knows it. */
+  getAddress = (): string | null => this.address;
+  /** Whether the work open is one the account keeps: a page on a ready-made scene, as it ships. */
+  getKept = (): boolean => this.readyMade;
   subscribe = (fn: () => void): (() => void) => {
     this.listeners.add(fn);
     return () => { this.listeners.delete(fn); };
   };
+  private notify(): void {
+    for (const l of this.listeners) l();
+  }
   private show(words: SaveWords): void {
     if (this.words === words) return;
     this.words = words;
-    for (const l of this.listeners) l();
+    this.notify();
+  }
+  private keeps(readyMade: boolean): void {
+    if (this.readyMade === readyMade) return;
+    this.readyMade = readyMade;
+    this.notify();
   }
   /** The account has the work that is open: no try is waiting any more, and none has been said. */
   private settled(): void {
@@ -249,19 +316,23 @@ export class AccountAutosave {
   }
 
   // ── the studio's seam (StudioSaving) ──────────────────────────────────────────────────
-  /** The studio is on screen: decide which work opens (whichOpens), once. */
-  open = (studio: StudioControl): void => {
-    if (this.studio) return; // React calls an effect twice in development
+  /**
+   * The studio is on screen: decide which work opens (whichOpens), once. Answers whether the work
+   * here was set aside for the account's, whose dialog the studio then shows (MountedStudio.tsx
+   * opens nothing else over it).
+   */
+  open = (studio: StudioControl): boolean => {
+    if (this.studio) return false; // React calls an effect twice in development
     this.studio = studio;
     const here = studio.work();
     const record = readRecord(this.browser.storage);
     const opening = whichOpens(this.account, here.page, record);
     // The page handed in is an old copy (Opening, "newer"): the record, not that page, says
     // where the account was when this browser last heard from it.
-    const oldCopy = !!this.account && !!record && record.pageId === this.account.pageId && record.base > this.account.revision;
+    const oldCopy = newerThan(this.account, record);
     if (opening === "newer") {
       this.base = record!.base;
-      this.acked = record!.unsent ? null : canonical(here.page);
+      this.acked = record!.unsent ? null : this.addressed(canonical(here.page));
       // with changes not sent, a try of this browser's may have reached the account since:
       // nothing is said of what the next save replaces, rather than something that may be untrue
       this.unsure = record!.unsent;
@@ -269,7 +340,8 @@ export class AccountAutosave {
     // No page was handed in, and the record says the work here went to one: an old copy from
     // before the page was made, or another person's account. The work goes either way, and its
     // save says nothing of replacing a version, which would be this browser's own.
-    if (!this.account && record && record.local === canonical(here.page)) this.unsure = true;
+    if (!this.account && record && workOf(record.local) === workOf(here.page)) this.unsure = true;
+    let setAside = false;
     if (opening === "account" || opening === "moved-on") {
       const page = this.account!.page, ready = shipped.get(page.scene.id);
       // checked here, so that a refusal from the studio can only mean a copy already kept aside
@@ -283,25 +355,29 @@ export class AccountAutosave {
         this.show(WORDS[held]);
         // said as well, in the warning tone: on a narrow window the indicator is an icon alone
         studio.say(NOTICES[held], "error");
-        return;
+        return false;
       }
+      setAside = done === "set-aside";
     }
     // what is open now: the account's page, or the work here
     const open = studio.work();
-    this.local = canonical(open.page);
-    this.readyMade = onReadyMadeScene(open.scene);
+    this.local = this.addressed(canonical(open.page));
+    // the same work as the account's, whatever handle each has: the account has this
+    if (opening === "same") this.acked = this.local;
+    this.keeps(onReadyMadeScene(open.scene));
     this.record();
     if (opening === "browser" || opening === "ahead" || (opening === "newer" && this.local !== this.acked)) this.schedule(0);
     this.settle();
     // an old copy says nothing of what the account has now: the server is asked at once
     if (oldCopy) void this.looked();
+    return setAside;
   };
 
   /** The documents changed: the indicator says so at once, and the two seconds start again. */
   changed = (work: StudioWork): void => {
     this.lastChange = this.browser.now();
     if (this.stopped || this.outdated) return;
-    this.readyMade = onReadyMadeScene(work.scene);
+    this.keeps(onReadyMadeScene(work.scene));
     // a page on a scene of one's own is not sent, so no try waits for it either
     if (!this.readyMade) { this.cancel(); this.tries = 0; this.show(WORDS["own-scene"]); return; }
     // while the tries go on, the indicator keeps saying so, and does not flip back to "Saving…"
@@ -311,8 +387,8 @@ export class AccountAutosave {
   /** The studio saved the work in this browser: the record goes beside it, and the page to the account two seconds after the last change. */
   saved = (work: StudioWork): void => {
     if (this.stopped) return;
-    this.local = canonical(work.page);
-    this.readyMade = onReadyMadeScene(work.scene);
+    this.local = this.addressed(canonical(work.page));
+    this.keeps(onReadyMadeScene(work.scene));
     this.record();
     if (this.outdated) return; // recorded, so that it goes once the page is loaded again
     if (!this.readyMade) { this.cancel(); this.tries = 0; this.settle(); return; }
@@ -342,11 +418,19 @@ export class AccountAutosave {
     this.cancel();
   }
 
-  /** Another tab of this browser saved the account's page. */
+  /** Another tab of this browser saved the account's page, or changed its address. */
   heard = (heard: Heard): void => {
     if (this.stopped || this.outdated || !this.studio) return;
     if (this.pageId !== null && heard.pageId !== this.pageId) return;
+    // A change of address alone, from the revision this tab has: the account's draft is this
+    // tab's with the new address in it, so the tab takes the revision and is not behind.
+    if (heard.moved && heard.address !== undefined && this.onItsWay === null && this.base === heard.revision - 1) {
+      this.base = heard.revision;
+      this.learn(heard.address);
+      return;
+    }
     this.newest = Math.max(this.newest, heard.revision);
+    if (heard.address !== undefined && (this.base === null || heard.revision >= this.base)) this.learn(heard.address);
     // while a save of this tab's is on its way, its answer decides (answered)
     if (this.onItsWay === null && (this.base === null || heard.revision > this.base)) this.fallBehind();
   };
@@ -358,7 +442,7 @@ export class AccountAutosave {
    * elsewhere, and the answer to its next save says what there is to say.
    */
   looked = async (): Promise<void> => {
-    const busy = () => this.stopped || this.outdated || this.onItsWay !== null || this.unsure || this.tries > 0;
+    const busy = () => this.stopped || this.outdated || this.claiming || this.onItsWay !== null || this.unsure || this.tries > 0;
     if (busy() || !this.studio || this.behind) return;
     const now = this.browser.now();
     if (now - this.lastLook < LOOK_EVERY_MS) return;
@@ -368,6 +452,8 @@ export class AccountAutosave {
     if (busy()) return;
     if (!answer.ok) { if (answer.reason === "signed-out") this.signedOut(); return; }
     if (answer.revision === null) return;
+    // the address the page has now, whatever else the answer says: the row shows no other
+    this.learn(answer.address);
     if (this.pageId !== null && answer.pageId !== this.pageId) this.fallBehind();
     else if (this.base === null || answer.revision > this.base) { this.newest = Math.max(this.newest, answer.revision); this.fallBehind(); }
     else if (answer.revision < this.base) {
@@ -402,7 +488,15 @@ export class AccountAutosave {
     this.timer = null;
   }
 
-  private async send(): Promise<void> {
+  private send(): Promise<void> {
+    // a save due while a claim is on its way goes once the claim has its answer (claim)
+    if (this.claiming) { this.heldBack = true; return Promise.resolve(); }
+    const sending = this.sendNow().finally(() => { if (this.sending === sending) this.sending = null; });
+    this.sending = sending;
+    return sending;
+  }
+
+  private async sendNow(): Promise<void> {
     if (this.stopped || this.outdated || !this.attached || this.onItsWay !== null || this.local === null || !this.readyMade) return;
     const json = this.local;
     if (json === this.refused) return;
@@ -455,6 +549,7 @@ export class AccountAutosave {
       this.base = answer.revision;
       this.acked = json;
       this.refused = null;
+      this.learn(answer.address);
       // another tab told of a newer save while this one was on its way: this one was replaced
       this.behind = false;
       if (this.newest > answer.revision) this.fallBehind();
@@ -463,7 +558,7 @@ export class AccountAutosave {
       else if (answer.replaced && !this.unsure) this.studio?.say(NOTICES.replaced);
       this.unsure = false;
       this.record();
-      this.tell?.({ pageId: answer.pageId, revision: answer.revision });
+      this.tell?.({ pageId: answer.pageId, revision: answer.revision, address: answer.address });
       // changed while it was on its way: that goes too, two seconds after the change
       if (this.local !== json) this.schedule(this.lastChange + SAVE_AFTER_MS - this.browser.now());
       this.settle();
@@ -485,7 +580,7 @@ export class AccountAutosave {
         return;
       case "own-scene":
         // the studio sends no such page; the server's own rule, should one come from elsewhere
-        this.readyMade = false;
+        this.keeps(false);
         this.settle();
         return;
       case "signed-out":
@@ -502,6 +597,73 @@ export class AccountAutosave {
     this.browser.signedOut();
   }
 
+  // ── the page's address ────────────────────────────────────────────────────────────────
+  /**
+   * Gives the account's page `address`, or moves it there, and carries on from the answer. The
+   * claim moves the account's draft on a revision, so it waits for a save on its way, and no
+   * save goes until it has its answer: a save that crossed it would read as one that replaced
+   * another tab's version, here or in another tab. With no page in the account yet, the work
+   * here goes first, and its save makes the page the address is for. The answer is the
+   * server's, whatever the picker's check said.
+   */
+  claim = async (address: string): Promise<ClaimAnswer> => {
+    await this.sending;
+    if (this.pageId === null) { this.cancel(); await this.send(); }
+    this.claiming = true;
+    try {
+      const answer = await this.browser.claim(address).catch((): ClaimAnswer => ({ ok: false, reason: "unavailable" }));
+      if (answer.ok) this.took(answer);
+      else if (answer.reason === "signed-out") this.signedOut();
+      return answer;
+    } finally {
+      this.claiming = false;
+      if (this.heldBack) { this.heldBack = false; this.schedule(0); }
+    }
+  };
+
+  /** The page took the address it claimed, and its draft is at `revision`. */
+  private took(answer: Extract<ClaimAnswer, { ok: true }>): void {
+    // A change of address is one revision on from the one this tab had (nothing else was sent
+    // meanwhile): the tab takes it as its own. A claim of the address the page has already moves
+    // nothing, so an answer ahead of the tab is then another tab's or device's save. After a try
+    // that got no answer, the account may be a revision on by this tab's own save: the claim's
+    // revision is taken, and nothing said of it, as for a save's answer then (answered).
+    const moved = answer.address !== this.address && this.base !== null && answer.revision === this.base + 1;
+    if (moved || this.unsure) this.base = answer.revision;
+    else if (this.base === null || answer.revision > this.base) { this.newest = Math.max(this.newest, answer.revision); this.fallBehind(); }
+    this.learn(answer.address);
+    this.record();
+    if (this.pageId !== null) this.tell?.({ pageId: this.pageId, revision: answer.revision, address: answer.address, moved });
+  }
+
+  /**
+   * A page's canonical JSON as the account would keep it: with the account's address as its
+   * handle, once this tab knows there is one. The studio's draft takes the address in when the
+   * row shows it (StudioProps.address), which may be a moment after the work is read here; what
+   * this tab keeps of the work is the same either way.
+   */
+  private addressed(json: string): string {
+    return this.address === null ? json : withAddress(json, this.address);
+  }
+
+  /**
+   * The account's page is at `address`. The account writes its page's address into every draft
+   * it keeps, so a version that differs from it by the handle alone is the same to it: what this
+   * tab knows the account has takes the address, and so does the work open here, as the studio's
+   * draft takes it (StudioProps.address, which is no edit: nothing is sent for it). Nothing is
+   * written in this browser: a tab that only heard of the address must not write the record over
+   * the one of the tab the person works in. The claim's own tab records it (took).
+   */
+  private learn(address: string | null): void {
+    if (address !== null) {
+      if (this.acked !== null) this.acked = withAddress(this.acked, address);
+      if (this.local !== null) this.local = withAddress(this.local, address);
+    }
+    if (address === this.address) return;
+    this.address = address;
+    this.notify();
+  }
+
   private fallBehind(): void {
     if (this.behind) return;
     this.behind = true;
@@ -516,7 +678,7 @@ export class AccountAutosave {
    */
   private record(): void {
     if (this.stopped || this.pageId === null || this.base === null || this.local === null) return;
-    const record: InStep = { pageId: this.pageId, base: this.base, local: this.local, sent: this.onItsWay, unsent: this.local !== this.acked || this.unsure };
+    const record: InStep = { pageId: this.pageId, base: this.base, local: this.local, sent: this.onItsWay, unsent: this.local !== this.acked || this.unsure, address: this.address };
     try { this.browser.storage?.setItem(RECORD_KEY, JSON.stringify(record)); } catch { /* a browser that refuses: the account's page opens next time, with this work set aside */ }
   }
 }

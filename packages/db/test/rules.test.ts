@@ -6,9 +6,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { HANDLE_MAX, HANDLE_RULE, validatePage } from "@scena/scene";
+import { HANDLE_HOLD_DAYS, HANDLE_MAX, HANDLE_RULE, validatePage } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { changeHandle, createPage, createUser, handleAvailability, handleProblem, heldHandle, HANDLE_HOLD_DAYS, RESERVED_HANDLES, saveDraft, type Database } from "../src/index.ts";
+import { changeHandle, createPage, createUser, handleAvailability, handleProblem, heldHandle, noteSeen, RESERVED_HANDLES, saveDraft, type Database } from "../src/index.ts";
 import { checkDraft, DRAFT_MAX_BYTES, DRAFT_MAX_DEPTH, withHandle } from "../src/draft.ts";
 import { claimOn, HANDLE_RELEASE_DAYS, isReserved } from "../src/handles.ts";
 
@@ -80,7 +80,8 @@ describe("who has a claim on a handle", () => {
   const ago = (days: number) => new Date(at.getTime() - days * DAY);
   const page = (o: { id: string; handle?: string | null; previousHandle?: string | null; handleChangedAt?: Date | null; status?: string; updatedAt?: Date }) =>
     ({ handle: null, previousHandle: null, handleChangedAt: null, status: "draft", updatedAt: at, ...o });
-  const read = (pages: ReturnType<typeof page>[]) => claimOn(pages.map((p) => ({ page: p, now: at })), "pia", (p) => p.id === "mine");
+  /** The pages as a claim finds them; their owners never seen, unless `ownerSeen` says when. */
+  const read = (pages: ReturnType<typeof page>[], ownerSeen: Date | null = null) => claimOn(pages.map((p) => ({ page: p, now: at, ownerSeen })), "pia", (p) => p.id === "mine");
   const FREE = { ok: true, state: "free" };
   const TAKEN = { ok: false, reason: "taken", problems: ['handle: "pia" is taken; choose another address'] };
 
@@ -124,6 +125,21 @@ describe("who has a claim on a handle", () => {
     expect(read([{ ...unused, id: "mine" }])).toEqual({ answer: { ok: true, state: "yours" } });
     // and a release does not get past someone else's hold
     expect(read([unused, page({ id: "y", handle: "other", previousHandle: "pia", handleChangedAt: at })])).toEqual({ answer: TAKEN });
+  });
+
+  test("an owner seen within HANDLE_RELEASE_DAYS keeps an address nobody used, to the millisecond; one never seen counts from the page alone", () => {
+    const untouched = page({ id: "x", handle: "pia", updatedAt: ago(10 * HANDLE_RELEASE_DAYS) });
+    // signed in, and nothing written to the page, the day before, and up to the edge
+    expect(read([untouched], ago(1))).toEqual({ answer: TAKEN });
+    expect(read([untouched], new Date(ago(HANDLE_RELEASE_DAYS).getTime() + 1))).toEqual({ answer: TAKEN });
+    expect(read([untouched], ago(HANDLE_RELEASE_DAYS))).toEqual({ answer: FREE, release: untouched });
+    // never seen: as before the time was kept
+    expect(read([untouched], null)).toEqual({ answer: FREE, release: untouched });
+    // a page touched within the days keeps its address whenever its owner was last seen
+    const touched = { ...untouched, updatedAt: ago(1) };
+    for (const seen of [null, ago(10 * HANDLE_RELEASE_DAYS)]) expect(read([touched], seen), String(seen)).toEqual({ answer: TAKEN });
+    // and the owner's time is one's own too: still yours, however long ago
+    expect(read([{ ...untouched, id: "mine" }], ago(10 * HANDLE_RELEASE_DAYS))).toEqual({ answer: { ok: true, state: "yours" } });
   });
 });
 
@@ -247,6 +263,18 @@ describe("a draft is validated before the database is asked anything", () => {
     expect((await changeHandle(untouchable, { pageId: PAGE_ID, userId: USER_ID, handle: "-x" })).ok).toBe(false);
     expect(await handleAvailability(untouchable, { userId: USER_ID, handle: "Pia" })).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
     expect(await handleAvailability(untouchable, { userId: USER_ID, handle: "api" })).toEqual({ ok: false, reason: "reserved", problems: ['handle: "api" is kept for the site itself; choose another address'] });
+  });
+
+  test("a person seen within the day before is not noted again, to the millisecond, and the database is not asked", async () => {
+    const at = new Date("2026-06-01T12:00:00Z");
+    const seen = (ms: number) => noteSeen(untouchable, { id: USER_ID, lastSeenAt: new Date(at.getTime() - ms) }, at);
+    expect(await seen(1)).toBe(false);
+    expect(await seen(24 * 60 * 60 * 1000 - 1)).toBe(false);
+    // a day or more before, or never: the database is asked (and the stand-in says so)
+    await expect(seen(24 * 60 * 60 * 1000)).rejects.toThrow("the database was asked");
+    await expect(noteSeen(untouchable, { id: USER_ID, lastSeenAt: null }, at)).rejects.toThrow("the database was asked");
+    // an id that is no account's is not looked for
+    expect(await noteSeen(untouchable, { id: "nope", lastSeenAt: null }, at)).toBe(false);
   });
 
   test("a profile with fields that are not what the auth provider sends is refused", async () => {

@@ -38,22 +38,10 @@
 .or::before, .or::after { content: ""; border-top: 1px solid var(--ui-line); }
 .back { color: var(--ui-accent-text); font-size: var(--ui-md); font-weight: 500; text-decoration: none; }
 .back:hover { text-decoration: underline; text-underline-offset: 2px; }
-/* News and problems (Message in Shell.tsx): a block with an icon as well as colour. The live
-   region around it is in the page from the start, and out of the flow while it shows nothing,
-   so that it takes no room in the card. */
-.live:not(:has(.message)) { position: absolute; }
-.message {
-  display: flex;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--ui-line);
-  border-radius: var(--ui-r);
-  background: var(--ui-field);
-  font-size: var(--ui-md);
-  line-height: var(--ui-md-lh);
-}
-.message svg { width: 16px; height: 16px; margin-top: 2px; color: var(--ui-danger); }
-.message[data-kind="news"] svg { color: var(--ui-accent-text); }
+/* News and problems (Message in Shell.tsx), in the theme's block (.message). The live region
+   around it is in the page from the start, and out of the flow while it shows nothing, so that
+   it takes no room in the card. */
+.live:not(:has(:global(.message))) { position: absolute; }
 
 /* a phone: the card keeps 16 px gutters and gives its content more of the width */
 @media (max-width: 480px) {

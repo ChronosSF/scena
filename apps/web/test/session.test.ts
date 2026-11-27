@@ -132,7 +132,7 @@ describe("a page", () => {
 
   test("that saves the person's own data (whoIsAsking) tells no one signed in from Supabase Auth or the database not answering", async () => {
     const profile = { id: USER.id, email: USER.email, displayName: null, locale: "en", isAdmin: false, createdAt: new Date("2026-11-20T09:58:08Z") };
-    const page = { id: "6f9619ff-8b86-4d01-b42d-00c04fc964ff", draftRevision: 4, draft: { handle: "your-name" } };
+    const page = { id: "6f9619ff-8b86-4d01-b42d-00c04fc964ff", draftRevision: 4, draft: { handle: "pia" }, handle: "pia" };
     let user: () => Response = () => Response.json(USER), cookie: string | null = cookieValue(session(600)), read: () => Promise<unknown> = async () => profile;
     vi.stubGlobal("fetch", async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
@@ -143,7 +143,9 @@ describe("a page", () => {
     vi.doMock("server-only", () => ({}));
     vi.doMock("next/headers", () => ({ cookies: async () => ({ getAll: () => (cookie ? [{ name: config.cookie.name, value: cookie }] : []) }) }));
     let pageRead: () => Promise<unknown> = async () => page;
-    vi.doMock("@scena/db", () => ({ connect: () => ({}), createUser: vi.fn(), getUser: () => read(), getPageByUser: () => pageRead() }));
+    const seen: unknown[] = [];
+    let noteSeen: (db: unknown, profile: unknown) => Promise<boolean> = async (_, p) => { seen.push(p); return true; };
+    vi.doMock("@scena/db", () => ({ connect: () => ({}), createUser: vi.fn(), getUser: () => read(), getPageByUser: () => pageRead(), noteSeen: (db: unknown, p: unknown) => noteSeen(db, p) }));
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const asked = async () => { vi.resetModules(); return (await import("../auth/server.ts")).whoIsAsking(); };
@@ -170,11 +172,27 @@ describe("a page", () => {
       vi.resetModules();
       expect(await (await import("../auth/server.ts")).currentAccount()).toBeNull();
       expect(fetched).toBe(0);
-      // and the studio route hands the browser the person's page with its revision
+      // and the studio route hands the browser the person's page with its revision and its address
       cookie = cookieValue(session(600));
       read = async () => profile;
       vi.resetModules();
-      expect(await (await import("../auth/server.ts")).studioAccount()).toEqual({ signIn: true, signedIn: { email: USER.email }, saved: { pageId: page.id, revision: 4, page: page.draft } });
+      const opened = { signIn: true, signedIn: { email: USER.email }, saved: { pageId: page.id, revision: 4, page: page.draft, address: "pia" } };
+      expect(await (await import("../auth/server.ts")).studioAccount()).toEqual(opened);
+      // the studio opening counts as the person being seen, from the profile just read: no second read
+      expect(seen).toEqual([profile]);
+      // and a last-seen time that cannot be written keeps nothing from opening, and goes to the log
+      noteSeen = async () => { throw new Error("connection refused"); };
+      log.mockClear();
+      vi.resetModules();
+      expect(await (await import("../auth/server.ts")).studioAccount()).toEqual(opened);
+      expect(log.mock.calls.map((c) => String(c[0]))).toEqual(["studio: when the person was last seen was not written: connection refused"]);
+      // nobody signed in is seen by nobody
+      seen.length = 0;
+      cookie = null;
+      vi.resetModules();
+      expect(await (await import("../auth/server.ts")).studioAccount()).toEqual({ signIn: true, signedIn: null, saved: null });
+      expect(seen).toEqual([]);
+      cookie = cookieValue(session(600));
       // a page that could not be read is not taken for none: the browser would then save over
       // it unseen, so the studio opens with no account at all
       pageRead = async () => { throw new Error("connection refused"); };

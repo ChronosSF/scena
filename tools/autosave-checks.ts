@@ -89,10 +89,6 @@ export async function autosaveChecks({ chrome, origin, stack, check, out }: Auto
     everyone.push(p);
     return p;
   }
-  const pressEnter = async (p: Person) => {
-    await p.page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
-    await p.page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-  };
   const studioReady = async (p: Person) => {
     await settled(() => p.page.eval<boolean>(`typeof window.sceneStudio === "object" && !!document.querySelector('[data-ui="more"]')`), (ok) => ok, 15_000);
     await p.page.eval(RECORD_ACTIONS);
@@ -119,14 +115,14 @@ export async function autosaveChecks({ chrome, origin, stack, check, out }: Auto
     const wait = (sentAt.get(address) ?? 0) + 5400 - Date.now();
     if (wait > 0) await sleep(wait);
     const seen = (await mailsTo(address)).length;
-    await pressEnter(p);
+    await p.keys.pressEnter();
     const code = await codeFor(address, seen);
     await settled(() => p.page.eval<boolean>(`!!document.querySelector('[data-ui="code-form"] #code')`), (ok) => ok, 10_000);
     // once the page has the answer, when the email has gone: Supabase Auth counts from its own send
     sentAt.set(address, Date.now());
     await p.page.eval(`document.getElementById("code").focus()`);
     await p.page.send("Input.insertText", { text: code ?? "000000" });
-    await pressEnter(p);
+    await p.keys.pressEnter();
     await settled(() => where(p), (path) => path === "/studio", 10_000);
     await studioReady(p);
   }

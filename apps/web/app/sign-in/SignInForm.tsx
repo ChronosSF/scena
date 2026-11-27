@@ -7,8 +7,8 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { signIn } from "../../auth/actions.ts";
 import type { ReturnPath } from "../../auth/return-to.ts";
 import { START } from "../../auth/sign-in-state.ts";
-import { Message } from "../_ui/Shell.tsx";
-import styles from "../_ui/account.module.css";
+import { FieldProblem, Message } from "../_ui/Shell.tsx";
+import styles from "../_ui/shell.module.css";
 
 const MESSAGE_ID = "sign-in-message";
 
@@ -27,25 +27,29 @@ export function SignInForm({ next, google, notice, noticeKind }: { next: ReturnP
   }, [step, state, another]);
 
   const answered = state !== START;
-  const said = !answered ? notice
-    : state.problem ?? (step === "code" ? `${state.sent > 1 ? "A new email is on its way. " : ""}Check your email: open the link in it, on this device or any other, or type its code here.` : null);
+  // nothing from the code step is said once the person has stepped back from it
+  const said = another ? null : !answered ? notice
+    : state.problem ??(step === "code" ? `${state.sent > 1 ? "A new email is on its way. " : ""}Check your email: open the link in it, on this device or any other, or type its code here.` : null);
   const kind = !answered ? noticeKind : state.problem ? "problem" : "news";
+  // a problem with this step's field is shown under the field
+  const fieldProblem = answered && state.field === step ? state.problem : null;
 
   if (step === "code") {
     return (
       <>
-        <Message id={MESSAGE_ID} text={said} kind={kind} />
-        <p>We sent a sign-in email to <span className={styles.who} data-ui="sent-to">{state.email}</span>.</p>
+        <Message id={MESSAGE_ID} text={said} kind={kind} atField={!!fieldProblem} />
+        <p className={styles.lead}>We sent a sign-in email to <span className={styles.who} data-ui="sent-to">{state.email}</span>.</p>
         <form action={action} className={styles.form} data-ui="code-form">
           <input type="hidden" name="email" value={state.email} />
           <input type="hidden" name="next" value={next} />
-          <label className={styles.label} htmlFor="code">Code from the email</label>
-          <input ref={code} id="code" name="code" className={`${styles.input} ${styles.code}`} inputMode="numeric" autoComplete="one-time-code"
+          <label className="field-label" htmlFor="code">Code from the email</label>
+          <input ref={code} id="code" name="code" className={`input ${styles.code}`} inputMode="numeric" autoComplete="one-time-code"
             maxLength={12} required aria-invalid={state.field === "code"} aria-describedby={state.field === "code" ? MESSAGE_ID : undefined} />
-          <button type="submit" name="intent" value="verify" className={styles.primary} disabled={pending}>{pending ? "Checking…" : "Sign in"}</button>
+          {fieldProblem ? <FieldProblem text={fieldProblem} /> : null}
+          <button type="submit" name="intent" value="verify" className="btn btn-primary" disabled={pending}>{pending ? "Checking…" : "Sign in"}</button>
           <div className={styles.row}>
-            <button type="submit" name="intent" value="send" formNoValidate className={styles.secondary} disabled={pending}>Send a new email</button>
-            <button type="button" className={styles.secondary} onClick={() => setAnother(true)}>Use another address</button>
+            <button type="submit" name="intent" value="send" formNoValidate className="btn" disabled={pending}>Send a new email</button>
+            <button type="button" className="btn" onClick={() => setAnother(true)}>Use another address</button>
           </div>
         </form>
       </>
@@ -54,20 +58,21 @@ export function SignInForm({ next, google, notice, noticeKind }: { next: ReturnP
 
   return (
     <>
-      <Message id={MESSAGE_ID} text={said} kind={kind} />
+      <Message id={MESSAGE_ID} text={said} kind={kind} atField={!!fieldProblem} />
       <form action={action} className={styles.form} data-ui="email-form">
         <input type="hidden" name="next" value={next} />
         <input type="hidden" name="intent" value="send" />
-        <label className={styles.label} htmlFor="email">Email address</label>
-        <input ref={email} id="email" name="email" type="email" className={styles.input} autoComplete="email" required maxLength={254}
+        <label className="field-label" htmlFor="email">Email address</label>
+        <input ref={email} id="email" name="email" type="email" className="input" autoComplete="email" required maxLength={254}
           defaultValue={state.email} aria-invalid={state.field === "email"} aria-describedby={state.field === "email" ? MESSAGE_ID : undefined} />
-        <button type="submit" className={styles.primary} disabled={pending}>{pending ? "Sending…" : "Email me a link and a code"}</button>
+        {fieldProblem ? <FieldProblem text={fieldProblem} /> : null}
+        <button type="submit" className="btn btn-primary" disabled={pending}>{pending ? "Sending…" : "Email me a link and a code"}</button>
       </form>
       {google ? (
         <>
           <p className={styles.or}>or</p>
           {/* a link, not a form: the way to Google leads through two other hosts (app/auth/google/route.ts) */}
-          <a className={styles.google} href={`/auth/google?${new URLSearchParams({ next })}`} data-ui="google">Continue with Google</a>
+          <a className="btn" href={`/auth/google?${new URLSearchParams({ next })}`} data-ui="google">Continue with Google</a>
         </>
       ) : null}
     </>

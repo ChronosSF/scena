@@ -9,7 +9,7 @@ import { confirmLink } from "../../../auth/actions.ts";
 import type { ReturnPath } from "../../../auth/return-to.ts";
 // the shape of a token hash, so that nothing else is put into the form
 import { TOKEN_HASH } from "../../../auth/token-hash.ts";
-import styles from "../../_ui/account.module.css";
+import styles from "../../_ui/shell.module.css";
 
 export function ConfirmForm({ next }: { next: ReturnPath }) {
   // null until the address has been read; "" when it holds no token
@@ -27,7 +27,7 @@ export function ConfirmForm({ next }: { next: ReturnPath }) {
     return (
       <>
         <p className={styles.lead} data-ui="confirm-missing">Part of the link is missing. Open it again from the email, or ask for a new one.</p>
-        <Link className={styles.primary} href={`/sign-in?${new URLSearchParams({ next })}`} prefetch={false}>Ask for a new email</Link>
+        <Link className="btn btn-primary" href={`/sign-in?${new URLSearchParams({ next })}`} prefetch={false}>Ask for a new email</Link>
       </>
     );
   }
@@ -35,7 +35,7 @@ export function ConfirmForm({ next }: { next: ReturnPath }) {
     <form action={confirmLink} className={styles.form} data-ui="confirm-form">
       <input type="hidden" name="token_hash" value={tokenHash ?? ""} />
       <input type="hidden" name="next" value={next} />
-      <button type="submit" className={styles.primary} data-ui="confirm" disabled={tokenHash === null}>Sign in to Scena</button>
+      <button type="submit" className="btn btn-primary" data-ui="confirm" disabled={tokenHash === null}>Sign in to Scena</button>
     </form>
   );
 }

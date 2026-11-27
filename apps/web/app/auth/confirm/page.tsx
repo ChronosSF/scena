@@ -10,7 +10,7 @@ import type { Metadata } from "next";
 import { authConfig } from "../../../auth/env.ts";
 import { firstOf, returnPath } from "../../../auth/return-to.ts";
 import { Shell } from "../../_ui/Shell.tsx";
-import styles from "../../_ui/account.module.css";
+import styles from "../../_ui/shell.module.css";
 import { ConfirmForm } from "./ConfirmForm.tsx";
 
 export const metadata: Metadata = {

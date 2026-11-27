@@ -87,10 +87,6 @@ export async function signInChecks({ chrome, origin, stack, google, check, out }
   };
   const cookieHeader = (cookies: Cookie[]) => cookies.map((c) => `${c.name}=${c.value}`).join("; ");
   const where = (p: Person) => p.page.eval<string>(`location.pathname + location.search`);
-  const pressEnter = async (p: Person) => {
-    await p.page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
-    await p.page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-  };
   const studioReady = (p: Person) => settled(() => p.page.eval<boolean>(`typeof window.sceneStudio === "object" && !!document.querySelector('[data-ui="more"]')`), (ok) => ok, 15_000);
   /** The newsletter link's title in the studio's store, and in its saved work. */
   const draft = (p: Person) => p.page.eval<{ title: string | null; saved: string | null }>(`(() => {
@@ -132,14 +128,14 @@ export async function signInChecks({ chrome, origin, stack, google, check, out }
     await settled(() => p.page.eval<boolean>(`!!document.querySelector('[data-ui="email-form"] #email')`), (ok) => ok);
     await p.keys.typeInto("#email", address);
     await spaced(address);
-    await pressEnter(p);
+    await p.keys.pressEnter();
     await settled(() => p.page.eval<boolean>(`!!document.querySelector('[data-ui="code-form"]') || !!(document.querySelector('[data-ui="message"]') || {}).textContent`), (ok) => ok, 10_000);
     sentAt.set(address, Date.now());
   }
   /** Types a code on the code step, by the keyboard alone. */
   async function typeCode(p: Person, code: string): Promise<void> {
     await p.page.send("Input.insertText", { text: code });
-    await pressEnter(p);
+    await p.keys.pressEnter();
   }
   /** Opens a link, and presses its confirm button. */
   async function confirmIn(p: Person, link: URL): Promise<void> {
@@ -284,13 +280,22 @@ export async function signInChecks({ chrome, origin, stack, google, check, out }
     check("asking for another email at once is answered with a sentence, on the code step", tooSoon === SEND.wait && (await mailsTo(boAddress)).length === 1, { said: tooSoon });
     const wrong = String((Number(boMail!.code) + 1) % 1_000_000).padStart(6, "0");
     await bo.keys.typeInto("#code", wrong);
-    await pressEnter(bo);
+    await bo.keys.pressEnter();
     const refusedCode = await settled(() => message(bo), (t) => t === CODE.wrong);
     const afterWrong = await bo.page.eval<any>(`({ invalid: document.getElementById("code").getAttribute("aria-invalid"), described: document.getElementById("code").getAttribute("aria-describedby"), focus: document.activeElement.id })`);
     check("a wrong code is refused with a sentence, read out where the field points, and signs no one in",
       refusedCode === CODE.wrong && afterWrong.invalid === "true" && afterWrong.described === "sign-in-message" && afterWrong.focus === "code" && (await sessionCookies(bo)).length === 0, { said: refusedCode, ...afterWrong });
+    // what is seen of it (docs/design/app-pages.md): the sentence under the field, in the danger
+    // colour of the theme with an icon, and the field's border in it; the live region says it unseen
+    const underField = await bo.page.eval<any>(`(() => { const f = document.getElementById("code"), m = document.querySelector('[data-ui="code-form"] .field-msg'), said = document.getElementById("sign-in-message");
+      if (!f || !m || !said) return null;
+      return { text: m.textContent, hidden: m.getAttribute("aria-hidden"), under: m.getBoundingClientRect().top >= f.getBoundingClientRect().bottom, icon: !!m.querySelector("svg"),
+        colour: getComputedStyle(m).color, border: getComputedStyle(f).borderTopColor, unseen: said.getBoundingClientRect().width <= 1 }; })()`);
+    check("the wrong code is shown under its field, in the danger colour with an icon, the field's border too, and is said once",
+      !!underField && underField.text === CODE.wrong && underField.hidden === "true" && underField.under && underField.icon
+      && underField.colour === "rgb(196, 43, 28)" && underField.border === "rgb(196, 43, 28)" && underField.unseen, underField);
     await bo.keys.typeInto("#code", boMail!.code);
-    await pressEnter(bo);
+    await bo.keys.pressEnter();
     await arrivedAt(bo, "/studio");
     await studioReady(bo);
     const boBack = { path: await where(bo), draft: await draft(bo), account: await settled(() => signedInAs(bo), (t) => t.includes(boAddress)) };
@@ -301,22 +306,29 @@ export async function signInChecks({ chrome, origin, stack, google, check, out }
     // Supabase Auth refuses a second email to one address within a few seconds, with the code
     // it also gives when the project's own limit per hour is reached. An address that was
     // asked for elsewhere a moment ago is refused that way here: the page goes back to the
-    // email step, and does not ask for a code it never sent.
+    // email step, and does not ask for a code it never sent. A problem the code step had (a code
+    // of the wrong shape, refused before anyone is asked) is not said on the email step.
     const gus = await open(), gusAddress = newAddress("gus"), gusOther = newAddress("gus-other");
     await gus.page.goto(`${origin}/sign-in`);
     await askForEmail(gus, gusAddress);
     await fetch(`${stack.apiUrl}/auth/v1/otp`, { method: "POST", headers: { apikey: stack.publishableKey, "Content-Type": "application/json" }, body: JSON.stringify({ email: gusOther, create_user: true }) });
+    await gus.keys.typeInto("#code", "4182");
+    await gus.keys.pressEnter();
+    const codeStepSaid = await settled(() => message(gus), (t) => t === CODE.shape);
     await gus.keys.clickOn('[data-ui="code-form"] button[type="button"]');
     await settled(() => gus.page.eval<boolean>(`!!document.querySelector('[data-ui="email-form"] #email')`), (ok) => ok);
+    const steppedBackSaid = await message(gus);
     await gus.keys.typeInto("#email", gusOther);
-    await pressEnter(gus);
+    await gus.keys.pressEnter();
     const refusedSend = await settled(async () => ({
       said: await message(gus),
       ...(await gus.page.eval<{ emailStep: boolean; codeStep: boolean; typed: string }>(`({ emailStep: !!document.querySelector('[data-ui="email-form"]'), codeStep: !!document.querySelector('[data-ui="code-form"]'), typed: (document.querySelector("#email") || {}).value || "" })`)),
     }), (o) => o.said === SEND.wait);
     await mailTo(gusOther);
-    check("another address that cannot be sent an email yet stays on the email step: the page asks for no code it did not send",
-      refusedSend.said === SEND.wait && refusedSend.emailStep && !refusedSend.codeStep && refusedSend.typed === gusOther && (await mailsTo(gusOther)).length === 1, refusedSend);
+    check("another address that cannot be sent an email yet stays on the email step: the page asks for no code it did not send, and the code step's problem was not carried back",
+      codeStepSaid === CODE.shape && steppedBackSaid === ""
+      && refusedSend.said === SEND.wait && refusedSend.emailStep && !refusedSend.codeStep && refusedSend.typed === gusOther && (await mailsTo(gusOther)).length === 1,
+      { ...refusedSend, codeStepSaid, steppedBackSaid });
 
     // ── the link in a second browser, and a used one ──────────────────────────────────────
     const cy = await open(), cyAddress = newAddress("cy");
@@ -498,19 +510,22 @@ export async function signInChecks({ chrome, origin, stack, google, check, out }
     await fresh.page.eval(`document.activeElement && document.activeElement.blur()`);
     await fresh.page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
     await fresh.page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+    // in the order they are seen: the card, then the way back under it
+    const order = ["email", "Email me a link and a code", ...(google ? ["Continue with Google"] : []), "← Back to the studio"];
     const tabs: string[] = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < order.length; i++) {
       tabs.push(await fresh.page.eval<string>(`(() => { const a = document.activeElement; return a === document.body ? "body" : (a.id || a.textContent || a.tagName).trim().slice(0, 60); })()`));
       await fresh.page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
       await fresh.page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
     }
-    check("the sign-in page is reached by the keyboard: the way back, the email field and its button, in that order", tabs[0] === "← Back to the studio" && tabs[1] === "email" && tabs[2] === "Email me a link and a code", tabs);
+    check("the sign-in page is reached by the keyboard in the order it is seen: the email field and its button, then the way back under the card", JSON.stringify(tabs) === JSON.stringify(order), tabs);
     // a phone of someone who has not signed in (the one above has)
     const newPhone = await open(375, 812, true);
     await newPhone.page.goto(`${origin}/sign-in?next=%2Fstudio`);
     const small = await newPhone.page.eval<any>(`(() => { const f = document.getElementById("email"); if (!f) return null; const r = f.getBoundingClientRect();
-      return { wide: document.documentElement.scrollWidth, field: Math.round(r.width), tall: Math.round(r.height) }; })()`);
+      return { wide: document.documentElement.scrollWidth, field: Math.round(r.width), tall: Math.round(r.height), type: getComputedStyle(f).fontSize }; })()`);
     check("at 375 px the sign-in page fits the screen, with a field as wide as it and tall enough to tap", !!small && small.wide <= 375 && small.field >= 300 && small.tall >= 44, small);
+    check("at 375 px a field's type is 16 px, under which iOS zooms into the field", !!small && small.type === "16px", small?.type);
     await phone.page.goto(`${origin}/studio`);
     await studioReady(phone);
     const phoneBar = await phone.page.eval<any>(`({ wide: document.documentElement.scrollWidth, account: !!document.querySelector('[data-ui="account"]'), label: (document.querySelector('[data-ui="sign-out"]') || {}).textContent })`);

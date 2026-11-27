@@ -7,6 +7,7 @@
 // autosave still runs on the way out: the draft is in this browser's storage when the person
 // comes back, by the code here or by the link in another tab or on this page again.
 import Link from "next/link";
+import { LogOut, UserRound } from "lucide-react";
 import { SignOutButton } from "../sign-in/SignOutButton.tsx";
 import styles from "./account-slot.module.css";
 
@@ -16,31 +17,15 @@ export interface SignedIn {
 
 // The studio's class names for what its bar has room for (StudioProps.account, studio.css): a
 // line of text on a wide window alone, and a control's words until they give way to its icon.
-// Where the words are not shown, the control's name is its title.
-const WIDE = "account-wide", WORDS = "account-words";
-
-const Person = () => (
-  <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="8" r="4" />
-    <path d="M4 21a8 8 0 0 1 16 0" />
-  </svg>
-);
-
-// A way out, drawn as one: where the words give way to the icon, signing out must not look
-// like signing in.
-const Leave = () => (
-  <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-    <path d="M16 17l5-5-5-5" />
-    <path d="M21 12H9" />
-  </svg>
-);
+// Where the words are not shown, the control's name is its title. The controls are the theme's
+// ghost buttons, as the studio's own in the bar.
+const WIDE = "account-wide", WORDS = "account-words", BUTTON = "btn btn-ghost";
 
 export function AccountSlot({ signedIn }: { signedIn: SignedIn | null }) {
   if (!signedIn) {
     return (
-      <Link className={styles.button} href="/sign-in?next=%2Fstudio" prefetch={false} data-ui="sign-in" title="Sign in" aria-label="Sign in">
-        <Person />
+      <Link className={BUTTON} href="/sign-in?next=%2Fstudio" prefetch={false} data-ui="sign-in" title="Sign in" aria-label="Sign in">
+        <UserRound aria-hidden="true" strokeWidth={1.75} />
         <span className={WORDS}>Sign in</span>
       </Link>
     );
@@ -49,10 +34,11 @@ export function AccountSlot({ signedIn }: { signedIn: SignedIn | null }) {
     <span className={styles.account} data-ui="account">
       {/* the address on a wide window; a screen reader hears the sentence after it instead */}
       <span className={`${styles.who} ${WIDE}`} aria-hidden="true">{signedIn.email}</span>
-      <span className={styles.hidden}>Signed in as {signedIn.email}</span>
+      <span className="sr-only">Signed in as {signedIn.email}</span>
       {/* the button's tooltip says who is signed in, also where the address is not shown */}
-      <SignOutButton from="/studio" className={styles.button} title={`Sign out (signed in as ${signedIn.email})`}>
-        <Leave />
+      <SignOutButton from="/studio" className={BUTTON} title={`Sign out (signed in as ${signedIn.email})`}>
+        {/* a way out, drawn as one: where the words give way to the icon, signing out must not look like signing in */}
+        <LogOut aria-hidden="true" strokeWidth={1.75} />
         <span className={WORDS}>Sign out</span>
       </SignOutButton>
     </span>

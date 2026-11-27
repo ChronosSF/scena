@@ -1,6 +1,6 @@
 // Studio UI primitives. Radix supplies focus management, keyboard behaviour and
 // positioning for tooltips, menus and popovers; everything is styled with the --ui-*
-// tokens in studio.css (docs/design/studio-ui.md).
+// tokens in theme.css, which studio.css imports (docs/design/studio-ui.md).
 
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ComponentProps, type DragEvent, type ReactNode } from "react";
 import * as RTooltip from "@radix-ui/react-tooltip";

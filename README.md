@@ -17,7 +17,9 @@ chosen in a picker whose cards are the page itself, live, not pictures of it.
 The studio runs in two places from the same code: as one HTML file that opens from disk, for
 pitching, and inside the web app, which is where sign-in, saved drafts and publishing are built.
 Today the web app has the studio and sign-in: a visitor tries the studio first and signs in
-from its top bar, by an emailed link or code, or by Google, and comes back to their work.
+from its top bar, by an emailed link or code, or by Google, and comes back to their work. Once
+signed in, a page on a ready-made scene is saved to their account two seconds after they stop
+typing, and opens on their other devices.
 The product plan is in [docs/development-plan.md](docs/development-plan.md); the work it describes is
 tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/milestones).
 
@@ -40,7 +42,8 @@ tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/
   postgres.js, with migrations written by drizzle-kit from the schema. It holds users, pages,
   reserved handles and the audit log. A page's draft is stored as the PageDocument it is, and
   only once the scene package's validators have passed it. The web app makes a person's profile
-  with it at their first sign-in. Locally it runs in Docker (below).
+  with it at their first sign-in, and keeps a signed-in person's draft in it through a server
+  action. Locally it runs in Docker (below).
 - Sign-in is Supabase Auth, used from the web app's server alone through `@supabase/ssr`: the
   session is in an `HttpOnly` cookie of the app's own host, renewed by `proxy.ts`, and no
   Supabase client or key reaches a browser. It is built and checked against Supabase's local
@@ -51,6 +54,7 @@ Why this and not the plan's full stack yet: [docs/adr/0001-tech-stack.md](docs/a
 How the studio came to run in two apps: [docs/adr/0004-one-studio-two-apps.md](docs/adr/0004-one-studio-two-apps.md).
 The database package, its schema and why: [docs/adr/0005-database-package.md](docs/adr/0005-database-package.md).
 Sign-in, the session cookie, the local stack, and what a hosted Supabase project will need: [docs/adr/0006-sign-in.md](docs/adr/0006-sign-in.md).
+Saving the draft to the account, two tabs, and which draft opens: [docs/adr/0007-server-autosave.md](docs/adr/0007-server-autosave.md).
 
 ## Commands
 
@@ -64,7 +68,7 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 334 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, sign-in's rules (the way back, the session cookie, the configuration, what a person is told, the profile, the renewal of a session, what a browser is given, the local stack's settings), and the database package (23 of them need a database, below)
+pnpm test         # 401 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, sign-in's rules (the way back, the session cookie, the configuration, what a person is told, the profile, the renewal of a session, what a browser is given, the local stack's settings), saving the draft to the account (what the server decides, which draft opens, the autosave in the browser, the studio's part of it), and the database package (25 of them need a database, below)
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
 pnpm check        # typecheck + db:check + test + build
 
@@ -85,10 +89,10 @@ docker compose down -v        # remove it and its data, for a clean start
 
 Everything reads the database's address from `DATABASE_URL`; `.env.example` has the local one.
 Set it in your shell (`export DATABASE_URL=…`, or `$env:DATABASE_URL = "…"` in PowerShell). With
-it set, `pnpm test` and `pnpm check` also run the 23 database tests, each run in a database of
+it set, `pnpm test` and `pnpm check` also run the 25 database tests, each run in a database of
 its own that it makes, migrates and removes, so the tests neither read nor leave anything in
 yours. A run that is cut short leaves its database behind; the next run removes it once it is
-an hour old. Without `DATABASE_URL`, Vitest reports those 23 as skipped. CI runs them against a
+an hour old. Without `DATABASE_URL`, Vitest reports those 25 as skipped. CI runs them against a
 Postgres 17 service.
 
 ```sh
@@ -120,6 +124,17 @@ gateway), 54422 (Postgres) and 54424 (the mail catcher). **The CLI publishes the
 network interface, not on 127.0.0.1 alone, and its database password is a well-known local
 one**: stop the stack on a network you do not trust.
 
+To try saving to the account: signed in, choose a ready-made scene (More, "Choose a ready-made
+scene…") and type a link's title. The indicator in the top bar says "Saving…", then "Saved" two
+seconds after the last keystroke; the page is in `pages` in the stack's database, with no
+handle yet. Open the studio in a second tab and edit there to see the first tab say "Changed
+elsewhere"; cut the connection in the browser's developer tools to see "Offline, retrying". A
+page on drawings of your own stays in the browser, and the indicator says so. Sign in on a
+second browser and edit there, then reload the first: the newer version opens, and nothing is
+asked. `pnpm stack:start` applies the app's migrations each time; a stack that was already
+running when a migration was added needs `pnpm db:migrate`, with `DATABASE_URL` set from
+`pnpm stack:env`.
+
 `/admin` opens for a profile with `is_admin` set, which nothing in the app sets. On the local
 stack, after signing in once:
 
@@ -142,7 +157,7 @@ Other tools, all optional:
 | `pnpm fixtures` | Regenerates the test drawings in `fixtures/`, including the mug's three SVG frames, a blinking face as a PNG sequence and as an animated PNG, a paper texture, a drawn desk top and a lettered "Pia" (SVG and PNG) |
 | `pnpm parity` | Confirms the renderer reproduces the prototype's `demo-desk.html` (apart from the runtime) |
 | `pnpm verify:studio [url]` | Drives the studio in headless Chrome through real mouse, touch, keyboard and file-chooser input, including taps in the preview that bring up a link's form and keep its panel open, and the page in its place, while it is edited, on a desktop and at 375 px, and the way back to the page's settings. Default target: the build from file://. Run `pnpm build` first |
-| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends with every page, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview that opens the page's panel and brings up the link's form, a reload, markup and added scripts that try to run, and the home page before and after a visit to the studio. Then sign-in against the local stack, each person in a browser of their own, reading the emails from the mail catcher: from the studio and back with the work by the link and by the code, the link in a second browser, wrong, used and older links and codes, the cookie as the browser holds it, a session renewed by the proxy, `/admin`, sign-out, the refusals, Google, a phone, and the studio's top bar at the widths between a phone and a wide window. Run `pnpm build` and `pnpm stack:start` first; without the stack the sign-in checks are reported as skipped. With a URL it checks a server that is already running, such as `pnpm dev:web` with the stack's variables |
+| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends with every page, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview that opens the page's panel and brings up the link's form, a reload, markup and added scripts that try to run, and the home page before and after a visit to the studio. Then sign-in against the local stack, each person in a browser of their own, reading the emails from the mail catcher: from the studio and back with the work by the link and by the code, the link in a second browser, wrong, used and older links and codes, the cookie as the browser holds it, a session renewed by the proxy, `/admin`, sign-out, the refusals, Google, a phone, and the studio's top bar at the widths between a phone and a wide window. Then the draft saved to the account: a visitor unchanged, a page on one's own drawings kept in the browser, the page made by the first save, an edit in the database two seconds after the last keystroke, a reload, another device, a reload inside the two seconds, the connection cut and back, a draft the server refuses, the save action called without a session, two tabs, a device looked at again, signing in where the account has another version, switching devices back and forth, Back and Forward to the studio, the dialog for work set aside opening once, and the top bar with the indicator's words. Run `pnpm build` and `pnpm stack:start` first; without the stack the sign-in and autosave checks are reported as skipped. With a URL it checks a server that is already running, such as `pnpm dev:web` with the stack's variables |
 | `pnpm verify:runtime` | Checks every branch of the boil control (lite mode, slow device, Save-Data, reduced motion, offscreen, hidden, idle) on the built demo page, that frames flip, hold frame 1 and pause with it on `demo-frames.html`, that the demo page in a frame posts nothing to its parent when a drawing is tapped and never scrolls itself (only the studio's preview renders a page that does either), and that the runtime reads the page's own data whatever ids its drawing holds |
 | `pnpm shots [url]` | Retakes the studio screenshots in `docs/design/` (desktop light and dark, 375 px). Default target: the build from file:// |
 | `pnpm measure [--soft]` | Boil frame cost at 375×812 @3x with 1×, 4× and 6× CPU slowdown, against the original prototype; then the desk with three objects flipping frames at 6 fps |
@@ -170,7 +185,9 @@ packages/
 apps/
   studio/      the studio as one HTML file (Vite): the entry point, the build and its policy
   web/         the web app (Next.js): the studio at /studio, sign-in (/sign-in, /auth/*, /admin),
-               auth/ (the server side of sign-in), proxy.ts and the policy sent with every page
+               auth/ (the server side of sign-in), drafts/ (the draft saved to the account: the
+               server actions, what they decide, and the autosave in the browser), proxy.ts and
+               the policy sent with every page
 supabase/      the local Supabase stack for sign-in: config.toml, the sign-in email, and the one
                migration the stack's database needs before the app's own
 fixtures/      test drawings; reference/ has the original prototype and its rendered output
@@ -267,9 +284,11 @@ understates a budget Android.
 ## Not built yet
 
 On purpose, for the pitch: publishing, analytics, billing and custom domains (see the plan).
-The web app has sign-in, and no hosting and no Supabase project yet. The studio in it still
-keeps work in the browser, as the single-file build does: saving the draft to the account
-(issues 15 and 16), the handle picker (17), account deletion and export come next. Also not built: the
+The web app has sign-in and saves a signed-in person's draft to their account, and has no
+hosting and no Supabase project yet. Next come asking which draft to keep when the account and
+the browser differ, and the "Sign in to save and publish" bar (issue 16), the handle picker
+(17), the "unpublished changes" bar with publishing (20 to 22), a person's own scene on the
+server (65), account deletion and export. Also not built: the
 pinboard and the shop window (the scene picker lists the desk alone until they are
 drawn); keeping a page's links when another scene is chosen (it starts a new page, after
 asking); the Open Graph image; the badge

@@ -162,6 +162,13 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 .bar-divider { width: 1px; height: 20px; background: var(--ui-line); margin: 0 var(--ui-1); }
 .save-state { display: inline-grid; place-items: center; width: 28px; height: 28px; color: var(--ui-text-3); }
 .save-state.warn { color: var(--ui-warn); }
+/* with a host's words (StudioProps.saving): the short ones beside the icon, where the bar has room (below) */
+.save-state.with-words { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: auto; min-width: 28px; padding: 0 var(--ui-1); }
+.save-words { display: inline-grid; font-size: var(--ui-sm); line-height: var(--ui-sm-lh); white-space: nowrap; }
+/* the words of the states these take turns with, in the same place and unseen, so the indicator is as wide for each;
+   they change places at once (the reduced-motion rule below would otherwise give visibility a transition) */
+.save-words > * { grid-area: 1 / 1; transition: none; }
+.save-room { visibility: hidden; }
 
 /* ------------------------------------------------------------------ buttons */
 .btn {
@@ -670,6 +677,13 @@ dialog.picker[open] { display: flex; flex-direction: column; }
 @media (max-width: 1179.98px) {
   .bar .account-words { display: none; }
   .bar :is(a, button):has(> .account-words) { width: var(--ui-h-control); padding: 0; }
+}
+/* The save indicator's words, when a host gives them (StudioProps.saving), give way to their
+   icon on the same widths as the host's words do; the tooltip and a screen reader still have
+   the whole sentence. */
+@media (max-width: 1179.98px) {
+  .bar .save-words { display: none; }
+  .bar .save-state.with-words { width: var(--ui-h-control); padding: 0; }
 }
 @media (max-width: 420px) { .bar .seg-item span { padding: 0 8px; } }
 

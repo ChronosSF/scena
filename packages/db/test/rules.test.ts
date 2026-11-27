@@ -171,6 +171,23 @@ describe("a draft is validated before the database is asked anything", () => {
     expect(sent.handle).toBe("Not A Handle!");
   });
 
+  test("a page with no address needs a draft whose own handle follows the rule, checked before the database is asked", async () => {
+    // the page keeps that handle until it is given an address, so it has to be one a page can carry
+    for (const handle of ["Not A Handle!", "", "x".repeat(HANDLE_MAX + 1)]) {
+      expect(await createPage(untouchable, { userId: USER_ID, draft: { ...clone(PIA_PAGE), handle } }), handle).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
+      expect(await createPage(untouchable, { userId: USER_ID, handle: null, draft: { ...clone(PIA_PAGE), handle } }), handle).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
+    }
+    // what checkDraft hands back: the handle sent, when it is one
+    expect(checkDraft({ ...clone(PIA_PAGE), handle: "my-wish" })).toMatchObject({ ok: true, sentHandle: "my-wish" });
+    expect(checkDraft({ ...clone(PIA_PAGE), handle: "Not A Handle!" })).toMatchObject({ ok: true, sentHandle: null });
+  });
+
+  test("a save's base, the revision it was made from, is a whole number or nothing, checked before the database is asked", async () => {
+    for (const base of [-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 2, "3", {}]) {
+      expect(await saveDraft(untouchable, { pageId: PAGE_ID, userId: USER_ID, draft: PIA_PAGE, base: base as number }), String(base)).toEqual({ ok: false, reason: "invalid", problems: ["base: the draft revision this save was made from, a whole number"] });
+    }
+  });
+
   test("a broken or reserved handle is refused before the database is asked", async () => {
     expect(await createPage(untouchable, { userId: USER_ID, handle: "Pia", draft: PIA_PAGE })).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
     expect((await createPage(untouchable, { userId: USER_ID, handle: "admin", draft: PIA_PAGE })).ok === false).toBe(true);

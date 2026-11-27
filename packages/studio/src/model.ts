@@ -8,7 +8,7 @@ import type {
 import { MAT_SHAPE, isUploadedBackground, partAssets, safeHref } from "@scena/scene";
 import { layerBBox, translateForCenter, type Point } from "@scena/renderer";
 import { DESK_SCENE, MUG_SAMPLE, PIA_PAGE, type SampleDrawing } from "@scena/scenes";
-import { clone } from "./util.ts";
+import { canonicalJson, clone } from "./util.ts";
 import { dropUnusedAssets } from "./frames.ts";
 
 export const KIND_LABELS: Record<SlotKind, string> = {
@@ -162,12 +162,13 @@ export function builtInDocs(builtIn: SceneDocument): { scene: SceneDocument; pag
  * Whether opening another scene would replace something of the user's. In a scene of their
  * own that is a drawing, a background, lettering, or words typed on the page. The drawings of
  * a ready-made scene are not theirs, so there it is what they typed: a page still as pageFor
- * made it holds no work, and trying one scene after another asks nothing.
+ * made it holds no work, and trying one scene after another asks nothing. The page is compared
+ * whatever the order of its keys: one that came back from a database has them in its order.
  */
 export function hasWork(scene: SceneDocument, page: PageDocument): boolean {
-  if (isBuiltIn(scene)) return JSON.stringify(page) !== JSON.stringify(pageFor(scene));
+  if (isBuiltIn(scene)) return canonicalJson(page) !== canonicalJson(pageFor(scene));
   return scene.layers.some((l) => l.type !== "background" || isUploadedBackground(scene, l)) || !!scene.header?.lettering
-    || JSON.stringify(page) !== JSON.stringify(blankPage(scene));
+    || canonicalJson(page) !== canonicalJson(blankPage(scene));
 }
 
 /** A scene's slots with the drawings that stand for them, in the order of the plain list. */

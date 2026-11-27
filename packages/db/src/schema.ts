@@ -12,7 +12,7 @@
 // outside it cannot write a table directly, around the checks in the queries.
 
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, customType, index, jsonb, pgEnum, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, customType, index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { HANDLE_PATTERN } from "@scena/scene";
 import type { CheckedDraft } from "./draft.ts";
 
@@ -52,11 +52,19 @@ export const pages = pgTable("pages", {
   // revisions (plan §6.1), where a counter would tell how many pages there are.
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  handle: citext("handle").notNull(),
+  // The page's address, or null until the person has chosen one (the handle picker, issue 17):
+  // a signed-in person's draft is saved before it has an address, and nothing is public before
+  // publishing exists. Unique among the pages that have one; Postgres lets any number of rows
+  // have none, and the handle rule below holds for every one that has. docs/adr/0007-server-autosave.md
+  handle: citext("handle"),
   previousHandle: citext("previous_handle"),
   handleChangedAt: at("handle_changed_at"),
   // Only a document the scene package's validators passed: see draft.ts.
   draft: jsonb("draft").$type<CheckedDraft>().notNull(),
+  // Counts the changes of the draft: 1 when the page is made, one more with each save and each
+  // change of address. A tab sends the one it last had with each save, which is how a save that
+  // replaces a version that tab never saw is known (two tabs, two devices).
+  draftRevision: integer("draft_revision").notNull().default(1),
   status: pageStatus("status").notNull().default("draft"),
   createdAt: at("created_at").notNull().defaultNow(),
   // Every update made through Drizzle stamps it, with the database's clock like created_at.

@@ -141,13 +141,21 @@ the preview only, never to the export.
   device (phone or full width) and page-appearance controls, on a wide screen only. On the right:
   - the budget pill, a status dot and a summary that opens the checks in a popover;
   - the autosave indicator, a quiet check, or a warning when the work is too big for browser
-    storage;
+    storage. In the web app, for a signed-in person, it says where the work is in words from
+    the app ("Saving…", "Saved", "Offline, retrying", "Changed elsewhere", "Saved in this
+    browser"), beside a cloud with a check, a cloud with an arrow or a warning; the words show
+    from 1180 px, the icon at every width, phones included, and the whole sentence is its
+    tooltip. "Saving…" and "Saved" keep each other's room, so the bar does not move at every
+    save, and are not read out; the warnings are, through the studio's live region
+    ([ADR 0007](../adr/0007-server-autosave.md));
   - Import, and Export (the one primary button);
   - an overflow menu with Import, "Choose a ready-made scene…" (the scene picker), "Open Pia's
     finished desk" and "Start over…". When saved work
     could not be opened it also has "Saved work that did not open…": a dialog that gives the
     reasons, offers the work as files in the export dialog's rows, and can discard it. The same
-    dialog opens by itself once, on the load where the work was set aside.
+    dialog opens by itself once, on the load where the work was set aside. In the web app it
+    also opens when a signed-in person's account had another version of the page, which opened
+    in place of the work in the browser; its first sentence then says so.
 - **Layers.** Upload, a Samples menu with thumbnails of Pia's sketches, and a dashed drop target.
   Under them, "Paint in three colours" shows the three sentinel swatches as a compact row; it
   opens a popover that maps each swatch to the palette colour it becomes.

@@ -13,16 +13,21 @@ declare const checked: unique symbol;
  */
 export type CheckedDraft = PageDocument & { readonly [checked]: true };
 
-export type DraftCheck = { ok: true; draft: CheckedDraft } | { ok: false; problems: string[] };
+/**
+ * `sentHandle` is the handle the draft arrived with when it follows the handle rule, and null
+ * when it does not. It is kept only for a page that has no address yet (pages.ts).
+ */
+export type DraftCheck = { ok: true; draft: CheckedDraft; sentHandle: string | null } | { ok: false; problems: string[] };
 
 /** The largest draft kept, as JSON. A finished page is a few kilobytes. */
 export const DRAFT_MAX_BYTES = 64 * 1024;
 
 // The handle a draft is checked with. A draft's handle is not the caller's to choose: the
 // page's own handle is written into it before it is stored (withHandle), so the one it arrives
-// with is never kept, and is not checked. This one is as long as a handle can be, so that the
-// size measured below is the most the stored draft can come to, whatever handle the page has
-// or moves to.
+// with is not kept, and is not checked here. (A page with no address yet keeps the one it
+// arrives with, if it follows the rule: pages.ts.) This one is as long as a handle can be, so
+// that the size measured below is the most the stored draft can come to, whatever handle the
+// page has or moves to.
 const ANY_HANDLE = "a".repeat(HANDLE_MAX);
 
 /** The deepest a draft may nest. A page document goes four levels down; this leaves room to spare. */
@@ -64,6 +69,7 @@ export function checkDraft(doc: unknown): DraftCheck {
   } catch (e) {
     return { ok: false, problems: [`schemaVersion: ${(e as Error).message}`] };
   }
+  const sentHandle = isHandle(page.handle) ? page.handle : null;
   page.handle = ANY_HANDLE; // migrate returned a copy
   const sceneId = isObject(page.scene) ? page.scene.id : undefined;
   const scene = BUILT_IN_SCENES.find((b) => b.scene.id === sceneId)?.scene;
@@ -71,7 +77,7 @@ export function checkDraft(doc: unknown): DraftCheck {
   storageProblems(page, "", problems);
   const bytes = new TextEncoder().encode(JSON.stringify(page)).length;
   if (bytes > DRAFT_MAX_BYTES) problems.push(`page: ${Math.ceil(bytes / 1024)} KB, the limit for a saved page is ${DRAFT_MAX_BYTES / 1024} KB`);
-  return problems.length ? { ok: false, problems } : { ok: true, draft: page as CheckedDraft };
+  return problems.length ? { ok: false, problems } : { ok: true, draft: page as CheckedDraft, sentHandle };
 }
 
 /** The draft with the page's handle in it, which is the only handle a stored draft carries. */

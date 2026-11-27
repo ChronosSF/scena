@@ -6,11 +6,12 @@
 //   node tools/verify-web.ts http://localhost:3100   a server that is already running (the dev server)
 // The studio itself is checked end to end in the single-file build (tools/verify-studio.ts).
 // This check is about what the web app adds: the server, the policy, loading the studio in the
-// browser only, and sign-in (tools/sign-in-checks.ts). A screenshot goes to tools/out/.
+// browser only, sign-in (tools/sign-in-checks.ts), and a signed-in person's draft saved to their
+// account (tools/autosave-checks.ts). A screenshot goes to tools/out/.
 //
-// Sign-in needs the local stack (pnpm stack:start). Without it, the sign-in checks are reported
-// as skipped, with the reason, and the rest run against a server that has no sign-in; on CI a
-// missing stack fails the run instead, since CI starts one.
+// Sign-in needs the local stack (pnpm stack:start). Without it, the sign-in and autosave checks
+// are reported as skipped, with the reason, and the rest run against a server that has no
+// sign-in; on CI a missing stack fails the run instead, since CI starts one.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -20,6 +21,7 @@ import { isDataBlock, scriptElements } from "@scena/studio/policy";
 import { RUNTIME_SHA256 } from "@scena/renderer";
 import { launch, repoRoot, sleep } from "./cdp.ts";
 import { checks, drawingInFrame, input, settled } from "./checks.ts";
+import { autosaveChecks } from "./autosave-checks.ts";
 import { signInChecks } from "./sign-in-checks.ts";
 import { appEnv, stackStatus, type Stack } from "./stack.ts";
 
@@ -46,7 +48,7 @@ if (stack) {
 }
 if ("why" in found) {
   if (process.env.CI) console.log(`FAIL  sign-in needs the local stack, which CI starts: ${found.why}`);
-  else console.log(`SKIP  the sign-in checks: ${found.why}`);
+  else console.log(`SKIP  the sign-in and autosave checks: ${found.why}`);
 }
 const stackMissingOnCi = !stack && !!process.env.CI;
 
@@ -346,12 +348,14 @@ const signInSkipped = !stack || !givenHasSignIn;
 if (!signInSkipped) {
   console.log(`NOTE  sign-in against the local stack at ${stack.apiUrl}, Google ${google ? "on" : "off"}`);
   await signInChecks({ chrome, origin, stack, google, check, out });
+  console.log("NOTE  a signed-in person's draft, saved to their account");
+  await autosaveChecks({ chrome, origin, stack, check, out });
 } else if (stack) {
-  console.log(`SKIP  the sign-in checks: ${origin} has no sign-in set up for the local stack (pnpm stack:env)`);
+  console.log(`SKIP  the sign-in and autosave checks: ${origin} has no sign-in set up for the local stack (pnpm stack:env)`);
 }
 
 await chrome.close();
 stop();
 const failures = failed() + (stackMissingOnCi ? 1 : 0);
-console.log(failures ? `\n${failures} check(s) failed` : `\nall checks passed${signInSkipped ? ", and the sign-in checks were skipped" : ""}`);
+console.log(failures ? `\n${failures} check(s) failed` : `\nall checks passed${signInSkipped ? ", and the sign-in and autosave checks were skipped" : ""}`);
 process.exit(failures ? 1 : 0);

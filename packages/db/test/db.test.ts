@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { readdirSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { eq, sql } from "drizzle-orm";
-import { LIMITS, isHandle, validatePage, type PageDocument } from "@scena/scene";
+import { HANDLE_RULE, LIMITS, isHandle, validatePage, type PageDocument } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import { changeHandle, createPage, createUser, getPageByHandle, getPageByUser, getUser, saveDraft, writeAudit, RESERVED_HANDLES, type Database, type NewUser, type Page } from "../src/index.ts";
 import { checkDraft, type CheckedDraft } from "../src/draft.ts";
@@ -234,6 +234,102 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       expect(saved.ok && saved.page.draft.handle).toBe("own-handle");
       const made = await createPage(db, { userId: (await person()).id, handle: "fresh-handle", draft: draftAt("your-name") });
       expect(made.ok && made.page.draft.handle).toBe("fresh-handle");
+    });
+
+    test("every change of the draft counts a revision, and a save made from an older one is written and says so", async () => {
+      const { user, page } = await pageFor("revisions");
+      expect(page.draftRevision).toBe(1);
+      const save = (title: string, base?: number | null) => {
+        const d = draftAt("revisions");
+        d.links.shop!.title = title;
+        return saveDraft(db, { pageId: page.id, userId: user.id, draft: d, ...(base !== undefined ? { base } : {}) });
+      };
+      const revision = async () => (await getPageByUser(db, user.id))!.draftRevision;
+
+      // a save from the revision the page has: nothing replaced
+      const first = await save("From one", 1);
+      expect(first.ok && [first.page.draftRevision, first.replaced]).toEqual([2, false]);
+      // another tab, which last had revision 1, saves after it: written all the same (the last
+      // write wins), and the answer says it replaced a version that tab never saw
+      const stale = await save("From an older tab", 1);
+      expect(stale.ok && [stale.page.draftRevision, stale.replaced, stale.page.draft.links.shop!.title]).toEqual([3, true, "From an older tab"]);
+      // a caller that has seen no version of the page replaces one too
+      const unseen = await save("From a tab that saw none", null);
+      expect(unseen.ok && [unseen.page.draftRevision, unseen.replaced]).toEqual([4, true]);
+      // without a base nothing is compared
+      const plain = await save("Without a base");
+      expect(plain.ok && [plain.page.draftRevision, plain.replaced]).toEqual([5, false]);
+
+      // Two saves from the same revision at once. Another save holds the row; this one waits for
+      // it, and then counts from what that one wrote: they take one revision each, and this one
+      // replaced the other's. Waited for by asking Postgres whether this one is waiting, not by
+      // a pause.
+      let release = () => {}, held = () => {};
+      const gate = new Promise<void>((r) => { release = r; }), holding = new Promise<void>((r) => { held = r; });
+      const other = db.transaction(async (tx) => {
+        await tx.select({ id: pages.id }).from(pages).where(eq(pages.id, page.id)).for("update");
+        held();
+        await gate;
+        await tx.update(pages).set({ draftRevision: 6 }).where(eq(pages.id, page.id));
+      });
+      await holding;
+      const mine = save("At once", 5);
+      const waiting = async () => (await rows<{ n: number }>(sql`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`))[0]!.n;
+      for (let i = 0; i < 200 && (await waiting()) === 0; i++) await new Promise((r) => setTimeout(r, 25));
+      release();
+      await other;
+      const after = await mine;
+      expect(after.ok && [after.page.draftRevision, after.replaced]).toEqual([7, true]);
+
+      // a refused save counts nothing
+      const bad = draftAt("revisions") as any;
+      bad.links.shop.url = "javascript:alert(1)";
+      expect((await saveDraft(db, { pageId: page.id, userId: user.id, draft: bad, base: 7 })).ok).toBe(false);
+      expect(await revision()).toBe(7);
+      // nor does a change of address to the address it has; a new one does
+      expect((await changeHandle(db, { pageId: page.id, userId: user.id, handle: "revisions" })).ok).toBe(true);
+      expect(await revision()).toBe(7);
+      const moved = await changeHandle(db, { pageId: page.id, userId: user.id, handle: "revisions-moved" });
+      expect(moved.ok && moved.page.draftRevision).toBe(8);
+
+      const [column] = await rows<{ type: string; nullable: string; fallback: string }>(
+        sql`select data_type as type, is_nullable as nullable, column_default as fallback from information_schema.columns where table_schema = 'public' and table_name = 'pages' and column_name = 'draft_revision'`);
+      expect(column).toEqual({ type: "integer", nullable: "NO", fallback: "1" });
+    });
+
+    test("a page can be made before it has an address: it keeps its draft's own handle, which finds nothing, until it is given one", async () => {
+      const user = await person();
+      const made = await createPage(db, { userId: user.id, draft: draftAt("my-wish") });
+      expect(made.ok && [made.page.handle, made.page.draft.handle, made.page.draftRevision]).toEqual([null, "my-wish", 1]);
+      if (!made.ok) return;
+      // the handle typed into the draft is kept with each save, and is no address
+      const saved = await saveDraft(db, { pageId: made.page.id, userId: user.id, draft: draftAt("another-wish"), base: 1 });
+      expect(saved.ok && [saved.page.handle, saved.page.draft.handle]).toEqual([null, "another-wish"]);
+      expect(await getPageByHandle(db, "another-wish")).toBeNull();
+      // and a draft with no handle a page could carry is refused, with nothing written
+      const unaddressable = { ...draftAt("x"), handle: "Not A Handle!" };
+      expect(await saveDraft(db, { pageId: made.page.id, userId: user.id, draft: unaddressable })).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
+      expect(await createPage(db, { userId: (await person()).id, draft: unaddressable })).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
+      expect((await getPageByUser(db, user.id))!.draftRevision).toBe(2);
+
+      // any number of pages may be without an address, a wish taken by another page included
+      const other = await person();
+      expect((await createPage(db, { userId: other.id, handle: null, draft: draftAt("another-wish") })).ok).toBe(true);
+      const { page: addressed } = await pageFor("wished-for");
+      expect((await createPage(db, { userId: (await person()).id, draft: draftAt("wished-for") })).ok).toBe(true);
+      expect((await getPageByHandle(db, "wished-for"))!.id).toBe(addressed.id);
+
+      // the first address replaces the wish in the draft, and leaves no previous handle
+      const given = await changeHandle(db, { pageId: made.page.id, userId: user.id, handle: "first-address" });
+      expect(given.ok && [given.page.handle, given.page.previousHandle, given.page.draft.handle, given.page.draftRevision]).toEqual(["first-address", null, "first-address", 3]);
+      expect(given.ok && given.page.handleChangedAt).toBeInstanceOf(Date);
+      // from then on the page's own handle is the one stored, whatever the draft says
+      const after = await saveDraft(db, { pageId: made.page.id, userId: user.id, draft: draftAt("yet-another-wish") });
+      expect(after.ok && after.page.draft.handle).toBe("first-address");
+      expect((await getPageByHandle(db, "first-address"))!.id).toBe(made.page.id);
+
+      const [column] = await rows<{ nullable: string }>(sql`select is_nullable as nullable from information_schema.columns where table_schema = 'public' and table_name = 'pages' and column_name = 'handle'`);
+      expect(column!.nullable).toBe("YES");
     });
 
     test("only the page's own account saves to it", async () => {

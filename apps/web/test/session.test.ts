@@ -130,6 +130,63 @@ describe("a page", () => {
     }
   });
 
+  test("that saves the person's own data (whoIsAsking) tells no one signed in from Supabase Auth or the database not answering", async () => {
+    const profile = { id: USER.id, email: USER.email, displayName: null, locale: "en", isAdmin: false, createdAt: new Date("2026-11-20T09:58:08Z") };
+    const page = { id: "6f9619ff-8b86-4d01-b42d-00c04fc964ff", draftRevision: 4, draft: { handle: "your-name" } };
+    let user: () => Response = () => Response.json(USER), cookie: string | null = cookieValue(session(600)), read: () => Promise<unknown> = async () => profile;
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      if (url.pathname === "/auth/v1/user") return user();
+      throw new Error(`not expected to be asked: ${url}`);
+    });
+    for (const [name, value] of Object.entries(ENV)) vi.stubEnv(name, value);
+    vi.doMock("server-only", () => ({}));
+    vi.doMock("next/headers", () => ({ cookies: async () => ({ getAll: () => (cookie ? [{ name: config.cookie.name, value: cookie }] : []) }) }));
+    let pageRead: () => Promise<unknown> = async () => page;
+    vi.doMock("@scena/db", () => ({ connect: () => ({}), createUser: vi.fn(), getUser: () => read(), getPageByUser: () => pageRead() }));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const asked = async () => { vi.resetModules(); return (await import("../auth/server.ts")).whoIsAsking(); };
+      expect(await asked()).toMatchObject({ ok: true, account: { id: USER.id } });
+      for (const [status, code, reason] of [[429, "over_request_rate_limit", "unavailable"], [500, "unexpected_failure", "unavailable"], [502, "", "unavailable"], [401, "bad_jwt", "signed-out"], [403, "session_not_found", "signed-out"]] as const) {
+        user = refused(status, code);
+        expect(await asked(), `${status} ${code}`).toEqual({ ok: false, reason });
+      }
+      user = () => Response.json(USER);
+      read = async () => { throw new Error("connection refused"); };
+      expect(await asked()).toEqual({ ok: false, reason: "unavailable" });
+      read = async () => null; // no profile: a deleted account
+      expect(await asked()).toEqual({ ok: false, reason: "signed-out" });
+      cookie = null;
+      expect(await asked()).toEqual({ ok: false, reason: "signed-out" });
+      // A session that has run out, which the proxy could not renew just now (Supabase Auth
+      // busy): the reading client refuses the renewal itself, and a save is told to try again,
+      // not that no one is signed in. A page still reads it as no one. Supabase Auth is not asked.
+      read = async () => profile;
+      cookie = cookieValue(session(-600));
+      let fetched = 0;
+      user = () => { fetched++; return Response.json(USER); };
+      expect(await asked()).toEqual({ ok: false, reason: "unavailable" });
+      vi.resetModules();
+      expect(await (await import("../auth/server.ts")).currentAccount()).toBeNull();
+      expect(fetched).toBe(0);
+      // and the studio route hands the browser the person's page with its revision
+      cookie = cookieValue(session(600));
+      read = async () => profile;
+      vi.resetModules();
+      expect(await (await import("../auth/server.ts")).studioAccount()).toEqual({ signIn: true, signedIn: { email: USER.email }, saved: { pageId: page.id, revision: 4, page: page.draft } });
+      // a page that could not be read is not taken for none: the browser would then save over
+      // it unseen, so the studio opens with no account at all
+      pageRead = async () => { throw new Error("connection refused"); };
+      vi.resetModules();
+      expect(await (await import("../auth/server.ts")).studioAccount()).toEqual({ signIn: false, signedIn: null, saved: null });
+    } finally {
+      log.mockRestore();
+      delete (globalThis as { scenaDatabase?: unknown }).scenaDatabase;
+      for (const name of ["server-only", "next/headers", "@scena/db"]) vi.doUnmock(name);
+    }
+  });
+
   test("the same session is renewed by a client that may renew", async () => {
     const asked = supabaseAuth(() => Response.json(session(3600, "second")));
     const jar = new CookieJar([{ name: config.cookie.name, value: cookieValue(session(30)) }]);

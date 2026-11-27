@@ -1,110 +1,13 @@
 /* Scene studio: tool chrome.
    The canvas is the product and keeps the riso look; it is styled by the renderer's
-   CSS, scoped to .stage. Everything else uses the --ui-* tokens below
-   (see docs/design/studio-ui.md). Chrome follows the OS light/dark setting,
+   CSS, scoped to .stage. Everything else uses the --ui-* tokens of the theme, imported
+   here with the base and the controls the web app's pages share (theme.css,
+   docs/design/studio-ui.md). Chrome follows the OS light/dark setting,
    independently of the page's own appearance on the canvas. */
-
-:root {
-  color-scheme: light;
-  --ui-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --ui-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
-
-  /* neutrals */
-  --ui-workspace: #F1F1F2;
-  --ui-panel: #FFFFFF;
-  --ui-field: #F4F4F5;
-  --ui-hover: rgba(24, 24, 27, 0.05);
-  --ui-pressed: rgba(24, 24, 27, 0.09);
-  --ui-line: #E6E6E9;
-  --ui-control: #8E8E97;
-  --ui-control-hover: #6B6B74;
-  --ui-text: #18181B;
-  --ui-text-2: #52525B;
-  --ui-text-3: #6B6B74;
-  --ui-ink: #18181B;
-  --ui-on-ink: #FFFFFF;
-  --ui-on-ink-danger: #FCA5A5;
-
-  /* the one accent: selection, focus, "on" */
-  --ui-accent: #1F6FEB;
-  --ui-accent-text: #1A5FD0;
-  --ui-accent-soft: rgba(31, 111, 235, 0.1);
-  --ui-on-accent: #FFFFFF;
-
-  /* status */
-  --ui-ok: #157034;
-  --ui-warn: #9A4A06;
-  --ui-danger: #C42B1C;
-
-  /* elevation: floating surfaces only */
-  --ui-shadow-pop: 0 0 0 1px rgba(24, 24, 27, 0.06), 0 2px 6px rgba(24, 24, 27, 0.06), 0 12px 28px -6px rgba(24, 24, 27, 0.18);
-  --ui-shadow-page: 0 0 0 1px rgba(24, 24, 27, 0.06), 0 1px 2px rgba(24, 24, 27, 0.05), 0 16px 40px -12px rgba(24, 24, 27, 0.2);
-  --ui-shadow-xs: 0 1px 2px rgba(24, 24, 27, 0.08);
-
-  /* type scale */
-  --ui-xs: 11px;  --ui-xs-lh: 16px;
-  --ui-sm: 12px;  --ui-sm-lh: 16px;
-  --ui-md: 13px;  --ui-md-lh: 20px;
-  --ui-lg: 15px;  --ui-lg-lh: 22px;
-
-  /* 4 px spacing scale */
-  --ui-1: 4px; --ui-2: 8px; --ui-3: 12px; --ui-4: 16px; --ui-5: 20px; --ui-6: 24px; --ui-8: 32px; --ui-10: 40px; --ui-12: 48px;
-
-  /* radii, sizes, motion */
-  --ui-r-sm: 4px; --ui-r: 6px; --ui-r-lg: 8px;
-  --ui-h-control: 28px;
-  --ui-h-bar: 48px;
-  --ui-w-left: 256px;
-  --ui-w-right: 296px;
-  --ui-ease: cubic-bezier(0.2, 0, 0, 1);
-  --ui-fast: 120ms;
-  --ui-base: 160ms;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --ui-workspace: #0E0E10;
-    --ui-panel: #18181B;
-    --ui-field: #222226;
-    --ui-hover: rgba(255, 255, 255, 0.06);
-    --ui-pressed: rgba(255, 255, 255, 0.1);
-    --ui-line: #2A2A2F;
-    --ui-control: #6E6E79;
-    --ui-control-hover: #8E8E98;
-    --ui-text: #F4F4F5;
-    --ui-text-2: #A8A8B2;
-    --ui-text-3: #8E8E98;
-    --ui-ink: #F4F4F5;
-    --ui-on-ink: #18181B;
-    --ui-on-ink-danger: #C42B1C;
-    --ui-accent-text: #78A6FF;
-    --ui-accent-soft: rgba(31, 111, 235, 0.22);
-    --ui-ok: #4ADE80;
-    --ui-warn: #FBBF24;
-    --ui-danger: #F87171;
-    --ui-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px -6px rgba(0, 0, 0, 0.6);
-    --ui-shadow-page: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 20px 48px -12px rgba(0, 0, 0, 0.7);
-    --ui-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  }
-}
+@import "./theme.css";
 
 /* ------------------------------------------------------------------ base */
-*, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body {
-  margin: 0;
-  background: var(--ui-workspace);
-  color: var(--ui-text);
-  font: 400 var(--ui-md) / var(--ui-md-lh) var(--ui-font);
-  font-feature-settings: "cv11", "ss01";
-  -webkit-font-smoothing: antialiased;
-}
 #root { display: contents; }
-button, input, select, textarea { font: inherit; color: inherit; }
-h1, h2, h3, p { margin: 0; }
-svg.lucide { flex: none; }
-.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 .skip { position: absolute; left: var(--ui-2); top: -40px; z-index: 100; padding: 6px 10px; border-radius: var(--ui-r); background: var(--ui-ink); color: var(--ui-on-ink); font-weight: 500; text-decoration: none; }
 .skip:focus { top: var(--ui-2); }
 .muted { color: var(--ui-text-2); }
@@ -166,29 +69,11 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 .save-state.with-words { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: auto; min-width: 28px; padding: 0 var(--ui-1); }
 .save-words { display: inline-grid; font-size: var(--ui-sm); line-height: var(--ui-sm-lh); white-space: nowrap; }
 /* the words of the states these take turns with, in the same place and unseen, so the indicator is as wide for each;
-   they change places at once (the reduced-motion rule below would otherwise give visibility a transition) */
+   they change places at once (the theme's reduced-motion rule would otherwise give visibility a transition) */
 .save-words > * { grid-area: 1 / 1; transition: none; }
 .save-room { visibility: hidden; }
 
-/* ------------------------------------------------------------------ buttons */
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: var(--ui-h-control); padding: 0 10px;
-  border: 1px solid var(--ui-control); border-radius: var(--ui-r);
-  background: var(--ui-panel); color: var(--ui-text);
-  font-weight: 500; white-space: nowrap; cursor: pointer;
-  transition: background var(--ui-fast) var(--ui-ease), border-color var(--ui-fast) var(--ui-ease), color var(--ui-fast) var(--ui-ease);
-}
-.btn:hover { background: var(--ui-hover); border-color: var(--ui-control-hover); }
-.btn:active { background: var(--ui-pressed); }
-.btn[disabled] { opacity: 0.45; cursor: default; }
-.btn-primary { background: var(--ui-ink); border-color: var(--ui-ink); color: var(--ui-on-ink); }
-.btn-primary:hover { background: var(--ui-ink); border-color: var(--ui-ink); opacity: 0.88; }
-.btn-ghost { border-color: transparent; background: transparent; }
-.btn-ghost:hover { border-color: transparent; }
-.btn-danger { color: var(--ui-danger); }
-.btn-block { width: 100%; }
-.btn .lucide { width: 16px; height: 16px; }
+/* ------------------------------------------------------------------ icon buttons (.btn is in theme.css) */
 .icon-btn {
   display: inline-grid; place-items: center; flex: none;
   width: var(--ui-h-control); height: var(--ui-h-control); padding: 0;
@@ -234,35 +119,7 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 .switch input:checked + .switch-track::after { transform: translateX(12px); background: #fff; }
 .switch input:focus-visible + .switch-track { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 
-/* ------------------------------------------------------------------ fields */
-.field { display: grid; gap: 6px; }
-.field + .field, .field + .field-row, .field-row + .field { margin-top: var(--ui-3); }
-.field-label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ui-2); font-size: var(--ui-sm); line-height: var(--ui-sm-lh); font-weight: 500; color: var(--ui-text-2); }
-.count { font-weight: 400; color: var(--ui-text-3); font-variant-numeric: tabular-nums; opacity: 0; transition: opacity var(--ui-fast) var(--ui-ease); }
-.field:focus-within .count, .count.near { opacity: 1; }
-.input, .textarea, .select {
-  width: 100%; min-width: 0; height: var(--ui-h-control); padding: 0 var(--ui-2);
-  border: 1px solid var(--ui-control); border-radius: var(--ui-r); background: var(--ui-field); color: var(--ui-text);
-  transition: border-color var(--ui-fast) var(--ui-ease), box-shadow var(--ui-fast) var(--ui-ease), background var(--ui-fast) var(--ui-ease);
-}
-.textarea { height: auto; min-height: 60px; padding: 6px var(--ui-2); resize: vertical; line-height: 18px; }
-.input:hover, .textarea:hover, .select:hover { border-color: var(--ui-control-hover); }
-.input:focus, .textarea:focus, .select:focus { outline: none; border-color: var(--ui-accent); background: var(--ui-panel); box-shadow: 0 0 0 3px var(--ui-accent-soft); }
-.input::placeholder, .textarea::placeholder { color: var(--ui-text-3); }
-.input[aria-invalid="true"] { border-color: var(--ui-danger); }
-.select-wrap { position: relative; display: block; }
-.select { appearance: none; padding-right: 28px; cursor: pointer; }
-.select-wrap .lucide { position: absolute; right: 8px; top: 50%; width: 14px; height: 14px; margin-top: -7px; color: var(--ui-text-3); pointer-events: none; }
-.field-hint { font-size: var(--ui-sm); line-height: var(--ui-sm-lh); color: var(--ui-text-3); }
-.field-msg { display: flex; align-items: flex-start; gap: 6px; font-size: var(--ui-sm); line-height: var(--ui-sm-lh); color: var(--ui-text-2); }
-.field-msg:empty { display: none; }
-.field-msg .lucide { width: 14px; height: 14px; margin-top: 1px; }
-.field-msg.error { color: var(--ui-danger); }
-.field-msg.warn { color: var(--ui-warn); }
-.field-row { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-3); }
-.field-row > .field-label { margin: 0; }
-
-/* numeric fields with a scrubbable prefix */
+/* ------------------------------------------------------------------ numeric fields with a scrubbable prefix (.field and .input are in theme.css) */
 .nums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ui-2); }
 .num-field {
   display: flex; align-items: center; height: var(--ui-h-control);
@@ -470,7 +327,7 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 .empty-card {
   position: absolute; z-index: 2; transform: translate(-50%, -50%);
   width: min(300px, 80%); padding: var(--ui-6) var(--ui-5) var(--ui-5);
-  border-radius: 12px; background: var(--ui-panel); box-shadow: var(--ui-shadow-pop);
+  border-radius: var(--ui-r-xl); background: var(--ui-panel); box-shadow: var(--ui-shadow-pop);
   font: 400 var(--ui-md) / var(--ui-md-lh) var(--ui-font); color: var(--ui-text); text-align: center;
 }
 .empty-icon { display: inline-grid; place-items: center; width: 40px; height: 40px; margin-bottom: var(--ui-3); border-radius: 10px; background: var(--ui-accent-soft); color: var(--ui-accent-text); }
@@ -564,7 +421,7 @@ kbd { font: 500 var(--ui-xs) / 1 var(--ui-font); color: inherit; opacity: 0.7; m
 
 /* dialogs */
 dialog {
-  width: min(440px, calc(100% - 32px)); padding: 0; border: 0; border-radius: 12px;
+  width: min(440px, calc(100% - 32px)); padding: 0; border: 0; border-radius: var(--ui-r-xl);
   background: var(--ui-panel); color: var(--ui-text); box-shadow: var(--ui-shadow-pop);
 }
 dialog[open] { animation: pop-in var(--ui-base) var(--ui-ease); }
@@ -686,7 +543,3 @@ dialog.picker[open] { display: flex; flex-direction: column; }
   .bar .save-state.with-words { width: var(--ui-h-control); padding: 0; }
 }
 @media (max-width: 420px) { .bar .seg-item span { padding: 0 8px; } }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
-}

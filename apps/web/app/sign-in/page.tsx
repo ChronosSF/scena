@@ -7,8 +7,8 @@ import { authConfig } from "../../auth/env.ts";
 import { NOTICES, noticeFor } from "../../auth/messages.ts";
 import { firstOf, returnPath } from "../../auth/return-to.ts";
 import { currentAccount } from "../../auth/server.ts";
-import { Message, Shell } from "../_ui/Shell.tsx";
-import styles from "../_ui/account.module.css";
+import { Shell } from "../_ui/Shell.tsx";
+import styles from "../_ui/shell.module.css";
 import { SignInForm } from "./SignInForm.tsx";
 import { SignOutButton } from "./SignOutButton.tsx";
 
@@ -25,12 +25,11 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
   const notice = noticeFor(firstOf(search.notice));
   const config = authConfig();
   const account = config ? await currentAccount() : null;
-  const back = next === "/admin" ? null : <Link className={styles.back} href="/studio" prefetch={false}>← Back to the studio</Link>;
+  const back = next === "/admin" ? undefined : { href: "/studio", words: "Back to the studio" };
 
   if (!config) {
     return (
-      <Shell>
-        {back}
+      <Shell back={back}>
         <h1 className={styles.title}>Sign in</h1>
         <p className={styles.lead}>Sign-in is not set up on this server. The studio works without it, and keeps your work in this browser.</p>
       </Shell>
@@ -39,12 +38,11 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
 
   if (account) {
     return (
-      <Shell>
-        {back}
+      <Shell back={back}>
         <h1 className={styles.title}>You are signed in</h1>
         <p className={styles.lead}>Signed in as <span className={styles.who}>{account.email}</span>.</p>
         <div className={styles.row}>
-          <Link className={styles.primary} href={next} prefetch={false}>{next === "/admin" ? "Go to admin" : "Go to the studio"}</Link>
+          <Link className="btn btn-primary" href={next} prefetch={false}>{next === "/admin" ? "Go to admin" : "Go to the studio"}</Link>
           <SignOutButton from={next} />
         </div>
       </Shell>
@@ -52,8 +50,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
   }
 
   return (
-    <Shell>
-      {back}
+    <Shell back={back}>
       <h1 className={styles.title}>Sign in to Scena</h1>
       <p className={styles.lead}>We will email you a link and a code. There is no password. Your work in the studio stays in this browser while you sign in.</p>
       <SignInForm next={next} google={config.google} notice={notice ? NOTICES[notice] : null} noticeKind={notice === "signed-out" ? "news" : "problem"} />

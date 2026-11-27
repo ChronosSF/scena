@@ -30,7 +30,8 @@ tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/
 - The page runtime is compiled by esbuild and inlined with a CSP hash; it is under 3 KB.
 - The studio is a React 19 package, `@scena/studio`. Its interface uses headless Radix primitives
   (menus, popovers, tooltips) and Lucide icons, styled by hand; the design system is in
-  [docs/design/studio-ui.md](docs/design/studio-ui.md). Two apps mount it:
+  [docs/design/studio-ui.md](docs/design/studio-ui.md), and its theme is also the web app's
+  ([docs/design/app-pages.md](docs/design/app-pages.md)). Two apps mount it:
   - `apps/studio` builds it with Vite 8 into one HTML file that opens from disk.
   - `apps/web` is Next.js 16 (App Router). It loads the studio in the browser only, at `/studio`.
 - Both apps carry a Content Security Policy, so markup from a document cannot run script even
@@ -71,7 +72,7 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 420 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, sign-in's rules (the way back, the session cookie, the configuration, what a person is told, the profile, the renewal of a session, what a browser is given, the local stack's settings), saving the draft to the account (what the server decides, which draft opens, the autosave in the browser, the studio's part of it), and the database package (40 of them need a database, below)
+pnpm test         # 422 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, the web app's stylesheets holding the theme's tokens alone, frames, board and lettering, sign-in's rules (the way back, the session cookie, the configuration, what a person is told, the profile, the renewal of a session, what a browser is given, the local stack's settings), saving the draft to the account (what the server decides, which draft opens, the autosave in the browser, the studio's part of it), and the database package (40 of them need a database, below)
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
 pnpm check        # typecheck + db:check + test + build
 
@@ -160,9 +161,9 @@ Other tools, all optional:
 | `pnpm fixtures` | Regenerates the test drawings in `fixtures/`, including the mug's three SVG frames, a blinking face as a PNG sequence and as an animated PNG, a paper texture, a drawn desk top and a lettered "Pia" (SVG and PNG) |
 | `pnpm parity` | Confirms the renderer reproduces the prototype's `demo-desk.html` (apart from the runtime) |
 | `pnpm verify:studio [url]` | Drives the studio in headless Chrome through real mouse, touch, keyboard and file-chooser input, including taps in the preview that bring up a link's form and keep its panel open, and the page in its place, while it is edited, on a desktop and at 375 px, and the way back to the page's settings. Default target: the build from file://. Run `pnpm build` first |
-| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends with every page, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview that opens the page's panel and brings up the link's form, a reload, markup and added scripts that try to run, and the home page before and after a visit to the studio. Then sign-in against the local stack, each person in a browser of their own, reading the emails from the mail catcher: from the studio and back with the work by the link and by the code, the link in a second browser, wrong, used and older links and codes, the cookie as the browser holds it, a session renewed by the proxy, `/admin`, sign-out, the refusals, Google, a phone, and the studio's top bar at the widths between a phone and a wide window. Then the draft saved to the account: a visitor unchanged, a page on one's own drawings kept in the browser, the page made by the first save, an edit in the database two seconds after the last keystroke, a reload, another device, a reload inside the two seconds, the connection cut and back, a draft the server refuses, the save action called without a session, two tabs, a device looked at again, signing in where the account has another version, switching devices back and forth, Back and Forward to the studio, the dialog for work set aside opening once, and the top bar with the indicator's words. Run `pnpm build` and `pnpm stack:start` first; without the stack the sign-in and autosave checks are reported as skipped. With a URL it checks a server that is already running, such as `pnpm dev:web` with the stack's variables |
+| `pnpm verify:web [url]` | Starts the built web app's own server and drives it in headless Chrome: the policy the server sends with every page, the studio loading in the browser only, the scene picker, a link filled in by typing, a tap in the preview that opens the page's panel and brings up the link's form, a reload, markup and added scripts that try to run, and the home page on the theme, light and dark, before and after a visit to the studio. Then sign-in against the local stack, each person in a browser of their own, reading the emails from the mail catcher: from the studio and back with the work by the link and by the code, the link in a second browser, wrong, used and older links and codes, the cookie as the browser holds it, a session renewed by the proxy, `/admin`, sign-out, the refusals, Google, a phone, and the studio's top bar at the widths between a phone and a wide window. Then the draft saved to the account: a visitor unchanged, a page on one's own drawings kept in the browser, the page made by the first save, an edit in the database two seconds after the last keystroke, a reload, another device, a reload inside the two seconds, the connection cut and back, a draft the server refuses, the save action called without a session, two tabs, a device looked at again, signing in where the account has another version, switching devices back and forth, Back and Forward to the studio, the dialog for work set aside opening once, and the top bar with the indicator's words. Run `pnpm build` and `pnpm stack:start` first; without the stack the sign-in and autosave checks are reported as skipped. With a URL it checks a server that is already running, such as `pnpm dev:web` with the stack's variables |
 | `pnpm verify:runtime` | Checks every branch of the boil control (lite mode, slow device, Save-Data, reduced motion, offscreen, hidden, idle) on the built demo page, that frames flip, hold frame 1 and pause with it on `demo-frames.html`, that the demo page in a frame posts nothing to its parent when a drawing is tapped and never scrolls itself (only the studio's preview renders a page that does either), and that the runtime reads the page's own data whatever ids its drawing holds |
-| `pnpm shots [url]` | Retakes the studio screenshots in `docs/design/` (desktop light and dark, 375 px). Default target: the build from file:// |
+| `pnpm shots [url]` | Retakes the screenshots in `docs/design/`: the studio (desktop light and dark, 375 px, the scene picker) and the sign-in page (light, dark, 375 px). Default target: the build from file://; the sign-in page needs `pnpm build:web` and the local stack, and is skipped without them |
 | `pnpm measure [--soft]` | Boil frame cost at 375×812 @3x with 1×, 4× and 6× CPU slowdown, against the original prototype; then the desk with three objects flipping frames at 6 fps |
 
 The Chrome-based tools use the installed Chrome or Edge (or set `CHROME_PATH`). They write
@@ -195,7 +196,8 @@ supabase/      the local Supabase stack for sign-in: config.toml, the sign-in em
                migration the stack's database needs before the app's own
 fixtures/      test drawings; reference/ has the original prototype and its rendered output
 tools/         lint CLI, fixture generator, parity and headless-Chrome checks, the stack's commands
-docs/          development plan, architecture decisions, and design/ (the studio's design system)
+docs/          development plan, architecture decisions, and design/ (the design system: the studio
+               and the web app's own pages)
 compose.yaml   the local database for the database package's tests (Postgres 17 in Docker)
 ```
 
@@ -263,6 +265,8 @@ use a scene somebody else drew.
 The canvas keeps the page's riso look; the tool around it is neutral, with one blue accent for
 selection and focus, Inter, a 4 px grid and light and dark chrome that follows the OS. Tokens,
 contrast, layout and the reasoning are in [docs/design/studio-ui.md](docs/design/studio-ui.md).
+The web app's own pages (sign-in, `/admin`) use the same theme at a roomier scale:
+[docs/design/app-pages.md](docs/design/app-pages.md).
 
 | Desktop, light | Desktop, dark | Phone |
 |---|---|---|

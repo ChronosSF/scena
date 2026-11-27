@@ -49,7 +49,7 @@ export function checks() {
   return { check, failed: () => failures };
 }
 
-/** Input to one page: where an element is, a click on it, a key, and typing into a field. */
+/** Input to one page: where an element is, a click on it, a key, Enter, and typing into a field. */
 export function input(page: Page) {
   /** The centre of the first element that matches, scrolled into view; null when nothing matches. */
   // the selector reaches the page as a value (page.call), never written into code that runs there
@@ -69,6 +69,12 @@ export function input(page: Page) {
     await sleep(250);
   }
 
+  /** The Enter key, which submits the form whose field has the focus. */
+  async function pressEnter() {
+    await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+    await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  }
+
   /** Replaces what a field holds with `text`, as typing would; with no text, empties it. */
   async function typeInto(selector: string, text: string) {
     await clickOn(selector);
@@ -77,5 +83,5 @@ export function input(page: Page) {
     await sleep(250);
   }
 
-  return { center, clickOn, keyWith, typeInto };
+  return { center, clickOn, keyWith, pressEnter, typeInto };
 }

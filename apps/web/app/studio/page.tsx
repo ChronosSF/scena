@@ -1,9 +1,9 @@
 // The studio, inside the web app. This file renders on the server and holds only what a server
-// can know: the title, the typefaces, the stylesheet, who is signed in, and their saved page.
+// can know: the title, the stylesheet, who is signed in, and their saved page. The typefaces
+// and the theme the stylesheet builds on are the root layout's, for every page.
 // The studio itself reads localStorage and the document, so it is loaded in the browser
 // (StudioLoader.tsx) and nothing of it is in the HTML the server sends.
 import type { Metadata } from "next";
-import { FIRST_FACES_HREF } from "@scena/studio/fonts";
 import "@scena/studio/studio.css";
 import { studioAccount } from "../../auth/server.ts";
 import { StudioLoader } from "./StudioLoader.tsx";
@@ -18,14 +18,9 @@ export default async function StudioPage() {
   // over: never the session, which stays in its cookie
   const { signIn, signedIn, saved } = await studioAccount();
   return (
-    <>
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link rel="stylesheet" href={FIRST_FACES_HREF} precedence="default" />
-      {/* the studio's stylesheet lays out the children of #root as children of the body */}
-      <div id="root">
-        <StudioLoader signIn={signIn} signedIn={signedIn} saved={saved} />
-      </div>
-    </>
+    // the studio's stylesheet lays out the children of #root as children of the body
+    <div id="root">
+      <StudioLoader signIn={signIn} signedIn={signedIn} saved={saved} />
+    </div>
   );
 }

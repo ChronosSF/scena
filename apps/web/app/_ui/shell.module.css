@@ -1,0 +1,61 @@
+/* The app's own pages (the home placeholder, sign-in, the confirm page, /admin): the product mark
+   and one card on the workspace, at the page scale. The tokens, the base and the controls are
+   the theme's (@scena/studio/theme.css, loaded by the root layout; docs/design/app-pages.md):
+   this file lays the page out, with tokens alone. */
+.page {
+  min-height: 100dvh;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--ui-6);
+  padding: var(--ui-12) var(--ui-4);
+}
+.brand { display: inline-flex; align-items: center; gap: var(--ui-2); font-weight: 600; }
+.mark { width: 22px; height: 22px; flex: none; }
+.card {
+  width: 100%;
+  max-width: 400px;
+  display: grid;
+  gap: var(--ui-5);
+  padding: var(--ui-8);
+  border-radius: var(--ui-r-xl);
+  background: var(--ui-panel);
+  box-shadow: var(--ui-shadow-page);
+}
+.title { font-size: var(--ui-xl); line-height: var(--ui-xl-lh); font-weight: 600; letter-spacing: -0.01em; }
+.lead { color: var(--ui-text-2); }
+.title + .lead { margin-top: calc(-1 * var(--ui-2)); }
+.who { overflow-wrap: anywhere; font-weight: 500; color: var(--ui-text); }
+.note { color: var(--ui-text-3); font-size: var(--ui-md); line-height: var(--ui-md-lh); }
+.form { display: grid; gap: var(--ui-3); }
+.code { letter-spacing: 0.3em; font-variant-numeric: tabular-nums; font-size: 20px; }
+/* two buttons side by side, a step smaller, one above the other where they do not fit; a button
+   in a form of its own (SignOutButton) takes its place in the row as the others do */
+.row { display: flex; flex-wrap: wrap; gap: var(--ui-2); font-size: var(--ui-md); }
+.row > form { display: contents; }
+.row :global(.btn) { flex: 1; }
+.or { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--ui-3); color: var(--ui-text-3); font-size: var(--ui-md); }
+.or::before, .or::after { content: ""; border-top: 1px solid var(--ui-line); }
+.back { color: var(--ui-accent-text); font-size: var(--ui-md); font-weight: 500; text-decoration: none; }
+.back:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* News and problems (Message in Shell.tsx): a block with an icon as well as colour. The live
+   region around it is in the page from the start, and out of the flow while it shows nothing,
+   so that it takes no room in the card. */
+.live:not(:has(.message)) { position: absolute; }
+.message {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-r);
+  background: var(--ui-field);
+  font-size: var(--ui-md);
+  line-height: var(--ui-md-lh);
+}
+.message svg { width: 16px; height: 16px; margin-top: 2px; color: var(--ui-danger); }
+.message[data-kind="news"] svg { color: var(--ui-accent-text); }
+
+/* a phone: the card keeps 16 px gutters and gives its content more of the width */
+@media (max-width: 480px) {
+  .card { gap: var(--ui-4); padding: var(--ui-5); }
+}

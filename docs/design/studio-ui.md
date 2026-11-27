@@ -25,9 +25,12 @@ then the scene picker over it).
 
 ## Tokens
 
-All tokens are at the top of `packages/studio/src/studio.css`. The chrome follows the OS light or
-dark setting through `prefers-color-scheme`. The page on the canvas follows its own Light, Dark
-or Auto setting, independently.
+All tokens are in `packages/studio/src/theme.css` (`@scena/studio/theme.css`), with the base
+and the controls (buttons, fields, field messages) the web app's own pages share; `studio.css`
+imports it and adds the rest of the chrome. The web app's pages use them at a roomier scale
+([app-pages.md](app-pages.md)). The chrome follows the OS light or dark setting through
+`prefers-color-scheme`. The page on the canvas follows its own Light, Dark or Auto setting,
+independently.
 
 ### Colour
 
@@ -72,6 +75,8 @@ Text needs 4.5:1. Control boundaries, focus indicators and icons need 3:1. Measu
 | control border on panel (non-text) | 3.3 | 3.5 |
 | focus ring (accent) on panel, workspace | 4.6, 4.1 | 3.8, 4.2 |
 | danger icon in the toast | 9.3 | 5.2 |
+| accent-text on workspace (the app pages' way back) | 5.2 | 8.0 |
+| accent-text, danger on field (the app pages' message icons) | 5.3, 5.2 | 6.6, 5.7 |
 
 Disabled controls (Undo with nothing to undo, a menu item that cannot apply) are exempt and drawn
 faded, at 35% to 45% opacity. The accent also keeps 3.2:1 or more against every page paper and
@@ -89,6 +94,7 @@ figures.
 | `--ui-sm` | 12 / 16 | hints, meta, counts, the budget pill |
 | `--ui-md` | 13 / 20 | the base: controls, fields, rows; section titles at 600 |
 | `--ui-lg` | 15 / 22 | dialog and empty-state titles, at 600 |
+| `--ui-xl` | 24 / 30 | page titles on the app's own pages, at 600 (the page scale) |
 
 Weights: 400 for text, 500 for controls and labels that need weight, 600 for titles. No other sizes.
 
@@ -98,8 +104,10 @@ Weights: 400 for text, 500 for controls and labels that need weight, 600 for tit
   `--ui-6` 24, `--ui-8` 32. Panels are inset 16 px, rows 8 px.
 - Lines: 1 px `--ui-line` between regions, 1 px `--ui-control` around controls.
 - Radii: 4 (badges, thumbnails, knobs), 6 (controls, rows), 8 (cards, menus, popovers, the page).
-  Dialogs use 12; the phone frame uses its own device radius.
-- Controls are 28 px high; the bar is 48 px; the Layers panel is 256 px and the Inspector 296 px.
+  Dialogs use 12 (`--ui-r-xl`), as does the card of the app's own pages; the phone frame uses its
+  own device radius.
+- Controls are 28 px high (`--ui-h-control`), and 40 px at the app pages' scale (`--ui-h-page`);
+  the bar is 48 px; the Layers panel is 256 px and the Inspector 296 px.
 - Shadows only on floating surfaces: `--ui-shadow-pop` for menus, popovers, the toast, the zoom
   control and the selection toolbar, and `--ui-shadow-page` for the page and the device frame.
 
@@ -414,7 +422,8 @@ rows. Skip links to the canvas and the inspector come first in the tab order.
 | `@radix-ui/react-tooltip` | 1.4.1 | Tooltips on hover and on keyboard focus, with a shared delay, for every icon button. |
 
 All four are headless (they bring no styles) and are pinned to exact versions. There is no CSS
-framework: the chrome is one hand-written stylesheet on custom properties.
+framework: the chrome is two hand-written stylesheets on custom properties, the theme and the
+studio's own ([ADR 0009](../adr/0009-one-theme.md)).
 
 ## Decisions we are least sure of
 

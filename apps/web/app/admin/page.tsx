@@ -6,17 +6,23 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { currentAccount } from "../../auth/server.ts";
 import { Shell } from "../_ui/Shell.tsx";
-import styles from "../_ui/account.module.css";
+import styles from "../_ui/shell.module.css";
 import { SignOutButton } from "../sign-in/SignOutButton.tsx";
 
-export const metadata: Metadata = {
-  title: "Admin · Scena",
-  robots: { index: false },
-};
-
-export default async function AdminPage() {
+const admin = async () => {
   const account = await currentAccount();
   if (!account?.profile.isAdmin) notFound();
+  return account;
+};
+
+// asked here too, so that not even the page's title is this route's for anyone else
+export async function generateMetadata(): Promise<Metadata> {
+  await admin();
+  return { title: "Admin · Scena", robots: { index: false } };
+}
+
+export default async function AdminPage() {
+  const account = await admin();
   return (
     <Shell>
       <h1 className={styles.title} data-ui="admin">Admin</h1>

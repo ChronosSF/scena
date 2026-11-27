@@ -13,8 +13,7 @@
 // are reported as skipped, with the reason, and the rest run against a server that has no
 // sign-in; on CI a missing stack fails the run instead, since CI starts one.
 
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FIRST_FACES_HREF, MORE_FACES_HREF } from "@scena/studio/fonts";
 import { isDataBlock, scriptElements } from "@scena/studio/policy";
@@ -24,8 +23,8 @@ import { checks, drawingInFrame, input, settled } from "./checks.ts";
 import { autosaveChecks } from "./autosave-checks.ts";
 import { signInChecks } from "./sign-in-checks.ts";
 import { appEnv, stackStatus, type Stack } from "./stack.ts";
+import { answers, serveWeb, type WebServer } from "./web-server.ts";
 
-const web = join(repoRoot, "apps", "web");
 const out = join(repoRoot, "tools", "out");
 mkdirSync(out, { recursive: true });
 
@@ -53,52 +52,31 @@ if ("why" in found) {
 const stackMissingOnCi = !stack && !!process.env.CI;
 
 // ── the server ──────────────────────────────────────────────────────────────────────────
-let server: ChildProcess | null = null;
-let said = "", ended = "";
+let server: WebServer | null = null;
 if (!given) {
-  if (!existsSync(join(web, ".next", "BUILD_ID"))) {
-    console.error("apps/web is not built: run pnpm build:web first.");
-    process.exit(1);
-  }
   // Sign-in on, against the stack, or off: whatever the shell has set is replaced, so the server
   // is never half set up by a variable left over from something else.
   const signIn: Record<string, string> = stack
     ? { ...appEnv(stack, origin), SCENA_GOOGLE_SIGN_IN: google ? "on" : "off" }
     : { SUPABASE_URL: "", SUPABASE_PUBLISHABLE_KEY: "", SCENA_SITE_URL: "", SCENA_GOOGLE_SIGN_IN: "" };
-  // node runs Next.js's own entry, with no shell in between, so stopping this process stops the server
-  server = spawn(process.execPath, [join(web, "node_modules", "next", "dist", "bin", "next"), "start", "--port", String(PORT)],
-    { cwd: web, env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", ...signIn }, stdio: ["ignore", "pipe", "pipe"] });
-  for (const stream of [server.stdout!, server.stderr!]) {
-    stream.setEncoding("utf8");
-    stream.on("data", (text: string) => { said = (said + text).slice(-4000); });
+  try { server = await serveWeb(PORT, signIn); } catch (e) {
+    console.error((e as Error).message);
+    process.exit(1);
   }
-  server.on("error", (e) => { ended = `could not be started (${e.message})`; });
-  server.on("close", (code, signal) => { ended = signal ? `was stopped by ${signal}` : `exited with code ${code}`; });
+} else {
+  // a server that was given has no word to wait for: it is there once it answers
+  const started = Date.now();
+  let up = await answers(origin);
+  while (!up && Date.now() - started < 30_000) {
+    await sleep(200);
+    up = await answers(origin);
+  }
+  if (!up) {
+    console.error(`The web app is not being served at ${origin}: nothing is listening there.`);
+    process.exit(1);
+  }
 }
-const stop = () => { if (server && !ended) server.kill(); };
-process.on("exit", stop);
-
-const answers = async (): Promise<boolean> => {
-  try { return (await fetch(`${origin}/`, { signal: AbortSignal.timeout(2000) })).ok; } catch { return false; }
-};
-// The server this check started says "Ready" once it is listening, and only then is an answer
-// on the port its answer. If the port is taken, whatever holds it answers at once, with some
-// other build, while this server is still on its way to failing: its own word is what ties
-// the checks to this build. A server that was given has no word to wait for.
-const itSaysReady = () => /\bReady\b/.test(said);
-const started = Date.now();
-let up = false;
-while (!up && !ended && Date.now() - started < 30_000) {
-  up = (!server || itSaysReady()) && (await answers());
-  if (!up) await sleep(200);
-}
-if (!up || (server && ended)) {
-  const lines = said.split("\n").map((l) => l.trim()).filter(Boolean).slice(-12);
-  const why = given ? "nothing is listening there" : ended ? `its server ${ended}` : `its server ${itSaysReady() ? "said it was ready and did not answer" : "had not said it was ready"} after 30 s`;
-  console.error([`The web app is not being served at ${origin}: ${why}.`, ...(lines.length ? ["  It said:", ...lines.map((l) => `    ${l}`)] : [])].join("\n"));
-  stop();
-  process.exit(1);
-}
+const stop = () => server?.stop();
 
 // ── what the server sends ───────────────────────────────────────────────────────────────
 const get = async (path: string, headers: Record<string, string> = {}) => {
@@ -146,7 +124,10 @@ const home = await get("/");
 check("the home page answers under the same policy and links to the studio",
   home.status === 200 && directive(home.policy, "default-src") === "default-src 'none'" && nonceOf(home.policy).length >= 22 && home.html.includes('href="/studio"'), { status: home.status });
 const missing = await get("/no-such-page");
-check("a page that does not exist is a 404 under the policy too", missing.status === 404 && nonceOf(missing.policy).length >= 22, { status: missing.status });
+// the app's own page for it (app/not-found.tsx), in the shell at the page scale, out of search indexes
+const missingPage = { shell: (/<main class="([^"]*)"/.exec(missing.html)?.[1] ?? "").split(" ").includes("page-scale"), title: /<h1[^>]*>Page not found<\/h1>/.test(missing.html), noindex: missing.html.includes('<meta name="robots" content="noindex"/>') };
+check("a page that does not exist is a 404 under the policy too, on the app's own page in the shell, kept out of search indexes",
+  missing.status === 404 && nonceOf(missing.policy).length >= 22 && missingPage.shell && missingPage.title && missingPage.noindex, { status: missing.status, ...missingPage });
 
 // ── the studio, in a browser ────────────────────────────────────────────────────────────
 const chrome = await launch({ port: 9347, fileAccess: false });
@@ -302,8 +283,8 @@ const originOf = (u: string): string => { try { return new URL(u).origin; } catc
 check("a script added through the DOM runs only from this origin: not inline, and not from another host",
   added.inline === false && added.refused.includes("inline") && added.refused.some((u) => originOf(u) === "https://scripts.example"), added);
 
-// The home page, fresh: it fills the window and does not scroll, on its own styles. The
-// studio's stylesheet is global and stays loaded after a visit, so it is measured again then.
+// The home page, fresh: it fills the window and does not scroll, on the theme. The studio's
+// stylesheet is global and stays loaded after a visit, so it is measured again then.
 const HOME = `(() => { const m = document.querySelector("main"); if (!m) return null; const r = m.getBoundingClientRect(), s = getComputedStyle(m);
   return { box: [r.x, r.y, r.width, r.height].map(Math.round).join(" "), scrolls: document.documentElement.scrollHeight > innerHeight || document.documentElement.scrollWidth > innerWidth,
     font: s.fontFamily, features: s.fontFeatureSettings, smoothing: s.webkitFontSmoothing, color: s.color, background: s.backgroundColor,
@@ -312,6 +293,24 @@ const homeFrom = page.logs.length;
 await page.goto(`${origin}/`);
 const homeFresh = await page.eval<any>(HOME);
 check("the home page fills the window and does not scroll", !!homeFresh && homeFresh.box === "0 0 1440 900" && homeFresh.scrolls === false, homeFresh);
+
+// The app's own pages are on the theme the root layout loads (docs/design/app-pages.md): the
+// studio's typeface, the workspace behind a panel-coloured card, an ink primary button 40 px
+// high (the page scale), and the dark values when the OS is dark. The values are theme.css's.
+const THEME = `(() => { const m = document.querySelector("main"), card = m && m.children[1], go = document.querySelector('a[href="/studio"]'); if (!card || !go) return null;
+  const s = getComputedStyle(m), g = getComputedStyle(go);
+  return { font: s.fontFamily.split(",")[0], features: s.fontFeatureSettings, type: s.fontSize, page: getComputedStyle(document.body).backgroundColor,
+    card: getComputedStyle(card).backgroundColor, primary: g.backgroundColor + " " + g.color, high: Math.round(go.getBoundingClientRect().height) }; })()`;
+const themed = { light: await page.eval<any>(THEME), dark: null as any };
+await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "dark" }] });
+// a button's colours change with a transition: read once they have stopped changing
+themed.dark = await settled(() => page.eval<any>(THEME), (now, before) => JSON.stringify(now) === JSON.stringify(before));
+await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "light" }] });
+const onTheme = (t: any, page: string, card: string, primary: string) => !!t && t.font.replace(/"/g, "") === "Inter" && t.features === '"cv11", "ss01"' && t.type === "15px"
+  && t.page === page && t.card === card && t.primary === primary && t.high === 40;
+check("the home page is on the studio's theme at the page scale, and dark when the OS is",
+  onTheme(themed.light, "rgb(241, 241, 242)", "rgb(255, 255, 255)", "rgb(24, 24, 27) rgb(255, 255, 255)")
+  && onTheme(themed.dark, "rgb(14, 14, 16)", "rgb(24, 24, 27)", "rgb(244, 244, 245) rgb(24, 24, 27)"), themed);
 
 // from the home page, by its link: the studio arrives without a new document
 await page.eval(`window.__sameDocument = true`);
@@ -329,7 +328,9 @@ let homeAgain: any = null;
 for (let i = 0; i < 50 && !homeAgain; i++) { await sleep(100); homeAgain = await page.eval<any>(HOME); }
 await sleep(300);
 homeAgain = await page.eval<any>(HOME);
-const stillSame = await page.eval<boolean>(`window.__sameDocument === true && document.styleSheets.length > 1`);
+// the studio's own stylesheet is the one with its root's rule; the theme is in every page's
+const studioSheet = `[...document.styleSheets].some((s) => { try { return [...s.cssRules].some((r) => r.selectorText === "#root"); } catch { return false; } })`;
+const stillSame = await page.eval<boolean>(`window.__sameDocument === true && ${studioSheet}`);
 check("the home page looks the same after a visit to the studio", stillSame && JSON.stringify(homeAgain) === JSON.stringify(homeFresh), { fresh: homeFresh, again: homeAgain });
 
 // a phone

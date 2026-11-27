@@ -22,7 +22,7 @@ import {
   alignVectorFrames, dropUnusedAssets, fpsWords, frameCount, frameRows, frameTiming, mainParts, moveFrame as moveFrameDoc, removeFrame as removeFrameDoc,
   setTiming, writeFrames, type Timing,
 } from "./frames.ts";
-import { blankDocs, store } from "./store.ts";
+import { addressOf, blankDocs, store } from "./store.ts";
 import { announce, askFramesChoice, askReplace, closePicker, toast } from "./ui.ts";
 import { clone, download, kb, prettyName } from "./util.ts";
 
@@ -569,7 +569,8 @@ export async function importFiles(files: File[]): Promise<string[]> {
   return [];
 }
 
-const fileBase = () => st().page.handle || "page";
+/** What the exported files are named after: the page's address, or "page" for a page that has none (StudioProps.address). */
+export const fileBase = () => addressOf(st()) || "page";
 
 export function downloadPage(): void {
   const { scene, page } = st();

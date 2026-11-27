@@ -10,6 +10,8 @@ export interface AccountPage {
   /** The draft revision it is at (packages/db, draftRevision). */
   revision: number;
   page: PageDocument;
+  /** The page's address, or null while it has none: the draft's own handle is then text, and no address (docs/adr/0008-handles.md). */
+  address: string | null;
 }
 
 /** What the browser sends: the page, and the draft revision it was made from (null: it has seen none). */
@@ -22,13 +24,17 @@ export interface DraftToSave {
 export type NotSaved = "signed-out" | "unavailable" | "own-scene";
 
 export type SaveAnswer =
-  /** Saved as `revision`. `replaced`: it replaced a version saved from elsewhere that this tab did not have. */
-  | { ok: true; pageId: string; revision: number; replaced: boolean }
+  /**
+   * Saved as `revision`. `replaced`: it replaced a version saved from elsewhere that this tab did
+   * not have. `address`: the page's address as the save found it, which another tab or device
+   * may have changed.
+   */
+  | { ok: true; pageId: string; revision: number; replaced: boolean; address: string | null }
   | { ok: false; reason: NotSaved }
   /** The validators' messages, each with its path, as packages/db gives them. */
   | { ok: false; reason: "invalid"; problems: string[] };
 
-/** The account's page as it is now: its revision, or nulls when there is no page yet. */
+/** The account's page as it is now: its revision and its address, or nulls when there is no page yet. */
 export type RevisionAnswer =
-  | { ok: true; pageId: string | null; revision: number | null }
+  | { ok: true; pageId: string | null; revision: number | null; address: string | null }
   | { ok: false; reason: "signed-out" | "unavailable" };

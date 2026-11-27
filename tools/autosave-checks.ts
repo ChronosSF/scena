@@ -20,6 +20,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { connect, disconnect } from "@scena/db";
+import { LATER_KEY } from "../apps/web/address/messages.ts";
 import { NOTICES, REFUSED_LEAD, WORDS } from "../apps/web/drafts/messages.ts";
 import { sleep, type Browser, type Page } from "./cdp.ts";
 import { input, settled } from "./checks.ts";
@@ -50,7 +51,20 @@ const RECORD_ACTIONS = `(() => { if (window.__actions) return; window.__actions 
     if (h.has("next-action")) window.__actions.push({ at: performance.now(), headers: Object.fromEntries(h), body: typeof init.body === "string" ? init.body : null });
     return send.apply(this, arguments); }; })()`;
 
-export async function autosaveChecks({ chrome, origin, stack, check, out }: AutosaveRun): Promise<void> {
+/**
+ * Puts the address picker off in this person's browser ("Not now"), as a person who did so before
+ * would have it, so that it does not open by itself over the studio for checks about other things
+ * (tools/address-checks.ts checks it).
+ */
+export const putPickerOff = (page: Page) => page.call(`(key) => { localStorage.setItem(key, "1"); }`, LATER_KEY);
+
+/**
+ * What the checks of a signed-in person share (this file's, and tools/address-checks.ts): the
+ * mail catcher, a person in a browser of their own, signing in by the code, the studio as a check
+ * drives and reads it, and the person's page as the database has it. `done` closes what they
+ * opened.
+ */
+export function accountPeople({ chrome, origin, stack }: Pick<AutosaveRun, "chrome" | "origin" | "stack">) {
   const db = connect(stack.dbUrl, { max: 2 });
   const sql = db.$client;
   const run = Date.now().toString(36);
@@ -107,10 +121,15 @@ export async function autosaveChecks({ chrome, origin, stack, check, out }: Auto
     select p.id, p.draft_revision as revision, p.handle, p.draft->'scene'->>'id' as scene, p.draft->'links'->'newsletter'->>'title' as title, p.draft->>'handle' as wish
     from pages p join users u on u.id = p.user_id where u.email = ${address}`)[0] ?? null;
 
-  /** Signs in by the code, from the sign-in page, and comes back to the studio. */
-  async function signIn(p: Person, address: string, fromStudio = false): Promise<void> {
+  /**
+   * Signs in by the code, from the sign-in page, and comes back to the studio. Unless `picker`,
+   * the person put the address picker off in this browser before ("Not now"), so that it does
+   * not open by itself over the studio: these checks are about other things.
+   */
+  async function signIn(p: Person, address: string, fromStudio = false, picker = false): Promise<void> {
     if (fromStudio) await p.keys.clickOn('[data-ui="sign-in"]'); else await p.page.goto(`${origin}/sign-in?next=%2Fstudio`);
     await settled(() => p.page.eval<boolean>(`!!document.querySelector('[data-ui="email-form"] #email')`), (ok) => ok);
+    if (!picker) await putPickerOff(p.page);
     await p.keys.typeInto("#email", address);
     const wait = (sentAt.get(address) ?? 0) + 5400 - Date.now();
     if (wait > 0) await sleep(wait);
@@ -144,6 +163,38 @@ export async function autosaveChecks({ chrome, origin, stack, check, out }: Auto
     await p.page.send("Input.insertText", { text: title });
     return p.page.eval<number>(`performance.now()`);
   }
+
+  // The home page's link opens the studio without loading a new document, and the browser's
+  // Back and Forward then bring the studio's route back as the server sent it the first time.
+  const viaHome = async (p: Person) => {
+    await p.page.goto(origin);
+    await p.page.eval(`window.__sameDocument = true`);
+    await p.keys.clickOn('a[href="/studio"]');
+    await settled(() => where(p), (path) => path === "/studio", 10_000);
+    await studioReady(p);
+  };
+  const backAndForward = async (p: Person) => {
+    await p.page.eval(`history.back()`);
+    await settled(() => where(p), (path) => path === "/", 10_000);
+    await p.page.eval(`history.forward()`);
+    await settled(() => where(p), (path) => path === "/studio", 10_000);
+    await studioReady(p);
+  };
+  const sameDocument = (p: Person) => p.page.eval<boolean>(`window.__sameDocument === true`);
+  /** What the pages of these people logged as errors, but for what Chrome says of requests a check makes fail on purpose. */
+  const errors = () => everyone.flatMap((p) => p.page.logs.filter((l) => /^(error|exception|console\.error)/i.test(l) && !/fonts\.g/.test(l) && !/\/_next\/(webpack-)?hmr/.test(l)
+    && !/ERR_INTERNET_DISCONNECTED/.test(l)));
+  const done = async () => {
+    for (const p of everyone) await chrome.closeContext(p.context).catch(() => {});
+    await disconnect(db);
+  };
+
+  return { sql, newAddress, person, studioReady, where, indicator, indicatorAt, announced, actionsSent, savesSent, titleIn, savedHere, pageOf, signIn, chooseDesk, typeTitle, viaHome, backAndForward, sameDocument, errors, done };
+}
+
+export async function autosaveChecks({ chrome, origin, stack, check, out }: AutosaveRun): Promise<void> {
+  const { sql, newAddress, person, studioReady, where, indicator, indicatorAt, announced, actionsSent, savesSent, titleIn, savedHere, pageOf, signIn, chooseDesk, typeTitle, viaHome, backAndForward, sameDocument, errors, done } = accountPeople({ chrome, origin, stack });
+  type Person = Awaited<ReturnType<typeof person>>;
 
   try {
     // ── a visitor who is not signed in: the studio as before ──────────────────────────────
@@ -387,24 +438,8 @@ export async function autosaveChecks({ chrome, origin, stack, check, out }: Auto
       quiet(phoneBack, "Laptop again") && quiet(laptopTwice, "Phone again"), { phone: phoneBack, laptop: laptopTwice });
 
     // ── Back, then Forward ────────────────────────────────────────────────────────────────
-    // The home page's link opens the studio without loading a new document, and the browser's
-    // Back and Forward then bring the studio's route back as the server sent it the first
-    // time, with the account's page as it was then. The work saved since must stay.
-    const viaHome = async (p: Person) => {
-      await p.page.goto(origin);
-      await p.page.eval(`window.__sameDocument = true`);
-      await p.keys.clickOn('a[href="/studio"]');
-      await settled(() => where(p), (path) => path === "/studio", 10_000);
-      await studioReady(p);
-    };
-    const backAndForward = async (p: Person) => {
-      await p.page.eval(`history.back()`);
-      await settled(() => where(p), (path) => path === "/", 10_000);
-      await p.page.eval(`history.forward()`);
-      await settled(() => where(p), (path) => path === "/studio", 10_000);
-      await studioReady(p);
-    };
-    const sameDocument = (p: Person) => p.page.eval<boolean>(`window.__sameDocument === true`);
+    // Back and Forward bring the studio's route back with the account's page as it was when the
+    // server first sent it (viaHome). The work saved since must stay.
     await viaHome(lee);
     await settled(() => titleIn(lee), (t) => t === "Phone again");
     await saveFrom(lee, "Typed before going back");
@@ -508,12 +543,9 @@ export async function autosaveChecks({ chrome, origin, stack, check, out }: Auto
       still.map((s) => ({ width: s.width, saving: s.saving.left, saved: s.saved.left, high: [s.saving.high, s.saved.high], shown: [s.saving.shown, s.saved.shown], states: [s.saving.state, s.saved.state],
         display: [s.saving.display, s.saved.display], address: s.saved.address })));
 
-    const errors = everyone.flatMap((p) => p.page.logs.filter((l) => /^(error|exception|console\.error)/i.test(l) && !/fonts\.g/.test(l) && !/\/_next\/(webpack-)?hmr/.test(l)
-      // what Chrome says of the requests the offline check makes fail on purpose
-      && !/ERR_INTERNET_DISCONNECTED/.test(l)));
-    check("no page of these checks logged an error, or anything the policy had to refuse", errors.length === 0, errors.join(" | ").slice(0, 600));
+    const logged = errors();
+    check("no page of these checks logged an error, or anything the policy had to refuse", logged.length === 0, logged.join(" | ").slice(0, 600));
   } finally {
-    for (const p of everyone) await chrome.closeContext(p.context).catch(() => {});
-    await disconnect(db);
+    await done();
   }
 }

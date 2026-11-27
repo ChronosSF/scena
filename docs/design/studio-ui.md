@@ -21,7 +21,8 @@ Principles:
 <img src="studio-375.png" alt="Phone, 375 px" width="300">
 
 The screenshots come from `pnpm shots` (headless Chrome, Pia's desk with the envelope selected;
-then the scene picker over it).
+then the scene picker over it; then, in the web app signed in against the local stack, the
+address picker and the inspector's address row).
 
 ## Tokens
 
@@ -77,6 +78,7 @@ Text needs 4.5:1. Control boundaries, focus indicators and icons need 3:1. Measu
 | danger icon in the toast | 9.3 | 5.2 |
 | accent-text on workspace (the app pages' way back) | 5.2 | 8.0 |
 | accent-text, danger on field (the app pages' message icons) | 5.3, 5.2 | 6.6, 5.7 |
+| ok on panel (a field message that says something good: the address picker's "is free") | 6.2 | 10.2 |
 
 Disabled controls (Undo with nothing to undo, a menu item that cannot apply) are exempt and drawn
 faded, at 35% to 45% opacity. The accent also keeps 3.2:1 or more against every page paper and
@@ -212,7 +214,9 @@ the preview only, never to the export.
   - "Use as drawing".
   - Backgrounds get no handles on the canvas; they are set here.
 - **Inspector, nothing selected.** The Page:
-  - Profile.
+  - Profile: name, bio and the page's address. In the single-file build, and in the web app on
+    a server with no sign-in, "Page address" is a text field ("Also the export file name."). In
+    the web app with sign-in it is a row (see "The page's address" below).
   - Name lettering: a drop target, then a preview on a field-coloured card, the file row with
     Remove, a width slider and a "Tilt like the typed name" switch.
   - Typeface: six cards in a radio group. Each card shows the page's name in that face, at its
@@ -252,6 +256,58 @@ the preview only, never to the export.
     outside closes it, and the focus returns to where the picker was opened from.
   - The cards come from a list (`BUILT_IN_SCENES` in `@scena/scenes`); the picker names no
     scene. The README's "Adding a ready-made scene" says which files a new one touches.
+- **The page's address** (the web app, signed in; [ADR 0008](../adr/0008-handles.md)). The
+  address is the account's, so the studio shows it and does not edit it: a host that gives
+  pages their addresses hands it in (`StudioProps.address`), with the row's words and its control.
+
+  <img src="studio-address-row.png" alt="The inspector's Profile with the page's address and Change" width="300">
+
+  - **The row**, in Profile, under "Page address": the address (`scena.example/` in
+    `--ui-text-3`, then the handle) and a Change button; a long address is cut short with an
+    ellipsis, and the button keeps its room. Its hint is "The link you put in your bio." With no
+    address yet, "No address yet" in `--ui-text-3` and Choose, with the hint "Your page needs one
+    before it can be published." Signed out, "Sign in to choose one" and a Sign in link, with the
+    same hint. On drawings of one's own, which the account does not keep, "Not in your account",
+    no control, and "A page on your own drawings stays in this browser. A page on a ready-made
+    scene can have an address." The row is a group named by its label, described by the address
+    and the hint.
+  - **What else shows it**: the frame label, the Preview's address bar, the Page panel's head and
+    the export's file names show the address the host gives, or none (and "page.html") when it
+    says there is none; the draft carries it, through undo, redo and other work, and with the
+    next save into this browser (taking it in is no edit, so a tab that is only open writes
+    nothing for it).
+  - **The picker**, a dialog over the studio in its own dialog style (the web app's, with the
+    studio's `Dialog` and `Button` and the theme's field, field messages and message block, at
+    the studio's scale). It opens by itself once after sign-in when the page has no address
+    (not over the dialog for work just set aside, but at the next opening; Not now, Escape or a
+    press outside put it off in this browser), and from the row's button.
+
+    <img src="studio-address.png" alt="The address picker, with an address that is taken and three free ones" width="560">
+
+    - "Choose your page's address", "This is the link you put in your bio. You can change it
+      later.", one field labelled "Address" with `scena.example/` inside it before what is typed
+      and the count out of 30, the status line, then "Not now" and the primary "Use this
+      address". Changing it: "Change your page's address", "Your page is at scena.example/pia
+      now.", "New address", a news block saying the old address leads to the new one for 30 days
+      and stays theirs for that long, and "Cancel" and "Change address".
+    - The field starts from the name on the page as an address. Letters are lowercased as they
+      are typed, with the caret left where it was, and what is typed is asked about 400 ms after
+      the last key; a check with no answer is asked again by itself, after the autosave's waits.
+    - The status line says each case in a sentence of its own, with an icon as well as colour:
+      the rule as a quiet hint while the field is empty (`.field-hint`); checking (a loader, in
+      `--ui-text-2`); free, already yours, and still yours until a day in the person's own time
+      zone (a check, the icon in `--ui-ok`: `.field-msg.ok`); against the rule (the rule's own
+      sentence), kept for the site, and taken (the alert, in `--ui-danger`, the field's border
+      too); not signed in any more, and could not be checked just now (the warning triangle, in
+      `--ui-warn`). An address that cannot be taken is followed by "These are free:" and up to
+      three free ones as the theme's buttons at 24 px (`--ui-h-control` set on their row); one
+      pressed fills the field and asks at once.
+    - The primary button works only while the line says the address can be taken, and not
+      while it says the address is the page's already; the line describes it and the field. The line is not a live region: each settled answer is said
+      once, in the dialog's own live region.
+    - The focus goes into the field when it opens, and back to the row's button when it closes.
+      On a phone or a tablet (below 900 px) it sits at the top of the screen, 16 px down, so the
+      field, the line and the buttons stay above the on-screen keyboard.
 - **Links-only mode** (a scene with `license: "builtin"`; the plan's phase 1). The scene is
   filled in, not designed, so the tool takes away everything that changes a drawing and keeps
   the same places for what is left:
@@ -402,7 +458,12 @@ Thin wrappers in `packages/studio/src/components/ui.tsx`, so every surface looks
   by dragging, and Enter or blur commits.
 - `Menu`, `Popover` and `Tip`: Radix primitives styled with the tokens above.
 - Dialogs are native `<dialog>` elements; the browser provides the focus trap, Escape and the
-  backdrop.
+  backdrop. `Dialog` and `Button` are exported for a host's own dialog over the studio (the web
+  app's address picker), so that it is the studio's.
+- The theme's message block (`.message`, theme.css): news or a problem in a bordered block on
+  `--ui-field`, with the information circle in `--ui-accent-text` or the alert in
+  `--ui-danger`, at 12 / 16 here and 13 / 20 at the app pages' scale. The app pages' notices
+  and the address picker's note are this one block.
 - `FramesSection` (`components/FramesSection.tsx`) and the frames-or-separate dialog reuse
   these pieces: the drop target, the export dialog's choice rows, the switch rows, and the
   accent outline for "this one is chosen".

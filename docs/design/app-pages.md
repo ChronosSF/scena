@@ -66,7 +66,9 @@ field with a larger size of its own (the code, at 20 px) keeps it.
 - **News and problems** go in one block: `--ui-field` behind, a `--ui-line` border, radius 6,
   13 / 20 text in `--ui-text`, and an icon: the information circle in `--ui-accent-text` for
   news, the alert circle in `--ui-danger` for a problem. It sits in a live region that is in the
-  page from the start (`Message`), and takes no room while it is empty.
+  page from the start (`Message`), and takes no room while it is empty. The block is the
+  theme's (`.message`), one rule at both scales: the address picker over the studio uses it at
+  12 / 16 for its note ([studio-ui.md](studio-ui.md)).
 - **A problem with one field** is shown under that field in the studio's field-message style
   (`field-msg error`, the alert icon), and the field's border turns `--ui-danger`
   (`aria-invalid`). The live region still says the sentence, unseen, once; the field's

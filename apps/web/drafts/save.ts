@@ -9,7 +9,8 @@
 //   before they write; a refusal comes back with the validators' messages, for the person.
 // - Only a page on a ready-made scene is kept in the account. A page on a person's own drawings
 //   would open on no other device, since the scene is in one browser only (issue 65 stores it).
-// - The page is made by the first save, with no address (the handle picker is issue 17).
+// - The page is made by the first save, with no address: the address picker gives it one
+//   (apps/web/address), and every answer here says what the address is now.
 // - The last write wins: a save made from an older revision is written, and says it replaced a
 //   version its tab did not have, for that tab to tell the person. docs/adr/0007-server-autosave.md
 
@@ -29,7 +30,7 @@ export interface DraftQueries {
   save(input: { pageId: string; userId: string; draft: unknown; base: number | null }): Promise<Result<{ page: Page; replaced: boolean }>>;
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+export const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const READY_MADE = new Set(BUILT_IN_SCENES.map((b) => b.scene.id));
 const notSaved = (reason: NotSaved): SaveAnswer => ({ ok: false, reason });
 
@@ -61,7 +62,7 @@ export async function saveToAccount(q: DraftQueries, sent: unknown): Promise<Sav
     let existing = await q.pageOf(userId), from = base;
     if (!existing) {
       const made = await q.create(userId, page);
-      if (made.ok) return { ok: true, pageId: made.page.id, revision: made.page.draftRevision, replaced: false };
+      if (made.ok) return { ok: true, pageId: made.page.id, revision: made.page.draftRevision, replaced: false, address: made.page.handle };
       if (made.reason === "invalid") return { ok: false, reason: "invalid", problems: made.problems };
       // another tab of the same person made it a moment ago: save into it, as a save that has
       // seen no version of it
@@ -71,7 +72,7 @@ export async function saveToAccount(q: DraftQueries, sent: unknown): Promise<Sav
       from = null;
     }
     const saved = await q.save({ pageId: existing.id, userId, draft: page, base: from });
-    if (saved.ok) return { ok: true, pageId: saved.page.id, revision: saved.page.draftRevision, replaced: saved.replaced };
+    if (saved.ok) return { ok: true, pageId: saved.page.id, revision: saved.page.draftRevision, replaced: saved.replaced, address: saved.page.handle };
     if (saved.reason === "invalid") return { ok: false, reason: "invalid", problems: saved.problems };
     return unsaved(saved.reason, saved.problems);
   } catch (e) {
@@ -104,13 +105,13 @@ function unsaved(reason: string, problems: string[]): SaveAnswer {
   return notSaved("unavailable");
 }
 
-/** The revision of the asking person's page now, for a tab that wants to know whether it has fallen behind. */
+/** The revision and the address of the asking person's page now, for a tab that wants to know whether it has fallen behind. */
 export async function accountRevision(q: DraftQueries): Promise<RevisionAnswer> {
   const asking = await q.who();
   if (!asking.ok) return { ok: false, reason: asking.reason };
   try {
     const page = await q.pageOf(asking.account.id);
-    return { ok: true, pageId: page?.id ?? null, revision: page?.draftRevision ?? null };
+    return { ok: true, pageId: page?.id ?? null, revision: page?.draftRevision ?? null, address: page?.handle ?? null };
   } catch (e) {
     console.error(`drafts: the page could not be read: ${whatFailed(e)}`);
     return { ok: false, reason: "unavailable" };

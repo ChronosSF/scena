@@ -8,7 +8,7 @@ import { profileFor, settleProfile, type AuthUser, type ProfileQueries } from ".
 
 const ID = "0b7e7dee-87b4-4a43-9a9a-6f1c0b2d9a11";
 const person: AuthUser = { id: ID, email: "pia@example.com", user_metadata: { email: "pia@example.com", email_verified: true } };
-const profile = (over: Partial<User> = {}): User => ({ id: ID, email: "pia@example.com", displayName: null, locale: "en", isAdmin: false, createdAt: new Date(0), ...over });
+const profile = (over: Partial<User> = {}): User => ({ id: ID, email: "pia@example.com", displayName: null, locale: "en", isAdmin: false, createdAt: new Date(0), lastSeenAt: null, ...over });
 
 /** Queries that answer as told, and remember what they were asked. */
 function queries(read: (User | null)[], made: Result<{ user: User }>) {

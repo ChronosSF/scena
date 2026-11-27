@@ -9,13 +9,15 @@
 // The sign-in page comes from the web app's build (pnpm build:web), served for this run with
 // the local stack's sign-in (pnpm stack:start); without either, those shots are skipped. It is
 // shown at the email step in light, at the code step with its news in dark, and on a phone with
-// a code that is not the right shape.
+// a code that is not the right shape. Then the address picker over the studio, signed in, with an
+// address someone else has, and the inspector's address row once the page has one.
 
 import { writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { fixture, launch, sleep } from "./cdp.ts";
 import { input, settled } from "./checks.ts";
+import { accountPeople } from "./autosave-checks.ts";
 import { appEnv, stackStatus } from "./stack.ts";
 import { serveWeb } from "./web-server.ts";
 
@@ -102,6 +104,49 @@ if (server) {
     await shot("app-sign-in-375.png");
   } else {
     console.log(`skipped the code step's shots: the page said "${await said()}"`);
+  }
+
+  // ── the address picker, and the inspector's address row ─────────────────────────────────
+  // Pia signs in from the studio on the desk, and the picker opens by itself; an address someone
+  // else has shows the line and the free ones near it. The accounts this script made on an
+  // earlier run are removed first, so that it shows the same addresses each time.
+  if ("stack" in found) {
+    const h = accountPeople({ chrome, origin: server.origin, stack: found.stack });
+    try {
+      await h.sql`delete from users where email like 'shots-%@example.com'`;
+      const pia = await h.person();
+      await pia.page.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+      await pia.page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }, { name: "prefers-color-scheme", value: "light" }] });
+      await pia.page.goto(`${server.origin}/studio`);
+      await h.studioReady(pia);
+      await h.chooseDesk(pia);
+      await pia.keys.typeInto('#inspector [name="display-name"]', "Pia Morandi");
+      await h.signIn(pia, "shots-pia@example.com", false, true);
+      // someone else's page at "pia", as another person would have made it
+      await settled(() => h.pageOf("shots-pia@example.com"), (row) => !!row, 10_000);
+      const [someone] = await h.sql<{ id: string }[]>`insert into users (id, email) values (gen_random_uuid(), 'shots-someone@example.com') returning id`;
+      await h.sql`insert into pages (user_id, handle, draft) select ${someone!.id}, 'pia', draft from pages p join users u on u.id = p.user_id where u.email = 'shots-pia@example.com'`;
+      const field = 'dialog[open] [data-ui="address-dialog"] input[name="address"]';
+      await settled(() => pia.page.eval<string>(`(document.querySelector('[data-ui="address-line"]') || {}).dataset?.line || ""`), (l) => l === "free", 10_000);
+      await pia.keys.typeInto(field, "pia");
+      await settled(() => pia.page.eval<number>(`document.querySelectorAll('[data-ui="address-free"] .btn').length`), (n) => n > 0, 10_000);
+      await sleep(400); // the border's and the icon's colours, past their transition
+      writeFileSync(join(out, "studio-address.png"), await pia.page.screenshot());
+      console.log("wrote docs/design/studio-address.png");
+      await pia.keys.typeInto(field, "pia-morandi");
+      await settled(() => pia.page.eval<string>(`(document.querySelector('[data-ui="address-line"]') || {}).dataset?.line || ""`), (l) => l === "free", 10_000);
+      await pia.keys.clickOn('[data-ui="address-take"]');
+      await settled(() => pia.page.eval<string>(`(document.querySelector('[data-ui="address-row"] .addr-value') || {}).textContent || ""`), (t) => t === "scena.example/pia-morandi", 10_000);
+      await pia.page.eval(`document.activeElement?.blur()`);
+      await sleep(3800); // the toast has gone
+      // the inspector's Profile section, where the row is
+      const box = await pia.page.eval<{ x: number; y: number; width: number; height: number }>(`(() => { const r = document.querySelector('[data-ui="address-row"]').closest(".section").getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`);
+      const { data } = await pia.page.send("Page.captureScreenshot", { format: "png", clip: { ...box, scale: 2 } });
+      writeFileSync(join(out, "studio-address-row.png"), Buffer.from(data, "base64"));
+      console.log("wrote docs/design/studio-address-row.png");
+    } finally {
+      await h.done();
+    }
   }
   server.stop();
 }

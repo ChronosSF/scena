@@ -5,6 +5,7 @@
 // work in place of what is open, keeping that aside. The single-file build has no host and
 // leaves all of this out. docs/adr/0007-server-autosave.md
 
+import type { ReactNode } from "react";
 import type { PageDocument, SceneDocument } from "@scena/scene";
 
 /** What the studio holds: the scene and the page on it. */
@@ -78,6 +79,24 @@ export interface StudioControl {
   replace(work: StudioWork, why: string | null): "opened" | "set-aside" | "refused";
   /** Says `text` once, as the studio says its own news: a toast, and the live region. */
   say(text: string, tone?: "" | "error"): void;
+}
+
+/**
+ * The page's address, where the host gives pages their addresses (StudioProps.address; the web
+ * app, from the person's account). The studio shows `handle` wherever it shows the address, and
+ * its draft carries it; with null it shows none. The inspector's "Page address" row shows the
+ * address or `none`, the host's `action` beside it, and `hint` under it. The words and the
+ * action are the host's: the studio knows nothing of accounts. docs/adr/0008-handles.md
+ */
+export interface StudioAddress {
+  /** The page's address, or null while it has none. */
+  handle: string | null;
+  /** What the row says while there is none: "No address yet". */
+  none: string;
+  /** The line under the row. */
+  hint: string;
+  /** The host's control beside it (a button that opens its picker, a link to sign in), or none. */
+  action: ReactNode;
 }
 
 /**

@@ -8,7 +8,7 @@
 import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { getPageByUser, getUser as getProfile, type User as Profile } from "@scena/db";
+import { getPageByUser, getUser as getProfile, noteSeen, type User as Profile } from "@scena/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AccountPage } from "../drafts/answer.ts";
 import { whatFailed, type Asking } from "../drafts/save.ts";
@@ -93,21 +93,34 @@ export interface StudioAccount {
 }
 
 /**
- * For the studio: whether this server has sign-in, who is signed in, and their page. The editor
- * must open whatever happens here, so a configuration that is wrong, or a database that does
- * not answer, leaves the slot and the saving to the account out, and says why in the server's
- * log: a studio that could not read the account's page must not save over it.
+ * For the studio: whether this server has sign-in, who is signed in, and their page with its
+ * address. The editor must open whatever happens here, so a configuration that is wrong, or a
+ * database that does not answer, leaves the slot and the saving to the account out, and says why
+ * in the server's log: a studio that could not read the account's page must not save over it.
+ *
+ * The studio opening for a signed-in person counts as their being seen (noteSeen, at most once a
+ * day, from the profile currentAccount has just read), so that an address of theirs nobody used
+ * is not released while they come back (docs/adr/0008-handles.md). A write that fails is logged,
+ * and the studio opens all the same.
  */
 export async function studioAccount(): Promise<StudioAccount> {
   try {
     if (!authConfig()) return { signIn: false, signedIn: null, saved: null };
     const account = await currentAccount();
     if (!account) return { signIn: true, signedIn: null, saved: null };
-    const page = await getPageByUser(database(), account.id);
-    return { signIn: true, signedIn: { email: account.email }, saved: page ? { pageId: page.id, revision: page.draftRevision, page: page.draft } : null };
+    const [page] = await Promise.all([getPageByUser(database(), account.id), seen(account.profile)]);
+    return { signIn: true, signedIn: { email: account.email }, saved: page ? { pageId: page.id, revision: page.draftRevision, page: page.draft, address: page.handle } : null };
   } catch (e) {
     console.error(`studio: sign-in is left out of the top bar: ${whatFailed(e)}`);
     return { signIn: false, signedIn: null, saved: null };
+  }
+}
+
+async function seen(profile: Profile): Promise<void> {
+  try {
+    await noteSeen(database(), profile);
+  } catch (e) {
+    console.error(`studio: when the person was last seen was not written: ${whatFailed(e)}`);
   }
 }
 

@@ -140,9 +140,14 @@ svg.lucide { flex: none; }
 }
 .textarea { height: auto; min-height: 60px; padding: 6px var(--ui-2); resize: vertical; line-height: 18px; }
 .input:hover, .textarea:hover, .select:hover { border-color: var(--ui-control-hover); }
-.input:focus, .textarea:focus, .select:focus { outline: none; border-color: var(--ui-accent); background: var(--ui-panel); box-shadow: 0 0 0 3px var(--ui-accent-soft); }
+.input:focus-within, .textarea:focus, .select:focus { outline: none; border-color: var(--ui-accent); background: var(--ui-panel); box-shadow: 0 0 0 3px var(--ui-accent-soft); }
 .input::placeholder, .textarea::placeholder { color: var(--ui-text-3); }
-.input[aria-invalid="true"] { border-color: var(--ui-danger); }
+.input[aria-invalid="true"], .input:has(> [aria-invalid="true"]) { border-color: var(--ui-danger); }
+/* A field with fixed text before what is typed (the address picker's "scena.example/"): the box
+   is the .input, and the text field in it is bare. */
+.input:has(> input) { display: flex; align-items: center; }
+.input > span { flex: none; color: var(--ui-text-3); white-space: nowrap; }
+.input > input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; outline: none; }
 .select-wrap { position: relative; display: block; }
 .select { appearance: none; padding-right: 28px; cursor: pointer; }
 .select-wrap .lucide { position: absolute; right: 8px; top: 50%; width: 14px; height: 14px; margin-top: -7px; color: var(--ui-text-3); pointer-events: none; }
@@ -152,8 +157,19 @@ svg.lucide { flex: none; }
 .field-msg .lucide { width: 14px; height: 14px; margin-top: 1px; }
 .field-msg.error { color: var(--ui-danger); }
 .field-msg.warn { color: var(--ui-warn); }
+/* something good (the address picker's "is free"): the words as they are, the icon in ok */
+.field-msg.ok .lucide { color: var(--ui-ok); }
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-3); }
 .field-row > .field-label { margin: 0; }
+
+/* ------------------------------------------------------------------ news and problems */
+/* A block of its own, with an icon as well as colour: the information circle for news, the alert
+   circle for a problem. The app pages' Message (apps/web/app/_ui/Shell.tsx), and the note in the
+   address picker over the studio. */
+.message { display: flex; gap: var(--ui-2); padding: var(--ui-2) 10px; border: 1px solid var(--ui-line); border-radius: var(--ui-r); background: var(--ui-field); font-size: var(--ui-sm); line-height: var(--ui-sm-lh); }
+.message .lucide { width: 14px; height: 14px; margin-top: 1px; color: var(--ui-danger); }
+.message[data-kind="news"] .lucide { color: var(--ui-accent-text); }
+.message b { font-weight: 500; }
 
 /* ------------------------------------------------------------------ the page scale */
 /* The web app's own pages are read and filled in, not worked in for hours: inside .page-scale
@@ -163,6 +179,8 @@ svg.lucide { flex: none; }
 .page-scale :is(.field-label, .field-msg) { font-size: var(--ui-md); line-height: var(--ui-md-lh); }
 .page-scale .field-label { color: var(--ui-text); }
 .page-scale .field-msg .lucide { width: 16px; height: 16px; margin-top: 2px; }
+.page-scale .message { gap: 10px; padding: 10px var(--ui-3); font-size: var(--ui-md); line-height: var(--ui-md-lh); }
+.page-scale .message .lucide { width: 16px; height: 16px; margin-top: 2px; }
 /* A phone, or any touch screen: controls tall enough to tap, and a field's type at 16 px, under
    which iOS zooms into the field. A field that sets a larger size of its own keeps it. */
 @media (max-width: 480px), (pointer: coarse) {

@@ -6,10 +6,10 @@
 // nothing and comes back with their messages. Decisions: docs/adr/0005-database-package.md.
 
 export { connect, disconnect, type ConnectOptions, type Database } from "./client.ts";
-export { createUser, getUser, type NewUser, type User } from "./users.ts";
+export { createUser, getUser, noteSeen, type NewUser, type User } from "./users.ts";
 export { changeHandle, createPage, getPageByHandle, getPageByUser, handleAvailability, saveDraft, type Page, type PageStatus } from "./pages.ts";
 export { writeAudit, type AuditEntry } from "./audit.ts";
-export { HANDLE_HOLD_DAYS, handleProblem, heldHandle, type HandleAvailability } from "./handles.ts";
+export { handleProblem, heldHandle, type HandleAvailability } from "./handles.ts";
 export { RESERVED_HANDLES } from "./reserved.ts";
 export { DRAFT_MAX_BYTES } from "./draft.ts";
 export type { Refusal, RefusalReason, Result } from "./result.ts";

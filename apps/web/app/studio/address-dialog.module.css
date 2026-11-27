@@ -1,0 +1,13 @@
+/* The address picker over the studio (AddressDialog.tsx). The dialog, the buttons, the field, its
+   messages and the note are the studio's and the theme's, at the studio's scale; this lays out
+   their places, with tokens alone. */
+.field { margin-top: var(--ui-4); }
+/* the free ones near an address that cannot be taken: the theme's buttons, a step smaller */
+.free { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--ui-2); --ui-h-control: var(--ui-6); font-size: var(--ui-sm); }
+.free :global(.btn) { padding: 0 var(--ui-2); }
+.note { margin-top: var(--ui-3); }
+/* A phone or a tablet, as the studio lays them out: at the top of the screen, where the field,
+   the line under it and the buttons stay above the on-screen keyboard, which covers the bottom. */
+@media (max-width: 899.98px) {
+  .dialog { margin-top: var(--ui-4); }
+}

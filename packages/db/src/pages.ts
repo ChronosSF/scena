@@ -22,7 +22,7 @@ import type { Database } from "./client.ts";
 import { checkDraft, withHandle } from "./draft.ts";
 import { claimOn, handleProblem, reservedRefusal, takenRefusal, type HandleAvailability } from "./handles.ts";
 import { brokenReference, brokenUnique, isUuid, refuse, type Refusal, type Result } from "./result.ts";
-import { handlesReserved, pages } from "./schema.ts";
+import { handlesReserved, pages, users } from "./schema.ts";
 
 export type PageStatus = (typeof pages.$inferSelect)["status"];
 
@@ -137,14 +137,16 @@ export async function saveDraft(db: Database, input: { pageId: string; userId: s
 }
 
 // The pages that may have a claim on a handle: the one at it, and every one that left it, each
-// with the database's clock to read the rules at, the clock handle_changed_at and updated_at
-// were written with. A write names its own page as well, and locks every row found, in the
-// order of their ids.
+// with the database's clock to read the rules at, the clock handle_changed_at, updated_at and
+// last_seen_at were written with, and when its owner was last seen, which the release reads
+// (handles.ts), in the same query. A write names its own page as well, and locks every page
+// found, in the order of their ids; the owners' rows are read, not locked.
 async function claimants(db: Pick<Database, "select">, handle: string, own?: { pageId: string; userId: string }) {
-  const query = db.select({ page: pages, now: sql`now()`.mapWith(pages.updatedAt) }).from(pages)
+  const query = db.select({ page: pages, now: sql`now()`.mapWith(pages.updatedAt), ownerSeen: users.lastSeenAt }).from(pages)
+    .innerJoin(users, eq(users.id, pages.userId))
     .where(or(eq(pages.handle, handle), eq(pages.previousHandle, handle), own && and(eq(pages.id, own.pageId), eq(pages.userId, own.userId))))
     .orderBy(pages.id);
-  return own ? query.for("update") : query;
+  return own ? query.for("update", { of: pages }) : query;
 }
 
 /**

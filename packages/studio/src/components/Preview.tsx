@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { renderPage } from "@scena/renderer";
-import { store, useStudio } from "../store.ts";
+import { ADDRESS_PREFIX } from "@scena/scene";
+import { addressOf, store, useStudio } from "../store.ts";
 import { useDebounced, useNarrow } from "../hooks.ts";
 import { tappedObject } from "../preview-message.ts";
 import * as actions from "../actions.ts";
@@ -14,7 +15,9 @@ import * as actions from "../actions.ts";
  * controls live in the top bar.
  */
 export function Preview() {
-  const { scene, page, docRev, sel, phone, forceMotion } = useStudio();
+  const studio = useStudio();
+  const { scene, page, docRev, sel, phone, forceMotion } = studio;
+  const shown = addressOf(studio);
   const narrow = useNarrow();
   const frame = useRef<HTMLIFrameElement>(null);
   // The drawing a tap in this Preview brought up. Each edit renders the page again and the frame
@@ -60,7 +63,7 @@ export function Preview() {
         <div className="browser">
           <div className="browser-bar" aria-hidden="true">
             <span className="browser-dots"><i /><i /><i /></span>
-            <span className="browser-url">scena.example/{page.handle}</span>
+            <span className="browser-url">{shown === null ? null : <>{ADDRESS_PREFIX}{shown}</>}</span>
             <span style={{ width: 42 }} />
           </div>
           {iframe}

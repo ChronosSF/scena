@@ -6,9 +6,10 @@ import { randomUUID } from "node:crypto";
 import { readdirSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { eq, inArray, sql } from "drizzle-orm";
-import { HANDLE_RULE, LIMITS, isHandle, validatePage, type PageDocument } from "@scena/scene";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { HANDLE_HOLD_DAYS, HANDLE_RULE, LIMITS, isHandle, validatePage, type PageDocument } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { changeHandle, createPage, createUser, getPageByHandle, getPageByUser, getUser, handleAvailability, heldHandle, saveDraft, writeAudit, HANDLE_HOLD_DAYS, RESERVED_HANDLES, type Database, type NewUser, type Page, type PageStatus, type User } from "../src/index.ts";
+import { changeHandle, createPage, createUser, getPageByHandle, getPageByUser, getUser, handleAvailability, heldHandle, noteSeen, saveDraft, writeAudit, RESERVED_HANDLES, type Database, type NewUser, type Page, type PageStatus, type User } from "../src/index.ts";
 import { checkDraft, type CheckedDraft } from "../src/draft.ts";
 import { HANDLE_RELEASE_DAYS, isReserved } from "../src/handles.ts";
 import { migrate, MIGRATIONS_FOLDER } from "../src/migrate.ts";
@@ -125,7 +126,7 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       const type = (table: string, column: string) => columns.find((c) => c.table_name === table && c.column_name === column)?.udt_name;
       for (const [table, column] of [["users", "email"], ["pages", "handle"], ["pages", "previous_handle"], ["handles_reserved", "handle"]]) expect(type(table!, column!), `${table}.${column}`).toBe("citext");
       const times = columns.filter((c) => c.column_name.endsWith("_at"));
-      expect(times).toHaveLength(6);
+      expect(times).toHaveLength(7);
       for (const c of times) expect(c.data_type, `${c.table_name}.${c.column_name}`).toBe("timestamp with time zone");
       expect(type("pages", "draft")).toBe("jsonb");
     });
@@ -135,7 +136,7 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
     test("are made and read back", async () => {
       const id = randomUUID();
       const made = await createUser(db, { id, email: "Ada@Example.com", displayName: "  Ada  ", locale: "it-IT" });
-      expect(made).toEqual({ ok: true, user: { id, email: "Ada@Example.com", displayName: "Ada", locale: "it-IT", isAdmin: false, createdAt: expect.any(Date) } });
+      expect(made).toEqual({ ok: true, user: { id, email: "Ada@Example.com", displayName: "Ada", locale: "it-IT", isAdmin: false, createdAt: expect.any(Date), lastSeenAt: null } });
       expect(await getUser(db, id)).toEqual(made.ok ? made.user : null);
       expect(await getUser(db, randomUUID())).toBeNull();
       expect(await getUser(db, "not-a-uuid")).toBeNull();
@@ -199,6 +200,33 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       expect((await stored("\u0000")).displayName).toBeNull();
       // a whole emoji stays, in a name and in an address
       expect(await stored("Ada 🖍", "ada🖍@example.com")).toMatchObject({ displayName: "Ada 🖍", email: "ada🖍@example.com" });
+    });
+
+    test("the last-seen time is written once a day at most, by the database's clock, and once for two studios opened at once", async () => {
+      const someone = await person();
+      expect(someone.lastSeenAt).toBeNull();
+      // the database's clock, in milliseconds (a time from execute() comes back as text)
+      const dbNow = async () => new Date((await rows<{ ms: number }>(sql`select (extract(epoch from now()) * 1000)::float8 as ms`))[0]!.ms);
+      // two studios opened at once, each with the profile it read: one write between them
+      const before = await dbNow();
+      expect((await Promise.all([noteSeen(db, someone), noteSeen(db, someone)])).sort()).toEqual([false, true]);
+      const first = (await getUser(db, someone.id))!.lastSeenAt!;
+      expect(first.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(first.getTime()).toBeLessThanOrEqual((await dbNow()).getTime());
+      // read again within the day: nothing to write
+      expect(await noteSeen(db, (await getUser(db, someone.id))!)).toBe(false);
+      // a minute short of a day after the time in the profile: nothing; a day after: written
+      const at = new Date(first.getTime() + 24 * 60 * 60 * 1000);
+      expect(await noteSeen(db, { id: someone.id, lastSeenAt: first }, new Date(at.getTime() - 60_000))).toBe(false);
+      expect(await noteSeen(db, { id: someone.id, lastSeenAt: first }, at)).toBe(true);
+      const second = (await getUser(db, someone.id))!.lastSeenAt!;
+      expect(second.getTime()).toBeGreaterThan(first.getTime());
+      // a profile read before another studio wrote: the write finds that time, and writes nothing
+      expect(await noteSeen(db, { id: someone.id, lastSeenAt: first }, at)).toBe(false);
+      expect((await getUser(db, someone.id))!.lastSeenAt).toEqual(second);
+      // nobody else's time moves
+      const other = await person();
+      expect((await getUser(db, other.id))!.lastSeenAt).toBeNull();
     });
   });
 
@@ -593,6 +621,53 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
         expect(await move(claimant, `kept-${status}`)).toEqual(taken(`kept-${status}`));
         expect((await now(kept)).handle).toBe(`kept-${status}`);
       }
+    });
+
+    test("an address nobody wrote to is kept while its owner signs in: released only once neither the page nor its owner was seen for HANDLE_RELEASE_DAYS, to the minute, by the check and the write alike", async () => {
+      const idle = await pageFor("seen-owner");
+      const claimant = await draftPage();
+      const seen = (days: number | null) => db.update(users).set({ lastSeenAt: days === null ? null : daysAgo(days) }).where(eq(users.id, idle.user.id));
+      // the page left alone for ten years, its owner seen a minute short of the days ago
+      await age(idle, { changed: 3650, touched: 3650 });
+      await seen(HANDLE_RELEASE_DAYS - MINUTE);
+      expect(await ask(claimant, "seen-owner")).toEqual(taken("seen-owner"));
+      expect(await move(claimant, "seen-owner")).toEqual(taken("seen-owner"));
+      // the studio opening for its owner is what writes the time: a profile seen long ago is noted now, and keeps it
+      await seen(10 * HANDLE_RELEASE_DAYS);
+      expect(await ask(claimant, "seen-owner")).toEqual(FREE);
+      expect(await noteSeen(db, (await getUser(db, idle.user.id))!)).toBe(true);
+      expect(await ask(claimant, "seen-owner")).toEqual(taken("seen-owner"));
+      // an owner never seen since the time was kept: by the page alone, as before
+      await seen(null);
+      expect(await ask(claimant, "seen-owner")).toEqual(FREE);
+      // seen the days ago: released, to the claim that asks
+      await seen(HANDLE_RELEASE_DAYS);
+      expect(await ask(claimant, "seen-owner")).toEqual(FREE);
+      const took = await move(claimant, "seen-owner");
+      expect(took.ok && took.page.handle).toBe("seen-owner");
+      expect((await now(idle)).handle).toBeNull();
+      // and a page written to within the days keeps its address, however long ago its owner was seen
+      const written = await pageFor("seen-written");
+      await age(written, { changed: 3650, touched: HANDLE_RELEASE_DAYS - MINUTE });
+      await db.update(users).set({ lastSeenAt: daysAgo(3650) }).where(eq(users.id, written.user.id));
+      expect(await ask(claimant, "seen-written")).toEqual(taken("seen-written"));
+      expect(await move(claimant, "seen-written")).toEqual(taken("seen-written"));
+    });
+
+    test("the check and the claim read the owners' last-seen times in the statement that finds the pages, and the claim locks the pages alone", async () => {
+      // the same pool, with every statement noted
+      const said: string[] = [];
+      const logged = drizzle({ client: db.$client, logger: { logQuery: (query) => { said.push(query); } } }) as Database;
+      const someone = await draftPage();
+      await pageFor("one-statement");
+      await handleAvailability(logged, { userId: someone.user.id, handle: "one-statement" });
+      await changeHandle(logged, { pageId: someone.page.id, userId: someone.user.id, handle: "one-statement-2" });
+      const reads = said.filter((q) => /^select\b/i.test(q) && /from "pages"/.test(q));
+      expect(reads).toHaveLength(2);
+      for (const q of reads) expect(q).toMatch(/inner join "users" on "users"\."id" = "pages"\."user_id"/);
+      expect(reads.map((q) => /for update of "pages"$/.test(q))).toEqual([false, true]);
+      // and nothing reads the owners on its own
+      expect(said.filter((q) => /^select\b/i.test(q) && /from "users"/.test(q))).toEqual([]);
     });
 
     test("the live check has an answer for each case, and writes nothing", async () => {

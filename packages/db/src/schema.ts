@@ -71,6 +71,9 @@ export const pages = pgTable("pages", {
   updatedAt: at("updated_at").notNull().defaultNow().$onUpdate(() => sql`now()`),
 }, (t) => [
   unique("pages_handle_unique").on(t.handle),
+  // Every claim of a handle, and every check of one, looks for the pages that left it, which
+  // hold it for a while: docs/adr/0008-handles.md
+  index("pages_previous_handle").on(t.previousHandle),
   // One page per person in phase 1 (plan §5); a later migration drops this to allow more.
   unique("pages_user_id_unique").on(t.userId),
   // The handle rule, which the database holds too: a row written around the package cannot then

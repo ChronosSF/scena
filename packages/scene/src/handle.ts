@@ -24,3 +24,39 @@ export const HANDLE_RULE = "2 to 30 characters: lowercase letters, digits, - and
 export function isHandle(v: unknown): v is string {
   return typeof v === "string" && HANDLE.test(v);
 }
+
+// One character at a time, each looked at once, and never more of the result than a handle can
+// be, so a name of any length takes linear time.
+const KEPT = /^[a-z0-9_]$/;
+const MARK = /^\p{M}$/u;
+
+// Latin letters that Unicode does not write as a base letter and a mark, so NFKD leaves them
+// whole, spelt as they are without one. The pattern is one character from this list: one way
+// to match anything.
+const FOLD: Readonly<Record<string, string>> = { ß: "ss", ø: "o", ł: "l", æ: "ae", œ: "oe", đ: "d", ð: "d", þ: "th", ı: "i" };
+const FOLDED = new RegExp(`[${Object.keys(FOLD).join("")}]`, "g");
+
+/**
+ * A handle made from a person's name, for the handle picker to start from: "Zoë Müller" gives
+ * "zoe-muller", "Søren Kjær" "soren-kjaer". Letters lose their marks, everything a handle cannot
+ * have becomes one "-" for each run of it, nothing but a letter or digit is left at either end,
+ * and it is cut to HANDLE_MAX. Null when what is left is not a handle (a name with no Latin
+ * letter or digit in it, or only one). Whether it is reserved or taken is for the database
+ * package to answer.
+ */
+export function suggestHandle(name: string | null): string | null {
+  let out = "";
+  // NFKD writes a letter and its marks apart ("ë" is "e" and a diaeresis), and spells out
+  // compatibility forms ("ﬁ" is "fi", a full-width "Ａ" is "A"); then the marks are dropped.
+  for (const c of (name ?? "").normalize("NFKD").toLowerCase().replace(FOLDED, (l) => FOLD[l]!)) {
+    if (out.length > HANDLE_MAX) break;
+    if (MARK.test(c)) continue;
+    if (KEPT.test(c) && (out || c !== "_")) out += c;
+    else if (out && !out.endsWith("-")) out += "-";
+  }
+  out = out.slice(0, HANDLE_MAX);
+  let end = out.length;
+  while (end > 0 && (out[end - 1] === "-" || out[end - 1] === "_")) end--;
+  out = out.slice(0, end);
+  return isHandle(out) ? out : null;
+}

@@ -1,15 +1,16 @@
 // The rules the package applies before it asks the database anything: the handle rule and the
-// reserved words, the draft's validation, a profile's fields. These need no database: every
-// query function here is given one that fails the test if it is touched.
+// reserved words, the draft's validation, a profile's fields; and who has a claim on a handle,
+// read from pages given to it. These need no database: every query function here is given one
+// that fails the test if it is touched.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { HANDLE_MAX, HANDLE_RULE, validatePage } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { changeHandle, createPage, createUser, handleProblem, RESERVED_HANDLES, saveDraft, type Database } from "../src/index.ts";
+import { changeHandle, createPage, createUser, handleAvailability, handleProblem, heldHandle, HANDLE_HOLD_DAYS, RESERVED_HANDLES, saveDraft, type Database } from "../src/index.ts";
 import { checkDraft, DRAFT_MAX_BYTES, DRAFT_MAX_DEPTH, withHandle } from "../src/draft.ts";
-import { isReserved } from "../src/handles.ts";
+import { claimOn, HANDLE_RELEASE_DAYS, isReserved } from "../src/handles.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const PAGE_ID = "6f9619ff-8b86-4d01-b42d-00c04fc964ff";
@@ -73,6 +74,59 @@ describe("the handle rule", () => {
   });
 });
 
+describe("who has a claim on a handle", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const at = new Date("2026-06-01T12:00:00Z");
+  const ago = (days: number) => new Date(at.getTime() - days * DAY);
+  const page = (o: { id: string; handle?: string | null; previousHandle?: string | null; handleChangedAt?: Date | null; status?: string; updatedAt?: Date }) =>
+    ({ handle: null, previousHandle: null, handleChangedAt: null, status: "draft", updatedAt: at, ...o });
+  const read = (pages: ReturnType<typeof page>[]) => claimOn(pages.map((p) => ({ page: p, now: at })), "pia", (p) => p.id === "mine");
+  const FREE = { ok: true, state: "free" };
+  const TAKEN = { ok: false, reason: "taken", problems: ['handle: "pia" is taken; choose another address'] };
+
+  test("a left handle is held for HANDLE_HOLD_DAYS from the change, to the millisecond, whatever the clocks do", () => {
+    // across the change to summer time in Europe, on 29 March: still thirty days of 24 hours
+    const changed = new Date("2026-03-10T12:00:00Z");
+    const until = new Date("2026-04-09T12:00:00Z");
+    const left = { previousHandle: "pia", handleChangedAt: changed };
+    expect(heldHandle(left, changed)).toEqual({ handle: "pia", until });
+    expect(heldHandle(left, new Date(until.getTime() - 1))).toEqual({ handle: "pia", until });
+    expect(heldHandle(left, until)).toBeNull();
+    // a first address leaves nothing to hold
+    expect(heldHandle({ previousHandle: null, handleChangedAt: changed }, changed)).toBeNull();
+    expect(heldHandle({ previousHandle: "pia", handleChangedAt: null }, changed)).toBeNull();
+    // the plan's numbers (§1, §6.6)
+    expect([HANDLE_HOLD_DAYS, HANDLE_RELEASE_DAYS]).toEqual([30, 90]);
+  });
+
+  test("each kind of claim, someone else's and one's own", () => {
+    expect(read([])).toEqual({ answer: FREE });
+    // an address, and a held previous handle, are someone else's in the same words
+    expect(read([page({ id: "x", handle: "pia" })])).toEqual({ answer: TAKEN });
+    expect(read([page({ id: "x", handle: "other", previousHandle: "pia", handleChangedAt: ago(HANDLE_HOLD_DAYS - 1) })])).toEqual({ answer: TAKEN });
+    // a hold that is over is nobody's, and only a previous handle is held, not another column
+    expect(read([page({ id: "x", handle: "other", previousHandle: "pia", handleChangedAt: ago(HANDLE_HOLD_DAYS) })])).toEqual({ answer: FREE });
+    expect(read([page({ id: "mine", handle: "other", previousHandle: "elsewhere", handleChangedAt: at })])).toEqual({ answer: FREE });
+    // one's own
+    expect(read([page({ id: "mine", handle: "pia" })])).toEqual({ answer: { ok: true, state: "yours" } });
+    const changed = ago(1);
+    expect(read([page({ id: "mine", handle: "other", previousHandle: "pia", handleChangedAt: changed })])).toEqual({ answer: { ok: true, state: "held", until: new Date(changed.getTime() + HANDLE_HOLD_DAYS * DAY) } });
+    // someone else's claim wins over one's own expired one
+    expect(read([page({ id: "mine", previousHandle: "pia", handleChangedAt: ago(HANDLE_HOLD_DAYS + 1) }), page({ id: "x", handle: "pia" })])).toEqual({ answer: TAKEN });
+  });
+
+  test("an unused address is free, and is the one to release; a published one, or one touched since, is not", () => {
+    const unused = page({ id: "x", handle: "pia", updatedAt: ago(HANDLE_RELEASE_DAYS) });
+    expect(read([unused])).toEqual({ answer: FREE, release: unused });
+    expect(read([{ ...unused, updatedAt: new Date(ago(HANDLE_RELEASE_DAYS).getTime() + 1) }])).toEqual({ answer: TAKEN });
+    for (const status of ["published", "unpublished"]) expect(read([{ ...unused, status }]), status).toEqual({ answer: TAKEN });
+    // one's own is one's own however long it was left
+    expect(read([{ ...unused, id: "mine" }])).toEqual({ answer: { ok: true, state: "yours" } });
+    // and a release does not get past someone else's hold
+    expect(read([unused, page({ id: "y", handle: "other", previousHandle: "pia", handleChangedAt: at })])).toEqual({ answer: TAKEN });
+  });
+});
+
 describe("a draft is validated before the database is asked anything", () => {
   const bad = () => {
     const d = clone(PIA_PAGE) as any;
@@ -99,7 +153,7 @@ describe("a draft is validated before the database is asked anything", () => {
   });
 
   test("making a page with an invalid draft writes nothing", async () => {
-    const r = await createPage(untouchable, { userId: USER_ID, handle: "pia", draft: bad() });
+    const r = await createPage(untouchable, { userId: USER_ID, draft: bad() });
     expect(r).toEqual({ ok: false, reason: "invalid", problems: expect.arrayContaining(badProblems) });
   });
 
@@ -175,7 +229,6 @@ describe("a draft is validated before the database is asked anything", () => {
     // the page keeps that handle until it is given an address, so it has to be one a page can carry
     for (const handle of ["Not A Handle!", "", "x".repeat(HANDLE_MAX + 1)]) {
       expect(await createPage(untouchable, { userId: USER_ID, draft: { ...clone(PIA_PAGE), handle } }), handle).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
-      expect(await createPage(untouchable, { userId: USER_ID, handle: null, draft: { ...clone(PIA_PAGE), handle } }), handle).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
     }
     // what checkDraft hands back: the handle sent, when it is one
     expect(checkDraft({ ...clone(PIA_PAGE), handle: "my-wish" })).toMatchObject({ ok: true, sentHandle: "my-wish" });
@@ -188,11 +241,12 @@ describe("a draft is validated before the database is asked anything", () => {
     }
   });
 
-  test("a broken or reserved handle is refused before the database is asked", async () => {
-    expect(await createPage(untouchable, { userId: USER_ID, handle: "Pia", draft: PIA_PAGE })).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
-    expect((await createPage(untouchable, { userId: USER_ID, handle: "admin", draft: PIA_PAGE })).ok === false).toBe(true);
+  test("a broken or reserved handle is refused before the database is asked, by the write and by the live check alike", async () => {
+    expect(await changeHandle(untouchable, { pageId: PAGE_ID, userId: USER_ID, handle: "Pia" })).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
     expect(await changeHandle(untouchable, { pageId: PAGE_ID, userId: USER_ID, handle: "api" })).toEqual({ ok: false, reason: "reserved", problems: ['handle: "api" is kept for the site itself; choose another address'] });
     expect((await changeHandle(untouchable, { pageId: PAGE_ID, userId: USER_ID, handle: "-x" })).ok).toBe(false);
+    expect(await handleAvailability(untouchable, { userId: USER_ID, handle: "Pia" })).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
+    expect(await handleAvailability(untouchable, { userId: USER_ID, handle: "api" })).toEqual({ ok: false, reason: "reserved", problems: ['handle: "api" is kept for the site itself; choose another address'] });
   });
 
   test("a profile with fields that are not what the auth provider sends is refused", async () => {

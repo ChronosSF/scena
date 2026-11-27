@@ -7,16 +7,20 @@
 // The writes take the signed-in person's id as well as the page's, and touch the page only
 // when it is theirs, so a caller cannot change someone else's page by naming it.
 //
-// A page can have no address yet: a signed-in person's draft is saved before they choose one
+// A page is made with no address: a signed-in person's draft is saved before they choose one
 // (the handle picker is issue 17). Such a page keeps the handle its draft was last saved with,
 // which is no address: nothing finds the page by it, and the first address it is given is
 // written into the draft in its place. docs/adr/0007-server-autosave.md
+//
+// A page gets an address, and moves to another, through changeHandle alone, which applies the
+// rules for who has a claim on a handle (handles.ts). docs/adr/0008-handles.md
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { HANDLE_RULE, isHandle, migrate, type PageDocument } from "@scena/scene";
+import { writeAudit } from "./audit.ts";
 import type { Database } from "./client.ts";
 import { checkDraft, withHandle } from "./draft.ts";
-import { handleProblem, reservedRefusal, takenRefusal } from "./handles.ts";
+import { claimOn, handleProblem, reservedRefusal, takenRefusal, type HandleAvailability } from "./handles.ts";
 import { brokenReference, brokenUnique, isUuid, refuse, type Refusal, type Result } from "./result.ts";
 import { handlesReserved, pages } from "./schema.ts";
 
@@ -25,10 +29,11 @@ export type PageStatus = (typeof pages.$inferSelect)["status"];
 export interface Page {
   id: string;
   userId: string;
-  /** The page's address, or null until the person has chosen one (issue 17). */
+  /** The page's address, or null until the person has chosen one. */
   handle: string | null;
-  /** The handle before the last change, kept for the redirect from it (issue 17). */
+  /** The handle before the last change, held for the page for a while (heldHandle says until when). */
   previousHandle: string | null;
+  /** When the page took its address, the first or a new one. */
   handleChangedAt: Date | null;
   /**
    * The page document. Its `handle` is the page's own once the page has one; until then it is
@@ -66,28 +71,20 @@ function refusedWrite(e: unknown, handle: string | null): Refusal {
 }
 
 /**
- * Makes a person's page with its first draft: at `handle`, or with no address yet when there
- * is none. A page with no address keeps the handle its draft was sent with, which has to
- * follow the handle rule.
+ * Makes a person's page with its first draft, and no address: changeHandle gives it one. It
+ * keeps the handle its draft was sent with, which has to follow the handle rule.
  */
-export async function createPage(db: Database, input: { userId: string; handle?: string | null; draft: unknown }): Promise<Result<{ page: Page }>> {
-  const handle = input.handle ?? null;
-  if (handle !== null) {
-    const bad = handleProblem(handle);
-    if (bad) return bad;
-  }
+export async function createPage(db: Database, input: { userId: string; draft: unknown }): Promise<Result<{ page: Page }>> {
   const checked = checkDraft(input.draft);
   if (!checked.ok) return refuse("invalid", ...checked.problems);
-  const stored = handle ?? checked.sentHandle;
-  if (stored === null) return noHandle();
+  if (checked.sentHandle === null) return noHandle();
   if (!isUuid(input.userId)) return refuse("not-found", "There is no such account.");
 
   try {
-    if (handle !== null && await reservedInDatabase(db, handle)) return reservedRefusal(handle);
-    const [row] = await db.insert(pages).values({ userId: input.userId, handle, draft: withHandle(checked.draft, stored) }).returning();
+    const [row] = await db.insert(pages).values({ userId: input.userId, draft: withHandle(checked.draft, checked.sentHandle) }).returning();
     return { ok: true, page: toPage(row!) };
   } catch (e) {
-    return refusedWrite(e, handle);
+    return refusedWrite(e, null);
   }
 }
 
@@ -139,11 +136,50 @@ export async function saveDraft(db: Database, input: { pageId: string; userId: s
   });
 }
 
+// The pages that may have a claim on a handle: the one at it, and every one that left it, each
+// with the database's clock to read the rules at, the clock handle_changed_at and updated_at
+// were written with. A write names its own page as well, and locks every row found, in the
+// order of their ids.
+async function claimants(db: Pick<Database, "select">, handle: string, own?: { pageId: string; userId: string }) {
+  const query = db.select({ page: pages, now: sql`now()`.mapWith(pages.updatedAt) }).from(pages)
+    .where(or(eq(pages.handle, handle), eq(pages.previousHandle, handle), own && and(eq(pages.id, own.pageId), eq(pages.userId, own.userId))))
+    .orderBy(pages.id);
+  return own ? query.for("update") : query;
+}
+
 /**
- * Moves the person's page to a new handle, or gives a page with no address its first. The old
- * one is kept in previousHandle (null for a first address) and the time in handleChangedAt; the
- * draft takes the new handle, which counts as a change of the draft. A handle that is already
- * the page's changes nothing.
+ * Whether the person may take `handle` as their page's address, for the handle picker's live
+ * check; HandleAvailability lists the answers. It writes and locks nothing, and it is advice,
+ * never a promise: changeHandle checks all of it again in its own transaction.
+ */
+export async function handleAvailability(db: Database, input: { userId: string; handle: string }): Promise<HandleAvailability> {
+  const bad = handleProblem(input.handle);
+  if (bad) return bad;
+  const { answer } = claimOn(await claimants(db, input.handle), input.handle, (page) => page.userId === input.userId);
+  // In the order changeHandle reads them: the page's own address is its own, even if the word
+  // was added to the reserved table since; anything else in the table is refused, a handle the
+  // page holds included, since going back to it would take a reserved word anew.
+  if (answer.ok && answer.state === "yours") return answer;
+  if (await reservedInDatabase(db, input.handle)) return reservedRefusal(input.handle);
+  return answer;
+}
+
+// The first of the two numbers that name a handle's lock (the second is the handle's hash).
+// Advisory locks named by one number are shared by everything in the database, Supabase Auth
+// included, so a handle's hash could be someone else's lock; Postgres keeps locks named by two
+// numbers apart from those, and this first number keeps the handles' apart from any others.
+const HANDLE_LOCKS = 0x68616e64; // "hand"
+
+/**
+ * Gives the person's page its first address, or moves it to another. A first address is not a
+ * change: it leaves no previous handle, so nothing is held and nothing redirects. A change keeps
+ * the old handle in previousHandle, held for the page (heldHandle). handleChangedAt is when the
+ * page took the address, in both cases. The draft takes the new handle, which counts as a change
+ * of the draft. A handle that is already the page's changes nothing.
+ *
+ * The handle may be one the page still holds, so its owner can go back to it, or another page's
+ * unused address (claimOn), which that page then loses in the same transaction. The audit log
+ * gets an entry for each, in that transaction too.
  */
 export async function changeHandle(db: Database, input: { pageId: string; userId: string; handle: string }): Promise<Result<{ page: Page }>> {
   const bad = handleProblem(input.handle);
@@ -152,11 +188,28 @@ export async function changeHandle(db: Database, input: { pageId: string; userId
 
   try {
     return await db.transaction(async (tx) => {
-      const [current] = await tx.select().from(pages)
-        .where(and(eq(pages.id, input.pageId), eq(pages.userId, input.userId))).for("update");
+      // Claims of one handle take turns, so this one reads who has it after any other claim of
+      // it has ended. Without that, another page could take the handle and leave it again
+      // between this read and this write, and this page would take a handle that one holds.
+      // Nothing is held yet while this waits, which is why it comes first.
+      await tx.execute(sql`select pg_advisory_xact_lock(${HANDLE_LOCKS}, hashtext(${input.handle}))`);
+      // Every row this may write is locked by this one statement, in the order of the ids: the
+      // page, the page at the handle, and the pages that left it. No claim holds another page's
+      // row while it waits for its own, so two claims that each need the other's page wait in
+      // turn and cannot deadlock. A page that is leaving the handle meanwhile is waited for, and
+      // read as it is after that: holding the handle it left.
+      const found = await claimants(tx, input.handle, input);
+      const current = found.find(({ page }) => page.id === input.pageId && page.userId === input.userId)?.page;
       if (!current) return notFound();
       if (current.handle === input.handle) return { ok: true, page: toPage(current) };
       if (await reservedInDatabase(tx, input.handle)) return reservedRefusal(input.handle);
+      const { answer, release } = claimOn(found, input.handle, (page) => page.id === current.id);
+      if (!answer.ok) return answer;
+      if (release) {
+        // back to no address, as before it had one; its draft keeps the handle as text, which is no address
+        await tx.update(pages).set({ handle: null, previousHandle: null, handleChangedAt: null }).where(eq(pages.id, release.id));
+        await writeAudit(tx, { userId: input.userId, action: "handle.release", target: `page:${release.id}`, meta: { handle: input.handle } });
+      }
       // The stored draft was checked when it was written, and only its handle changes here. It
       // is not checked again: a rule that has tightened since (a ready-made scene that dropped a
       // palette) would otherwise hold up a change of address that has nothing to do with it.
@@ -164,6 +217,9 @@ export async function changeHandle(db: Database, input: { pageId: string; userId
         // the database's clock, as for updated_at, which this update stamps too
         .set({ handle: input.handle, previousHandle: current.handle, handleChangedAt: sql`now()`, draft: withHandle(current.draft, input.handle), draftRevision: current.draftRevision + 1 })
         .where(eq(pages.id, input.pageId)).returning();
+      await writeAudit(tx, current.handle === null
+        ? { userId: input.userId, action: "handle.choose", target: `page:${current.id}`, meta: { to: input.handle } }
+        : { userId: input.userId, action: "handle.change", target: `page:${current.id}`, meta: { from: current.handle, to: input.handle } });
       return { ok: true, page: toPage(row!) };
     });
   } catch (e) {

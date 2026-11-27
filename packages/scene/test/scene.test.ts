@@ -1,7 +1,7 @@
 // Scene model: validation, migration and the budget lint, against the built-in desk.
 import { describe, expect, test } from "vitest";
 import { BACKGROUND_SAMPLES, DESK_SCENE, PIA_PAGE, framesDemo } from "@scena/scenes";
-import { PAGE_IDS, contrast, documentKind, fragmentProblem, isSafeId, lintPage, lintScene, migrate, parseColor, safeHref, safeId, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
+import { HANDLE_MAX, PAGE_IDS, contrast, documentKind, fragmentProblem, isHandle, isSafeId, lintPage, lintScene, migrate, parseColor, safeHref, safeId, suggestHandle, validatePage, validateScene, type SceneDocument } from "../src/index.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const desk = DESK_SCENE, pia = PIA_PAGE;
@@ -297,6 +297,35 @@ describe("helpers", () => {
     const mailto = timed(() => safeHref("mailto:" + "!@".repeat(MB / 2) + "<"));
     expect(mailto.out).toBe("");
     expect(mailto.ms).toBeLessThan(LIMIT_MS);
+  });
+
+  test("a handle suggested from a name", () => {
+    for (const [name, handle] of [
+      ["Zoë Müller", "zoe-muller"], ["Pia Morandi", "pia-morandi"], ["  Pia  ", "pia"], ["Ångström Café", "angstrom-cafe"],
+      ["İlkay Ölmez", "ilkay-olmez"], ["Studio 54!", "studio-54"], ["Pia - Morandi", "pia-morandi"], ["pia_m", "pia_m"],
+      ["__Pia__", "pia"], ["-Pia-", "pia"], ["Ｐｉａ", "pia"], ["ﬁne lines", "fine-lines"], ["Zoë", "zoe"],
+      ["Pia 🖍 draws", "pia-draws"], ["Admin", "admin"], // the reserved words are the database package's to refuse
+      // letters NFKD leaves whole, in either case
+      ["Søren Kjær", "soren-kjaer"], ["Łukasz Żak", "lukasz-zak"], ["Groß", "gross"], ["STRAẞE", "strasse"], ["Işık", "isik"],
+      ["Œuvre Đorđe", "oeuvre-dorde"], ["Þórður", "thordur"], ["ÆRØ", "aero"],
+      ["x".repeat(HANDLE_MAX + 10), "x".repeat(HANDLE_MAX)],
+      // a cut that ends on a separator does not leave it
+      [`${"a".repeat(HANDLE_MAX - 1)} b`, "a".repeat(HANDLE_MAX - 1)], [`${"a".repeat(HANDLE_MAX - 1)}_b`, "a".repeat(HANDLE_MAX - 1)],
+      // nothing a handle can be made of, or only one character of it
+      ["", null], [null, null], ["A", null], ["李小龍", null], ["🖍", null], ["- _ -", null], ["Ž", null],
+    ] as const) {
+      expect(suggestHandle(name), JSON.stringify(name)).toBe(handle);
+    }
+    // whatever it returns is a handle
+    const odd = ["ǅungla", "Ⅻ chapters", "½ & ½", "a\u0000b", "half \uD83D", "pia...", "a_ _b", "ß", "Ꭰ", "́́pia"];
+    for (const name of odd) {
+      const h = suggestHandle(name);
+      if (h !== null) expect(isHandle(h), `${JSON.stringify(name)} gave ${h}`).toBe(true);
+    }
+    // linear on anything a person can paste, separators and marks included
+    const MB = 1_000_000, start = Date.now();
+    for (const name of [" -".repeat(MB / 2), "é".repeat(MB / 2), `${"_".repeat(MB)}a`, "Zoë ".repeat(MB / 4), "ß".repeat(MB)]) suggestHandle(name);
+    expect(Date.now() - start).toBeLessThan(3000);
   });
 });
 

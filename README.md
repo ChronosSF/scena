@@ -41,9 +41,11 @@ tracked as [milestones and issues on GitHub](https://github.com/ChronosSF/scena/
 - `@scena/db` is the database, for server code only: Postgres 17 through Drizzle ORM and
   postgres.js, with migrations written by drizzle-kit from the schema. It holds users, pages,
   reserved handles and the audit log. A page's draft is stored as the PageDocument it is, and
-  only once the scene package's validators have passed it. The web app makes a person's profile
-  with it at their first sign-in, and keeps a signed-in person's draft in it through a server
-  action. Locally it runs in Docker (below).
+  only once the scene package's validators have passed it. It has the rules for a page's
+  address: who may take one, a left address held for 30 days, an address on a page never
+  published released after 90, and the live check the handle picker will ask. The web app makes
+  a person's profile with it at their first sign-in, and keeps a signed-in person's draft in it
+  through a server action. Locally it runs in Docker (below).
 - Sign-in is Supabase Auth, used from the web app's server alone through `@supabase/ssr`: the
   session is in an `HttpOnly` cookie of the app's own host, renewed by `proxy.ts`, and no
   Supabase client or key reaches a browser. It is built and checked against Supabase's local
@@ -55,6 +57,7 @@ How the studio came to run in two apps: [docs/adr/0004-one-studio-two-apps.md](d
 The database package, its schema and why: [docs/adr/0005-database-package.md](docs/adr/0005-database-package.md).
 Sign-in, the session cookie, the local stack, and what a hosted Supabase project will need: [docs/adr/0006-sign-in.md](docs/adr/0006-sign-in.md).
 Saving the draft to the account, two tabs, and which draft opens: [docs/adr/0007-server-autosave.md](docs/adr/0007-server-autosave.md).
+Who may take a page's address, the 30-day hold and the 90-day release: [docs/adr/0008-handles.md](docs/adr/0008-handles.md).
 
 ## Commands
 
@@ -68,7 +71,7 @@ pnpm build        # both apps: pnpm build:studio, then pnpm build:web
 pnpm build:studio # apps/studio/dist/index.html (the studio), dist/demo-desk.html and dist/demo-frames.html, all self-contained
 pnpm build:web    # the web app's production build, in apps/web/.next
 pnpm preview      # serve the single-file build at http://localhost:4173
-pnpm test         # 401 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, sign-in's rules (the way back, the session cookie, the configuration, what a person is told, the profile, the renewal of a session, what a browser is given, the local stack's settings), saving the draft to the account (what the server decides, which draft opens, the autosave in the browser, the studio's part of it), and the database package (25 of them need a database, below)
+pnpm test         # 420 tests: renderer snapshots and parity, scene model, lint and safety checks, the list of ready-made scenes, studio editing operations, the scene picker, the links-only mode, the check on messages from the preview, saved work, file sniffing, both apps' policies, frames, board and lettering, sign-in's rules (the way back, the session cookie, the configuration, what a person is told, the profile, the renewal of a session, what a browser is given, the local stack's settings), saving the draft to the account (what the server decides, which draft opens, the autosave in the browser, the studio's part of it), and the database package (40 of them need a database, below)
 pnpm typecheck    # every package, both apps, the page runtime, the scripts and the tools
 pnpm check        # typecheck + db:check + test + build
 
@@ -89,10 +92,10 @@ docker compose down -v        # remove it and its data, for a clean start
 
 Everything reads the database's address from `DATABASE_URL`; `.env.example` has the local one.
 Set it in your shell (`export DATABASE_URL=…`, or `$env:DATABASE_URL = "…"` in PowerShell). With
-it set, `pnpm test` and `pnpm check` also run the 25 database tests, each run in a database of
+it set, `pnpm test` and `pnpm check` also run the 40 database tests, each run in a database of
 its own that it makes, migrates and removes, so the tests neither read nor leave anything in
 yours. A run that is cut short leaves its database behind; the next run removes it once it is
-an hour old. Without `DATABASE_URL`, Vitest reports those 25 as skipped. CI runs them against a
+an hour old. Without `DATABASE_URL`, Vitest reports those 40 as skipped. CI runs them against a
 Postgres 17 service.
 
 ```sh
@@ -180,8 +183,8 @@ packages/
   studio/      the studio as a React component, with its store, stylesheet and tests;
                src/ingest/ has the SVG sanitiser and the PNG pipeline
   db/          the database (server only): src/schema.ts (the tables), the typed queries, the
-               reserved handles; migrations/ (written by drizzle-kit, checked in); scripts/
-               for db:migrate and db:check
+               reserved handles and the rules for an address; migrations/ (written by
+               drizzle-kit, checked in); scripts/ for db:migrate and db:check
 apps/
   studio/      the studio as one HTML file (Vite): the entry point, the build and its policy
   web/         the web app (Next.js): the studio at /studio, sign-in (/sign-in, /auth/*, /admin),

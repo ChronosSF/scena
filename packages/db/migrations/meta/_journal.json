@@ -36,6 +36,13 @@
       "when": 1795613474729,
       "tag": "0004_draft_revision",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795770489346,
+      "tag": "0005_previous_handle",
+      "breakpoints": true
     }
   ]
 }

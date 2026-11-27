@@ -5,12 +5,12 @@
 import { randomUUID } from "node:crypto";
 import { readdirSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { HANDLE_RULE, LIMITS, isHandle, validatePage, type PageDocument } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
-import { changeHandle, createPage, createUser, getPageByHandle, getPageByUser, getUser, saveDraft, writeAudit, RESERVED_HANDLES, type Database, type NewUser, type Page } from "../src/index.ts";
+import { changeHandle, createPage, createUser, getPageByHandle, getPageByUser, getUser, handleAvailability, heldHandle, saveDraft, writeAudit, HANDLE_HOLD_DAYS, RESERVED_HANDLES, type Database, type NewUser, type Page, type PageStatus, type User } from "../src/index.ts";
 import { checkDraft, type CheckedDraft } from "../src/draft.ts";
-import { isReserved } from "../src/handles.ts";
+import { HANDLE_RELEASE_DAYS, isReserved } from "../src/handles.ts";
 import { migrate, MIGRATIONS_FOLDER } from "../src/migrate.ts";
 import { brokenUnique, serverError } from "../src/result.ts";
 import { auditLog, handlesReserved, pages, users } from "../src/schema.ts";
@@ -38,9 +38,17 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
     if (!r.ok) throw new Error(r.problems.join("; "));
     return r.user;
   }
-  async function pageFor(handle: string) {
+  /** A person's page with no address yet, whose draft carries `wish`. */
+  async function draftPage(wish = "my-wish") {
     const user = await person();
-    const r = await createPage(db, { userId: user.id, handle, draft: draftAt(handle) });
+    const r = await createPage(db, { userId: user.id, draft: draftAt(wish) });
+    if (!r.ok) throw new Error(r.problems.join("; "));
+    return { user, page: r.page };
+  }
+  /** A person's page at `handle`, given as a page gets one. */
+  async function pageFor(handle: string) {
+    const { user, page } = await draftPage(handle);
+    const r = await changeHandle(db, { pageId: page.id, userId: user.id, handle });
     if (!r.ok) throw new Error(r.problems.join("; "));
     return { user, page: r.page };
   }
@@ -53,6 +61,27 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
   /** Why the server refused a write, or "" when it did not. */
   async function refusal(write: PromiseLike<unknown>): Promise<string> {
     try { await write; return ""; } catch (e) { return serverError(e)?.message ?? String(e); }
+  }
+  /**
+   * Holds these pages' rows in a transaction of its own, as a write in progress does, until
+   * `release` is called; then does `then` in it, and ends it. On a connection of its own.
+   */
+  async function holding(ids: string[], then?: (tx: Parameters<Parameters<Database["transaction"]>[0]>[0]) => PromiseLike<unknown>) {
+    let open = () => {}, held = () => {};
+    const gate = new Promise<void>((r) => { open = r; }), locked = new Promise<void>((r) => { held = r; });
+    const done = db.transaction(async (tx) => {
+      await tx.select({ id: pages.id }).from(pages).where(inArray(pages.id, ids)).for("update");
+      held();
+      await gate;
+      await then?.(tx);
+    });
+    await locked;
+    return { release: async () => { open(); await done; } };
+  }
+  /** Waits until `n` statements wait for a lock, asking Postgres rather than pausing. */
+  async function waiting(n: number) {
+    const count = async () => (await rows<{ n: number }>(sql`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`))[0]!.n;
+    for (let i = 0; i < 200 && (await count()) < n; i++) await new Promise((r) => setTimeout(r, 25));
   }
 
   beforeAll(async () => {
@@ -223,22 +252,20 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
 
       // nor is a page made with one
       const other = await person();
-      expect((await createPage(db, { userId: other.id, handle: "refused-page", draft: bad })).ok).toBe(false);
+      expect((await createPage(db, { userId: other.id, draft: bad })).ok).toBe(false);
       expect(await getPageByUser(db, other.id)).toBeNull();
-      expect(await getPageByHandle(db, "refused-page")).toBeNull();
     });
 
     test("the stored draft carries the page's own handle, whatever handle it was sent with", async () => {
       const { user, page } = await pageFor("own-handle");
       const saved = await saveDraft(db, { pageId: page.id, userId: user.id, draft: draftAt("someone-else") });
       expect(saved.ok && saved.page.draft.handle).toBe("own-handle");
-      const made = await createPage(db, { userId: (await person()).id, handle: "fresh-handle", draft: draftAt("your-name") });
-      expect(made.ok && made.page.draft.handle).toBe("fresh-handle");
     });
 
     test("every change of the draft counts a revision, and a save made from an older one is written and says so", async () => {
+      // made (1), and given its address (2)
       const { user, page } = await pageFor("revisions");
-      expect(page.draftRevision).toBe(1);
+      expect(page.draftRevision).toBe(2);
       const save = (title: string, base?: number | null) => {
         const d = draftAt("revisions");
         d.links.shop!.title = title;
@@ -247,50 +274,39 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       const revision = async () => (await getPageByUser(db, user.id))!.draftRevision;
 
       // a save from the revision the page has: nothing replaced
-      const first = await save("From one", 1);
-      expect(first.ok && [first.page.draftRevision, first.replaced]).toEqual([2, false]);
-      // another tab, which last had revision 1, saves after it: written all the same (the last
+      const first = await save("From one", 2);
+      expect(first.ok && [first.page.draftRevision, first.replaced]).toEqual([3, false]);
+      // another tab, which last had revision 2, saves after it: written all the same (the last
       // write wins), and the answer says it replaced a version that tab never saw
-      const stale = await save("From an older tab", 1);
-      expect(stale.ok && [stale.page.draftRevision, stale.replaced, stale.page.draft.links.shop!.title]).toEqual([3, true, "From an older tab"]);
+      const stale = await save("From an older tab", 2);
+      expect(stale.ok && [stale.page.draftRevision, stale.replaced, stale.page.draft.links.shop!.title]).toEqual([4, true, "From an older tab"]);
       // a caller that has seen no version of the page replaces one too
       const unseen = await save("From a tab that saw none", null);
-      expect(unseen.ok && [unseen.page.draftRevision, unseen.replaced]).toEqual([4, true]);
+      expect(unseen.ok && [unseen.page.draftRevision, unseen.replaced]).toEqual([5, true]);
       // without a base nothing is compared
       const plain = await save("Without a base");
-      expect(plain.ok && [plain.page.draftRevision, plain.replaced]).toEqual([5, false]);
+      expect(plain.ok && [plain.page.draftRevision, plain.replaced]).toEqual([6, false]);
 
       // Two saves from the same revision at once. Another save holds the row; this one waits for
       // it, and then counts from what that one wrote: they take one revision each, and this one
-      // replaced the other's. Waited for by asking Postgres whether this one is waiting, not by
-      // a pause.
-      let release = () => {}, held = () => {};
-      const gate = new Promise<void>((r) => { release = r; }), holding = new Promise<void>((r) => { held = r; });
-      const other = db.transaction(async (tx) => {
-        await tx.select({ id: pages.id }).from(pages).where(eq(pages.id, page.id)).for("update");
-        held();
-        await gate;
-        await tx.update(pages).set({ draftRevision: 6 }).where(eq(pages.id, page.id));
-      });
-      await holding;
-      const mine = save("At once", 5);
-      const waiting = async () => (await rows<{ n: number }>(sql`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`))[0]!.n;
-      for (let i = 0; i < 200 && (await waiting()) === 0; i++) await new Promise((r) => setTimeout(r, 25));
-      release();
-      await other;
+      // replaced the other's.
+      const other = await holding([page.id], (tx) => tx.update(pages).set({ draftRevision: 7 }).where(eq(pages.id, page.id)));
+      const mine = save("At once", 6);
+      await waiting(1);
+      await other.release();
       const after = await mine;
-      expect(after.ok && [after.page.draftRevision, after.replaced]).toEqual([7, true]);
+      expect(after.ok && [after.page.draftRevision, after.replaced]).toEqual([8, true]);
 
       // a refused save counts nothing
       const bad = draftAt("revisions") as any;
       bad.links.shop.url = "javascript:alert(1)";
-      expect((await saveDraft(db, { pageId: page.id, userId: user.id, draft: bad, base: 7 })).ok).toBe(false);
-      expect(await revision()).toBe(7);
+      expect((await saveDraft(db, { pageId: page.id, userId: user.id, draft: bad, base: 8 })).ok).toBe(false);
+      expect(await revision()).toBe(8);
       // nor does a change of address to the address it has; a new one does
       expect((await changeHandle(db, { pageId: page.id, userId: user.id, handle: "revisions" })).ok).toBe(true);
-      expect(await revision()).toBe(7);
+      expect(await revision()).toBe(8);
       const moved = await changeHandle(db, { pageId: page.id, userId: user.id, handle: "revisions-moved" });
-      expect(moved.ok && moved.page.draftRevision).toBe(8);
+      expect(moved.ok && moved.page.draftRevision).toBe(9);
 
       const [column] = await rows<{ type: string; nullable: string; fallback: string }>(
         sql`select data_type as type, is_nullable as nullable, column_default as fallback from information_schema.columns where table_schema = 'public' and table_name = 'pages' and column_name = 'draft_revision'`);
@@ -314,7 +330,7 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
 
       // any number of pages may be without an address, a wish taken by another page included
       const other = await person();
-      expect((await createPage(db, { userId: other.id, handle: null, draft: draftAt("another-wish") })).ok).toBe(true);
+      expect((await createPage(db, { userId: other.id, draft: draftAt("another-wish") })).ok).toBe(true);
       const { page: addressed } = await pageFor("wished-for");
       expect((await createPage(db, { userId: (await person()).id, draft: draftAt("wished-for") })).ok).toBe(true);
       expect((await getPageByHandle(db, "wished-for"))!.id).toBe(addressed.id);
@@ -346,8 +362,9 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
   describe("handles", () => {
     test("a taken handle is refused in any case, by the database itself", async () => {
       const { page } = await pageFor("casey");
+      const wants = await draftPage("casey");
+      expect(await changeHandle(db, { pageId: wants.page.id, userId: wants.user.id, handle: "casey" })).toEqual({ ok: false, reason: "taken", problems: ['handle: "casey" is taken; choose another address'] });
       const other = await person();
-      expect(await createPage(db, { userId: other.id, handle: "casey", draft: draftAt("casey") })).toEqual({ ok: false, reason: "taken", problems: ['handle: "casey" is taken; choose another address'] });
       // Around the package: the same handle again is refused by the unique column, and its
       // capitals by the handle rule the database holds, so no second spelling of it can exist.
       const again = await db.insert(pages).values({ userId: other.id, handle: "casey", draft: checked() }).then(() => undefined, (e: unknown) => e);
@@ -358,15 +375,16 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
     });
 
     test("a reserved handle is refused, from the list here and from the database's own rows", async () => {
-      const user = await person();
-      expect(await createPage(db, { userId: user.id, handle: "admin", draft: draftAt("admin") })).toEqual({ ok: false, reason: "reserved", problems: ['handle: "admin" is kept for the site itself; choose another address'] });
+      // the word typed into a draft is no address, so it may be one
+      const { user, page: unaddressed } = await draftPage("admin");
+      expect(await changeHandle(db, { pageId: unaddressed.id, userId: user.id, handle: "admin" })).toEqual({ ok: false, reason: "reserved", problems: ['handle: "admin" is kept for the site itself; choose another address'] });
 
       // a word that is only in the table, as one from a list kept outside the repository would be,
       // and written there in capitals
       expect(isReserved("kept-word")).toBe(false);
       await db.insert(handlesReserved).values({ handle: "Kept-Word" });
-      expect(await createPage(db, { userId: user.id, handle: "kept-word", draft: draftAt("kept-word") })).toEqual({ ok: false, reason: "reserved", problems: ['handle: "kept-word" is kept for the site itself; choose another address'] });
-      expect(await getPageByUser(db, user.id)).toBeNull();
+      expect(await changeHandle(db, { pageId: unaddressed.id, userId: user.id, handle: "kept-word" })).toEqual({ ok: false, reason: "reserved", problems: ['handle: "kept-word" is kept for the site itself; choose another address'] });
+      expect((await getPageByUser(db, user.id))!.handle).toBeNull();
 
       const { user: owner, page } = await pageFor("wants-kept-word");
       expect((await changeHandle(db, { pageId: page.id, userId: owner.id, handle: "kept-word" })).ok).toBe(false);
@@ -376,20 +394,20 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
 
     test("a second page for the same account is refused", async () => {
       const { user } = await pageFor("first-page");
-      expect(await createPage(db, { userId: user.id, handle: "second-page", draft: draftAt("second-page") })).toEqual({ ok: false, reason: "exists", problems: ["This account already has a page."] });
-      expect(await getPageByHandle(db, "second-page")).toBeNull();
+      expect(await createPage(db, { userId: user.id, draft: draftAt("second-page") })).toEqual({ ok: false, reason: "exists", problems: ["This account already has a page."] });
       const write = db.insert(pages).values({ userId: user.id, handle: "third-page", draft: checked() });
       expect(brokenUnique(await write.then(() => undefined, (e: unknown) => e))).toBe("pages_user_id_unique");
     });
 
     test("a page for an account that does not exist is refused", async () => {
-      expect(await createPage(db, { userId: randomUUID(), handle: "nobodys", draft: draftAt("nobodys") })).toEqual({ ok: false, reason: "not-found", problems: ["There is no such account."] });
+      expect(await createPage(db, { userId: randomUUID(), draft: draftAt("nobodys") })).toEqual({ ok: false, reason: "not-found", problems: ["There is no such account."] });
     });
 
     test("a handle change keeps the old handle and the time of the change", async () => {
+      // a first address leaves no previous handle, and handleChangedAt says when the page took it
       const { user, page } = await pageFor("before-move");
       expect(page.previousHandle).toBeNull();
-      expect(page.handleChangedAt).toBeNull();
+      expect(page.handleChangedAt).toBeInstanceOf(Date);
 
       const from = Date.now();
       const moved = await changeHandle(db, { pageId: page.id, userId: user.id, handle: "after-move" });
@@ -445,6 +463,309 @@ describe.skipIf(!DATABASE_URL)("the database (needs DATABASE_URL)", () => {
       // and a change made around the package is refused the same way
       const { page } = await pageFor("kept-lowercase");
       expect(await refusal(db.update(pages).set({ handle: "Kept-Lowercase" }).where(eq(pages.id, page.id)))).toContain("pages_handle_rule");
+    });
+  });
+
+  describe("who may take an address (docs/adr/0008-handles.md)", () => {
+    type Someone = { user: User; page: Page };
+    const MINUTE = 1 / (24 * 60);
+    // A moment so many days before the database's now, which the rules are read against; in
+    // seconds, so that a change of the clocks in between does not move it.
+    const daysAgo = (days: number) => sql`now() - make_interval(secs => ${days * 86_400})`;
+    /** As time passing would leave a page: changed and touched so many days ago, around the package. */
+    const age = (who: Someone, days: { changed?: number; touched: number; status?: PageStatus }) => db.update(pages).set({
+      ...(days.changed !== undefined ? { handleChangedAt: daysAgo(days.changed) } : {}),
+      updatedAt: daysAgo(days.touched),
+      ...(days.status ? { status: days.status } : {}),
+    }).where(eq(pages.id, who.page.id));
+    const move = (who: Someone, handle: string) => changeHandle(db, { pageId: who.page.id, userId: who.user.id, handle });
+    const ask = (who: { user: User }, handle: string) => handleAvailability(db, { userId: who.user.id, handle });
+    const now = async (who: Someone) => (await getPageByUser(db, who.user.id))!;
+    const entries = (who: Someone) => db.select({ action: auditLog.action, userId: auditLog.userId, meta: auditLog.meta }).from(auditLog)
+      .where(eq(auditLog.target, `page:${who.page.id}`)).orderBy(auditLog.id);
+    const FREE = { ok: true, state: "free" };
+    const taken = (handle: string) => ({ ok: false, reason: "taken", problems: [`handle: "${handle}" is taken; choose another address`] });
+
+    test("a first address is not a change: it leaves no previous handle and holds nothing, and the audit log says which it was", async () => {
+      const someone = await draftPage("first-wish");
+      const given = await move(someone, "first-given");
+      expect(given.ok && [given.page.handle, given.page.previousHandle, heldHandle(given.page, new Date())]).toEqual(["first-given", null, null]);
+      expect(given.ok && given.page.handleChangedAt).toBeInstanceOf(Date);
+      expect((await move(someone, "second-given")).ok).toBe(true);
+      expect(await entries(someone)).toEqual([
+        { action: "handle.choose", userId: someone.user.id, meta: { to: "first-given" } },
+        { action: "handle.change", userId: someone.user.id, meta: { from: "first-given", to: "second-given" } },
+      ]);
+      // the same handle again, a reserved one and a taken one write nothing
+      await move(someone, "second-given");
+      await move(someone, "admin");
+      await pageFor("first-elsewhere");
+      expect(await move(someone, "first-elsewhere")).toEqual(taken("first-elsewhere"));
+      expect(await entries(someone)).toHaveLength(2);
+    });
+
+    test("a left address is held for its page: nobody else can take it, and its owner can go back to it, which holds the other", async () => {
+      const pia = await pageFor("held-a");
+      const moved = await move(pia, "held-b");
+      if (!moved.ok) throw new Error(moved.problems.join("; "));
+      const other = await draftPage();
+      expect(await move(other, "held-a")).toEqual(taken("held-a"));
+      // someone else's held handle is answered exactly as a taken one, so nothing says the page moved
+      expect(await ask(other, "held-a")).toEqual(taken("held-a"));
+      expect(await ask(other, "held-b")).toEqual(taken("held-b"));
+      // its owner is told it is theirs until HANDLE_HOLD_DAYS after the change
+      const until = new Date(moved.page.handleChangedAt!.getTime() + HANDLE_HOLD_DAYS * 86_400_000);
+      expect(await ask(pia, "held-a")).toEqual({ ok: true, state: "held", until });
+      expect(await ask(pia, "held-b")).toEqual({ ok: true, state: "yours" });
+      expect(heldHandle(moved.page, new Date())).toEqual({ handle: "held-a", until });
+
+      const back = await move(pia, "held-a");
+      expect(back.ok && [back.page.handle, back.page.previousHandle]).toEqual(["held-a", "held-b"]);
+      expect(await move(other, "held-b")).toEqual(taken("held-b"));
+    });
+
+    test("only the latest previous handle is held: a newer change frees the one before at once", async () => {
+      const pia = await pageFor("latest-a");
+      await move(pia, "latest-b");
+      await move(pia, "latest-c");
+      const other = await draftPage();
+      expect(await ask(other, "latest-a")).toEqual(FREE);
+      expect((await move(other, "latest-a")).ok).toBe(true);
+      expect(await ask(other, "latest-b")).toEqual(taken("latest-b"));
+    });
+
+    test("after the hold the left address is anyone's, whatever previous_handle still says", async () => {
+      const pia = await pageFor("expiry-a");
+      await move(pia, "expiry-b");
+      const other = await draftPage();
+      await age(pia, { changed: HANDLE_HOLD_DAYS - MINUTE, touched: 0 });
+      expect(await ask(other, "expiry-a")).toEqual(taken("expiry-a"));
+      expect(await move(other, "expiry-a")).toEqual(taken("expiry-a"));
+
+      await age(pia, { changed: HANDLE_HOLD_DAYS, touched: 0 });
+      // its owner is no longer told it is held for them
+      expect(await ask(pia, "expiry-a")).toEqual(FREE);
+      expect(await ask(other, "expiry-a")).toEqual(FREE);
+      expect((await move(other, "expiry-a")).ok).toBe(true);
+      expect((await now(pia)).previousHandle).toBe("expiry-a");
+      expect(await ask(pia, "expiry-a")).toEqual(taken("expiry-a"));
+      expect(await move(pia, "expiry-a")).toEqual(taken("expiry-a"));
+    });
+
+    test("an address on a page never published and left alone is released to the first who claims it", async () => {
+      const idle = await pageFor("idle-page");
+      const claimant = await draftPage();
+      await age(idle, { changed: HANDLE_RELEASE_DAYS, touched: HANDLE_RELEASE_DAYS - MINUTE });
+      expect(await ask(claimant, "idle-page")).toEqual(taken("idle-page"));
+      expect(await move(claimant, "idle-page")).toEqual(taken("idle-page"));
+
+      await age(idle, { changed: HANDLE_RELEASE_DAYS, touched: HANDLE_RELEASE_DAYS });
+      expect(await ask(claimant, "idle-page")).toEqual(FREE);
+      // its owner is still told it is theirs: only a claim takes it
+      expect(await ask(idle, "idle-page")).toEqual({ ok: true, state: "yours" });
+      const before = await now(idle);
+      const took = await move(claimant, "idle-page");
+      expect(took.ok && [took.page.handle, took.page.previousHandle]).toEqual(["idle-page", null]);
+      expect((await getPageByHandle(db, "idle-page"))!.id).toBe(claimant.page.id);
+      // the page goes back to no address, and nothing of it points at the handle but its draft's text
+      const left = await now(idle);
+      expect([left.handle, left.previousHandle, left.handleChangedAt, left.draft.handle, left.draftRevision]).toEqual([null, null, null, "idle-page", before.draftRevision]);
+      expect(await entries(idle)).toEqual([
+        { action: "handle.choose", userId: idle.user.id, meta: { to: "idle-page" } },
+        { action: "handle.release", userId: claimant.user.id, meta: { handle: "idle-page" } },
+      ]);
+      expect(await entries(claimant)).toEqual([{ action: "handle.choose", userId: claimant.user.id, meta: { to: "idle-page" } }]);
+
+      // and it goes on as any page with no address: it saves, and its next address is a first one
+      expect(await ask(idle, "idle-page")).toEqual(taken("idle-page"));
+      const saved = await saveDraft(db, { pageId: idle.page.id, userId: idle.user.id, draft: draftAt("idle-page") });
+      expect(saved.ok && [saved.page.handle, saved.page.draft.handle]).toEqual([null, "idle-page"]);
+      const again = await move(idle, "idle-page-again");
+      expect(again.ok && again.page.previousHandle).toBeNull();
+    });
+
+    test("a page that was ever published keeps its address however long it is left alone", async () => {
+      for (const status of ["published", "unpublished"] as const) {
+        const kept = await pageFor(`kept-${status}`);
+        await age(kept, { changed: 3650, touched: 3650, status });
+        const claimant = await draftPage();
+        expect(await ask(claimant, `kept-${status}`)).toEqual(taken(`kept-${status}`));
+        expect(await move(claimant, `kept-${status}`)).toEqual(taken(`kept-${status}`));
+        expect((await now(kept)).handle).toBe(`kept-${status}`);
+      }
+    });
+
+    test("the live check has an answer for each case, and writes nothing", async () => {
+      const pia = await pageFor("ask-mine");
+      const someone = await draftPage();
+      const audited = await db.$count(auditLog);
+      expect(await ask(pia, "ask-mine")).toEqual({ ok: true, state: "yours" });
+      expect(await ask(someone, "ask-mine")).toEqual(taken("ask-mine"));
+      expect(await ask(someone, "ask-free")).toEqual(FREE);
+      expect(await ask(someone, "Ask-Free")).toEqual({ ok: false, reason: "invalid", problems: [`handle: ${HANDLE_RULE}`] });
+      expect(await ask(someone, "studio")).toEqual({ ok: false, reason: "reserved", problems: ['handle: "studio" is kept for the site itself; choose another address'] });
+      await db.insert(handlesReserved).values({ handle: "ask-kept" });
+      expect(await ask(someone, "ask-kept")).toEqual({ ok: false, reason: "reserved", problems: ['handle: "ask-kept" is kept for the site itself; choose another address'] });
+      // someone with no page yet is answered as anyone else
+      const newcomer = await person();
+      expect(await ask({ user: newcomer }, "ask-mine")).toEqual(taken("ask-mine"));
+      expect(await ask({ user: newcomer }, "ask-free")).toEqual(FREE);
+      expect(await now(pia)).toEqual(pia.page);
+      expect(await db.$count(auditLog)).toBe(audited);
+    });
+
+    test("a word reserved after a page has it: the check and the write agree, the address stays its own and a held handle is refused", async () => {
+      const pia = await pageFor("later-kept");
+      const left = await pageFor("later-held");
+      await move(left, "later-held-now");
+      await db.insert(handlesReserved).values([{ handle: "later-kept" }, { handle: "later-held" }]);
+      const reserved = (handle: string) => ({ ok: false, reason: "reserved", problems: [`handle: "${handle}" is kept for the site itself; choose another address`] });
+      // the page's own address: "yours" to the check, and nothing to change for the write
+      expect(await ask(pia, "later-kept")).toEqual({ ok: true, state: "yours" });
+      const same = await move(pia, "later-kept");
+      expect(same.ok && same.page.handle).toBe("later-kept");
+      // to anyone else, reserved, as it would be to a write
+      const other = await draftPage();
+      expect(await ask(other, "later-kept")).toEqual(reserved("later-kept"));
+      expect(await move(other, "later-kept")).toEqual(reserved("later-kept"));
+      // a handle the page holds: going back would take a reserved word anew, so both refuse it
+      expect(await ask(left, "later-held")).toEqual(reserved("later-held"));
+      expect(await move(left, "later-held")).toEqual(reserved("later-held"));
+    });
+
+    test("the answer is advice: the write asks again", async () => {
+      const first = await draftPage(), second = await draftPage();
+      expect(await ask(first, "advice")).toEqual(FREE);
+      expect((await move(second, "advice")).ok).toBe(true);
+      expect(await move(first, "advice")).toEqual(taken("advice"));
+    });
+
+    test("each entry in the audit log is written in the transaction of the change it records", async () => {
+      // Postgres records in each row the transaction that wrote it (xmin)
+      const sameTransaction = async (who: Someone, action: string) => (await rows<{ same: boolean }>(sql`select
+        (select xmin::text from pages where id = ${who.page.id}) = (select xmin::text from audit_log where target = ${`page:${who.page.id}`} and action = ${action} order by id desc limit 1) as same`))[0]!.same;
+      const idle = await pageFor("written-idle");
+      await age(idle, { touched: HANDLE_RELEASE_DAYS });
+      const claimant = await draftPage();
+      expect((await move(claimant, "written-idle")).ok).toBe(true);
+      expect(await sameTransaction(claimant, "handle.choose")).toBe(true);
+      expect(await sameTransaction(idle, "handle.release")).toBe(true);
+      expect((await move(claimant, "written-again")).ok).toBe(true);
+      expect(await sameTransaction(claimant, "handle.change")).toBe(true);
+    });
+
+    // Two claims on two connections. A third holds the rows they need, as a write in progress
+    // does, so that both are waiting before either goes on.
+    test("two claims of one handle at once: one has it, and the other is told it is taken, whether it was free or an unused page's", async () => {
+      for (const handle of ["race-free", "race-unused"]) {
+        const a = await draftPage(), b = await draftPage();
+        const held = [a.page.id, b.page.id];
+        let idle: Someone | undefined;
+        if (handle === "race-unused") {
+          idle = await pageFor(handle);
+          await age(idle, { changed: HANDLE_RELEASE_DAYS, touched: HANDLE_RELEASE_DAYS });
+          held.push(idle.page.id);
+        }
+        const holder = await holding(held);
+        const claims = [move(a, handle), move(b, handle)];
+        await waiting(2);
+        await holder.release();
+        const results = await Promise.all(claims);
+        expect(results.filter((r) => r.ok), handle).toHaveLength(1);
+        expect(results.filter((r) => !r.ok), handle).toEqual([taken(handle)]);
+        expect((await getPageByHandle(db, handle))!.id).toBe(results[0]!.ok ? a.page.id : b.page.id);
+        if (idle) expect((await entries(idle)).filter((e) => e.action === "handle.release")).toHaveLength(1);
+      }
+    });
+
+    test("a claim that has read a handle as free is not overtaken by a page that takes it and leaves it meanwhile", async () => {
+      const first = await draftPage(), second = await draftPage();
+      // the first claim reads the handle as free, then waits for its own page's row
+      const holder = await holding([first.page.id]);
+      const claim = move(first, "race-overtaken");
+      await waiting(1);
+      // the second, given the chance, takes the handle and at once moves on, holding it; it is
+      // waited for until it waits too, or until it has done all that
+      const overtake = move(second, "race-overtaken").then(async (r) => [r, r.ok ? await move(second, "race-overtaker") : undefined] as const);
+      await Promise.race([waiting(2), overtake]);
+      await holder.release();
+      expect((await claim).ok).toBe(true);
+      expect((await overtake)[0]).toEqual(taken("race-overtaken"));
+      expect((await now(second)).handle).toBeNull();
+    });
+
+    test("a claim's lock on its handle is its own: an advisory lock named by the handle's hash alone does not hold it up", async () => {
+      // as anything else in the database could take one, Supabase Auth included
+      let open = () => {}, held = () => {};
+      const gate = new Promise<void>((r) => { open = r; }), locked = new Promise<void>((r) => { held = r; });
+      const other = db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"lock-space"}))`);
+        held();
+        await gate;
+      });
+      await locked;
+      const claim = move(await draftPage(), "lock-space");
+      const first = await Promise.race([claim.then(() => "claimed"), waiting(1).then(() => "waited")]);
+      open();
+      await other;
+      expect(first).toBe("claimed");
+      expect((await claim).ok).toBe(true);
+    });
+
+    test("a claim made while the page at the handle leaves it waits for it, and finds the handle held", async () => {
+      // an unused page, which a claim that did not wait would take the address from mid-change
+      const leaving = await pageFor("race-leaving");
+      await age(leaving, { changed: HANDLE_RELEASE_DAYS, touched: HANDLE_RELEASE_DAYS });
+      const claimant = await draftPage();
+      const holder = await holding([leaving.page.id]);
+      const leave = move(leaving, "race-left");
+      await waiting(1);
+      const claim = move(claimant, "race-leaving");
+      await waiting(2);
+      await holder.release();
+      expect((await leave).ok).toBe(true);
+      expect(await claim).toEqual(taken("race-leaving"));
+      const after = await now(leaving);
+      expect([after.handle, after.previousHandle]).toEqual(["race-left", "race-leaving"]);
+      expect((await now(claimant)).handle).toBeNull();
+    });
+
+    test("two claims that each need the other's page wait in turn, and do not deadlock, even when they meet the rows in opposite orders", async () => {
+      // each page is unused, so each claim would release the other's address
+      const p = await pageFor("swap-p"), q = await pageFor("swap-q");
+      for (const page of [p, q]) await age(page, { changed: HANDLE_RELEASE_DAYS, touched: HANDLE_RELEASE_DAYS });
+      // A scan meets rows in the order their current versions lie in the table (ctid), and an
+      // update moves a row's version. The first claim reads the table with one before two; one is
+      // then moved behind two, and the second claim reads two first. Only the order of the ids
+      // in the locking statement keeps the two from taking the rows the opposite way round.
+      const before = async (tx: Pick<Database, "execute">, a: Someone, b: Someone) => ([...await tx.execute(sql`select
+        (select ctid from pages where id = ${a.page.id}) < (select ctid from pages where id = ${b.page.id}) as before`)][0] as { before: boolean }).before;
+      const [one, two] = await before(db, p, q) ? [p, q] : [q, p];
+      // The mover holds one's row and moves it behind two's before it lets go, by updates that
+      // change nothing (updated_at as it was): its versions fill one's part of the table, and one
+      // goes elsewhere. The keeper, queued behind it, takes the row next; the first claim, queued
+      // behind both, has read one first.
+      const mover = await holding([one.page.id], async (tx) => {
+        for (let i = 0; i < 1000 && await before(tx, one, two); i++) await tx.execute(sql`update pages set updated_at = updated_at where id = ${one.page.id}`);
+        if (await before(tx, one, two)) throw new Error("one's row did not move behind two's");
+      });
+      const keeper = holding([one.page.id]);
+      await waiting(1);
+      const byOneClaim = move(one, two.page.handle!);
+      await waiting(2);
+      await mover.release();
+      const kept = await keeper;
+      // the second claim reads two first: it takes two's row and waits for one's
+      const byTwoClaim = move(two, one.page.handle!);
+      await waiting(2);
+      await kept.release();
+      // a deadlock would end one of them with an error, here
+      const [byOne, byTwo] = await Promise.all([byOneClaim, byTwoClaim]);
+      // the first to go takes the other's address and holds its own; the second finds that held
+      const [winner, loser, lost] = byOne!.ok ? [one, two, byTwo] : [two, one, byOne];
+      expect(lost).toEqual(taken(winner.page.handle!));
+      expect(await now(winner)).toMatchObject({ handle: loser.page.handle, previousHandle: winner.page.handle });
+      expect(await now(loser)).toMatchObject({ handle: null, previousHandle: null });
     });
   });
 

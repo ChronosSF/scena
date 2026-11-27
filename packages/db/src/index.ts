@@ -7,9 +7,9 @@
 
 export { connect, disconnect, type ConnectOptions, type Database } from "./client.ts";
 export { createUser, getUser, type NewUser, type User } from "./users.ts";
-export { changeHandle, createPage, getPageByHandle, getPageByUser, saveDraft, type Page, type PageStatus } from "./pages.ts";
+export { changeHandle, createPage, getPageByHandle, getPageByUser, handleAvailability, saveDraft, type Page, type PageStatus } from "./pages.ts";
 export { writeAudit, type AuditEntry } from "./audit.ts";
-export { handleProblem } from "./handles.ts";
+export { HANDLE_HOLD_DAYS, handleProblem, heldHandle, type HandleAvailability } from "./handles.ts";
 export { RESERVED_HANDLES } from "./reserved.ts";
 export { DRAFT_MAX_BYTES } from "./draft.ts";
 export type { Refusal, RefusalReason, Result } from "./result.ts";

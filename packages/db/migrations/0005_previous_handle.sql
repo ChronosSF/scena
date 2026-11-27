@@ -1,0 +1,1 @@
+CREATE INDEX "pages_previous_handle" ON "pages" USING btree ("previous_handle");

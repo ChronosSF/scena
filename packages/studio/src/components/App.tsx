@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { pageCss, resolvePalette } from "@scena/renderer";
 import { store, useStudio, type Tab } from "../store.ts";
+import { hostHooks, type StudioControl, type StudioSaving } from "../host.ts";
+import { toast } from "../ui.ts";
 import * as actions from "../actions.ts";
 import { useNarrow } from "../hooks.ts";
 import { TopBar } from "./TopBar.tsx";
@@ -28,10 +30,39 @@ export interface StudioProps {
    * is too narrow, so each control needs a name of its own (an `aria-label`).
    */
   account?: ReactNode;
+  /**
+   * A second place the host keeps the work, beside this browser (the web app: the person's
+   * account). The studio still saves the work in this browser as it always has; with this it
+   * also tells the host of each change and each save, shows the host's words in its save
+   * indicator, and lets the host open other work in place of what is open, keeping that aside
+   * (host.ts says what each part does). The single-file build leaves it out, and the indicator
+   * then says "Saved in this browser", as it always has.
+   */
+  saving?: StudioSaving;
 }
 
-export function App({ account }: StudioProps = {}) {
-  const { sel, view, rev, forceMotion, tab, scene, page } = useStudio();
+/** What the host may ask of the studio (host.ts). */
+const control: StudioControl = {
+  work: () => store.work(),
+  replace: (work, why) => store.replaceForHost(work, why),
+  say: (text, tone = "") => toast(text, tone),
+};
+
+export function App({ account, saving }: StudioProps = {}) {
+  const { sel, view, rev, forceMotion, tab, scene, page, asideN } = useStudio();
+
+  // The host's callbacks, for the store to call (host.ts). The latest props are read each time,
+  // so the host may hand in new ones with each render; with no host there are none.
+  const host = useRef(saving);
+  useLayoutEffect(() => { host.current = saving; });
+  const hosted = !!saving;
+  useEffect(() => {
+    if (!hosted) return;
+    hostHooks.changed = (work) => host.current?.onChange?.(work);
+    hostHooks.saved = (work) => host.current?.onSaved?.(work);
+    host.current?.onOpen?.(control);
+    return () => { hostHooks.changed = null; hostHooks.saved = null; };
+  }, [hosted]);
   // A built-in scene is filled in, not designed: its links instead of layers, and a canvas that
   // only selects (model.ts, isBuiltIn).
   const locked = isBuiltIn(scene);
@@ -39,6 +70,8 @@ export function App({ account }: StudioProps = {}) {
   const [exportOpen, setExportOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [setAsideOpen, setSetAsideOpen] = useState(store.setAsideOnLoad); // said once, as soon as it happens; the More menu has it after that
+  // the same when the host sets the open work aside to open its own (host.ts, replace)
+  useEffect(() => { if (asideN) setSetAsideOpen(true); }, [asideN]);
   const [problems, setProblems] = useState<string[]>([]);
   const [dropping, setDropping] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
@@ -124,7 +157,7 @@ export function App({ account }: StudioProps = {}) {
       <div className={`app${dropping ? " dropping" : ""}`} data-view={view}>
         <a className="skip" href="#stage">Skip to the canvas</a>
         <a className="skip" href="#inspector">Skip to the inspector</a>
-        <TopBar onExport={() => setExportOpen(true)} onImport={() => importInput.current?.click()} onReset={() => setResetOpen(true)} onSetAside={() => setSetAsideOpen(true)} account={account} />
+        <TopBar onExport={() => setExportOpen(true)} onImport={() => importInput.current?.click()} onReset={() => setResetOpen(true)} onSetAside={() => setSetAsideOpen(true)} account={account} saving={saving?.words ?? null} />
         {locked
           ? <LinksPanel hidden={narrow && tab !== "layers"} tabbed={narrow} />
           : <LayersPanel hidden={narrow && tab !== "layers"} tabbed={narrow} />}

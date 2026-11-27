@@ -8,15 +8,17 @@
 import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { getUser as getProfile, type User as Profile } from "@scena/db";
+import { getPageByUser, getUser as getProfile, type User as Profile } from "@scena/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AccountPage } from "../drafts/answer.ts";
+import type { Asking } from "../drafts/save.ts";
 import type { AuthConfig } from "./config.ts";
 import { isSessionCookie } from "./cookie.ts";
 import { database, profileQueries } from "./db.ts";
 import { authConfig } from "./env.ts";
-import type { Notice } from "./messages.ts";
+import type { AuthProblem, Notice } from "./messages.ts";
 import { settleProfile, type AuthUser } from "./profile.ts";
-import { CookieJar, sessionClient } from "./supabase.ts";
+import { CookieJar, RENEWAL_NOT_MADE_HERE, sessionClient } from "./supabase.ts";
 import { emailVerified } from "./verified.ts";
 
 export interface Account {
@@ -34,31 +36,78 @@ export interface Account {
  * that had run out before the page started.
  */
 export const currentAccount = cache(async (): Promise<Account | null> => {
-  const config = authConfig();
-  if (!config) return null;
-  const all = (await cookies()).getAll();
-  if (!all.some((c) => isSessionCookie(c.name, config.cookie))) return null;
-  // read, never renewed: nothing here can send a renewed cookie to the browser (supabase.ts)
-  const { data, error } = await sessionClient(config, new CookieJar(all), { renews: false }).auth.getUser();
-  if (error || !data.user?.email) return null;
-  const profile = await getProfile(database(), data.user.id);
-  if (!profile) return null;
-  return { id: data.user.id, email: data.user.email, profile, emailVerified: emailVerified(data.user) };
+  const asking = await ask();
+  return asking.ok ? asking.account : null;
 });
 
+const SIGNED_OUT = { ok: false, reason: "signed-out" } as const;
+const UNAVAILABLE = { ok: false, reason: "unavailable" } as const;
+
+// Nothing here says the session is over:
+// - Supabase Auth did not answer, or refused the question as one too many (as in
+//   auth/messages.ts and auth/session.ts);
+// - the access token has run out and this client, which may not renew (supabase.ts), refused
+//   the renewal itself. proxy.ts renews a session in front of every request, and leaves it as it
+//   came only when its renewal got no answer or one too many; a session Supabase Auth no longer
+//   knows has its cookie taken away there, and reads as no cookie here. So a session that has
+//   run out here is one whose renewal could not be made just now, and the next request may.
+const unanswered = (p: AuthProblem): boolean => p.name === "AuthRetryableFetchError" || p.status === 0 || p.status === 429 || (p.status ?? 0) >= 500 || p.code === RENEWAL_NOT_MADE_HERE;
+
+/** Who is asking, and why no one when no one: signed out, or Supabase Auth could not say. */
+async function ask(): Promise<{ ok: true; account: Account } | Extract<Asking, { ok: false }>> {
+  const config = authConfig();
+  if (!config) return SIGNED_OUT;
+  const all = (await cookies()).getAll();
+  if (!all.some((c) => isSessionCookie(c.name, config.cookie))) return SIGNED_OUT;
+  // read, never renewed: nothing here can send a renewed cookie to the browser (supabase.ts)
+  const { data, error } = await sessionClient(config, new CookieJar(all), { renews: false }).auth.getUser();
+  if (error) return unanswered(error) ? UNAVAILABLE : SIGNED_OUT;
+  if (!data.user?.email) return SIGNED_OUT;
+  const profile = await getProfile(database(), data.user.id);
+  if (!profile) return SIGNED_OUT;
+  return { ok: true, account: { id: data.user.id, email: data.user.email, profile, emailVerified: emailVerified(data.user) } };
+}
+
 /**
- * For the studio's top bar: whether this server has sign-in, and who is signed in. The editor
- * must open whatever happens here, so a configuration that is wrong, or a database that does
- * not answer, leaves the slot out and says why in the server's log.
+ * For a server action that writes the person's own data: who is asking, from the session alone,
+ * and, when no one, whether that is because no one is signed in or because Supabase Auth or the
+ * database could not say just now (the browser then tries again). Asks Supabase Auth on each
+ * call, as currentAccount does; docs/adr/0007-server-autosave.md weighs what that costs.
  */
-export async function studioAccount(): Promise<{ signIn: boolean; signedIn: { email: string } | null }> {
+export const whoIsAsking = cache(async (): Promise<Asking> => {
   try {
-    if (!authConfig()) return { signIn: false, signedIn: null };
+    return await ask();
+  } catch (e) {
+    // the configuration is wrong, or the database did not answer
+    console.error(`drafts: who is asking could not be told: ${(e as Error).message}`);
+    return UNAVAILABLE;
+  }
+});
+
+export interface StudioAccount {
+  /** Whether this server has sign-in at all. */
+  signIn: boolean;
+  signedIn: { email: string } | null;
+  /** The signed-in person's page, or null when they have none yet (or no one is signed in). */
+  saved: AccountPage | null;
+}
+
+/**
+ * For the studio: whether this server has sign-in, who is signed in, and their page. The editor
+ * must open whatever happens here, so a configuration that is wrong, or a database that does
+ * not answer, leaves the slot and the saving to the account out, and says why in the server's
+ * log: a studio that could not read the account's page must not save over it.
+ */
+export async function studioAccount(): Promise<StudioAccount> {
+  try {
+    if (!authConfig()) return { signIn: false, signedIn: null, saved: null };
     const account = await currentAccount();
-    return { signIn: true, signedIn: account ? { email: account.email } : null };
+    if (!account) return { signIn: true, signedIn: null, saved: null };
+    const page = await getPageByUser(database(), account.id);
+    return { signIn: true, signedIn: { email: account.email }, saved: page ? { pageId: page.id, revision: page.draftRevision, page: page.draft } : null };
   } catch (e) {
     console.error(`studio: sign-in is left out of the top bar: ${(e as Error).message}`);
-    return { signIn: false, signedIn: null };
+    return { signIn: false, signedIn: null, saved: null };
   }
 }
 

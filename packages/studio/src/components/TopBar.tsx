@@ -1,9 +1,10 @@
-import { BookOpen, Check, Download, Ellipsis, FileWarning, Import, LayoutTemplate, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { BookOpen, Check, CloudCheck, CloudUpload, Download, Ellipsis, FileWarning, Import, LayoutTemplate, Monitor, Moon, PencilRuler, Play, Redo2, RotateCcw, Smartphone, Sun, SunMoon, TriangleAlert, Undo2 } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ThemeMode } from "@scena/scene";
+import type { SaveWords } from "../host.ts";
 import { store, useStudio, type StudioState } from "../store.ts";
 import { isBuiltIn } from "../model.ts";
-import { openPicker } from "../ui.ts";
+import { announce, openPicker } from "../ui.ts";
 import * as actions from "../actions.ts";
 import { BudgetPill } from "./BudgetPopover.tsx";
 import { Button, IconButton, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Segmented, Tip } from "./ui.tsx";
@@ -52,7 +53,55 @@ export function SceneNameInput({ className, id }: { className: string; id?: stri
   );
 }
 
-export function TopBar({ onExport, onImport, onReset, onSetAside, account }: { onExport: () => void; onImport: () => void; onReset: () => void; onSetAside: () => void; account?: ReactNode }) {
+const HOST_ICONS = { done: CloudCheck, local: Check, busy: CloudUpload, warn: TriangleAlert } as const;
+
+/**
+ * The autosave indicator. On its own it says "Saved in this browser", as a quiet check whose
+ * words are its tooltip, in a status region that reads out its warnings, as it always has. With
+ * a host (StudioProps.saving) it says the host's words, and shows the short ones where the bar
+ * has room (studio.css, .save-words), on a phone too; its words change at every save, so it is
+ * not a live region then, and what should be heard is said through the studio's live region
+ * instead: the host's warnings by the host (StudioControl.say), the studio's own here. The
+ * studio's own warnings come first, since nothing was saved anywhere then.
+ */
+export function SaveIndicator({ saveStatus, host }: { saveStatus: StudioState["saveStatus"]; host: SaveWords | null }) {
+  const hosted = !!host;
+  const said = useRef(saveStatus);
+  useEffect(() => {
+    if (hosted && saveStatus !== "saved" && said.current !== saveStatus) announce(SAVE_WORDS[saveStatus].tip);
+    said.current = saveStatus;
+  }, [hosted, saveStatus]);
+  if (!host) {
+    return (
+      <Tip label={SAVE_WORDS[saveStatus].tip}>
+        <span className={`save-state hide-narrow${saveStatus === "saved" ? "" : " warn"}`} role="status" data-save={saveStatus}>
+          {saveStatus === "saved" ? <Check aria-hidden="true" size={16} strokeWidth={1.75} /> : <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} />}
+          <span className="sr-only">{SAVE_WORDS[saveStatus].short}</span>
+        </span>
+      </Tip>
+    );
+  }
+  const own = saveStatus !== "saved";
+  const Icon = own ? TriangleAlert : HOST_ICONS[host.tone];
+  const tip = own ? SAVE_WORDS[saveStatus].tip : host.tip;
+  // the words, laid over the others of the states they take turns with, which keep their room
+  const words = [host.short, ...(host.room ?? []).filter((w) => w !== host.short)];
+  return (
+    <Tip label={tip}>
+      <span className={`save-state with-words${own || host.tone === "warn" ? " warn" : ""}`} data-save={saveStatus} data-saving={own ? undefined : host.state}>
+        <Icon aria-hidden="true" size={16} strokeWidth={1.75} />
+        {own ? null : (
+          <span className="save-words" aria-hidden="true">
+            {words.map((w, i) => <span key={w} className={i ? "save-room" : undefined}>{w}</span>)}
+          </span>
+        )}
+        <span className="sr-only">{tip}</span>
+      </span>
+    </Tip>
+  );
+}
+
+export function TopBar({ onExport, onImport, onReset, onSetAside, account, saving = null }: { onExport: () => void; onImport: () => void; onReset: () => void; onSetAside: () => void; account?: ReactNode; saving?: SaveWords | null }) {
   const { view, canUndo, canRedo, saveStatus, setAside, scene, phone, page } = useStudio();
   return (
     <header className="bar">
@@ -87,12 +136,7 @@ export function TopBar({ onExport, onImport, onReset, onSetAside, account }: { o
 
       <div className="bar-end">
         <BudgetPill />
-        <Tip label={SAVE_WORDS[saveStatus].tip}>
-          <span className={`save-state hide-narrow${saveStatus === "saved" ? "" : " warn"}`} role="status" data-save={saveStatus}>
-            {saveStatus === "saved" ? <Check aria-hidden="true" size={16} strokeWidth={1.75} /> : <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} />}
-            <span className="sr-only">{SAVE_WORDS[saveStatus].short}</span>
-          </span>
-        </Tip>
+        <SaveIndicator saveStatus={saveStatus} host={saving} />
         <Button className="hide-narrow" variant="ghost" icon={Import} onClick={onImport} data-ui="import"><span className="squeeze">Import</span></Button>
         <Button variant="primary" icon={Download} onClick={onExport} data-ui="export"><span className="hide-narrow">Export</span><span className="show-narrow sr-only">Export</span></Button>
         {/* the host app's own controls (StudioProps.account); nothing at all when it has none */}

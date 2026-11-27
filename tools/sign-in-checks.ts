@@ -117,6 +117,10 @@ export async function signInChecks({ chrome, origin, stack, google, check, out }
 
   // The stack lets one address be sent an email every 5 seconds (max_frequency in
   // supabase/config.toml); a flow that asks twice for one address on purpose waits that long.
+  // The time is taken once the page has the answer, when the email has gone: Supabase Auth
+  // counts from its own send, which comes after the key press by however long the request
+  // takes to reach it, and a time taken at the key press once left 5 seconds between the two
+  // sends and the second refused.
   const SPACING_MS = 5000 + 400;
   const sentAt = new Map<string, number>();
   async function spaced(address: string): Promise<void> {
@@ -128,9 +132,9 @@ export async function signInChecks({ chrome, origin, stack, google, check, out }
     await settled(() => p.page.eval<boolean>(`!!document.querySelector('[data-ui="email-form"] #email')`), (ok) => ok);
     await p.keys.typeInto("#email", address);
     await spaced(address);
-    sentAt.set(address, Date.now());
     await pressEnter(p);
     await settled(() => p.page.eval<boolean>(`!!document.querySelector('[data-ui="code-form"]') || !!(document.querySelector('[data-ui="message"]') || {}).textContent`), (ok) => ok, 10_000);
+    sentAt.set(address, Date.now());
   }
   /** Types a code on the code step, by the keyboard alone. */
   async function typeCode(p: Person, code: string): Promise<void> {

@@ -29,6 +29,13 @@
       "when": 1795168821998,
       "tag": "0003_admin_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795613474729,
+      "tag": "0004_draft_revision",
+      "breakpoints": true
     }
   ]
 }

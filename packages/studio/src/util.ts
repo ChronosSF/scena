@@ -36,6 +36,14 @@ export async function gzipSize(text: string): Promise<number> {
 export const kb = (b: number): string => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : b >= 1024 ? `${(b / 1024).toFixed(1)} KB` : `${b} B`);
 export const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 
+/**
+ * JSON with every object's keys in order, so that two copies of a document compare equal
+ * whatever order their keys were written in (a database may keep them in another order).
+ */
+export function canonicalJson(v: unknown): string {
+  return JSON.stringify(v, (_, x: unknown) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+}
+
 /** "teapot_final-v2" -> "Teapot final v2" */
 export function prettyName(base: string): string {
   const s = base.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();

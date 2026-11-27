@@ -376,6 +376,10 @@ writeFileSync(join(out, "studio-edit.png"), await page.screenshot());
 // preview, and a real tap inside the sandboxed frame
 await clickOn('[data-ui="view-preview"]');
 await sleep(1500);
+// The drawing is measured once the page's runtime has run and its typeface has arrived (the
+// wait drawingInFrame makes): the typeface chosen above comes from Google Fonts, and moves the
+// drawing when it arrives, which a measure taken before it once missed.
+await page.frameCall(undefined, `async () => { for (let i = 0; i < 100 && !document.documentElement.dataset.boil; i++) await new Promise((r) => setTimeout(r, 100)); await document.fonts.ready; }`);
 const objRect = await page.frameEval<[number, number] | null>(`(() => { const o = document.querySelector('.obj[data-k="link"] .lift image'); if (!o) return null; const r = o.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height * 0.8]; })()`);
 const frameRect = await page.eval<[number, number]>(`(() => { const r = document.getElementById("preview").getBoundingClientRect(); return [r.x, r.y]; })()`);
 if (objRect) await page.click(frameRect[0] + objRect[0], frameRect[1] + objRect[1]);

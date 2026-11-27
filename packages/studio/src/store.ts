@@ -2,12 +2,15 @@
 // Documents are mutated in place by the operations in model.ts; every change bumps
 // `rev`, which is what React components subscribe to. Undo keeps JSON snapshots of
 // both documents: edits within 700 ms share one step, and a drag is one step via
-// checkpoint(). Work is autosaved to localStorage.
+// checkpoint(). Work is autosaved to localStorage. An app that keeps the work somewhere
+// else as well is told of each change and each save here (host.ts).
 
 import { useSyncExternalStore } from "react";
 import { migrate, validatePage, validateScene, type PageDocument, type SceneDocument } from "@scena/scene";
-import { FIXED_SCENE, blankPage, blankScene, getLayer, isBuiltIn, reconcile, type Stash } from "./model.ts";
+import { hostHooks, type StudioWork } from "./host.ts";
+import { FIXED_SCENE, blankPage, blankScene, getLayer, hasWork, isBuiltIn, reconcile, type Stash } from "./model.ts";
 import { toast } from "./ui.ts";
+import { canonicalJson } from "./util.ts";
 
 export type View = "edit" | "preview";
 export type Zoom = "fit" | number;
@@ -53,6 +56,8 @@ export interface StudioState {
   saveStatus: "saved" | "too-big" | "not-valid";
   /** Saved work that this build could not open is being kept in this browser (see openSaved). */
   setAside: boolean;
+  /** Bumps when the host sets the open work aside (replaceForHost), so the dialog that says so opens. */
+  asideN: number;
   focus: FocusRequest | null;
 }
 
@@ -65,6 +70,11 @@ export interface ChangeOptions {
 const KEY = "scene-studio/v1";
 /** Where saved work goes when this build cannot open it. Autosave never writes here. */
 const ASIDE_KEY = "scene-studio/v1/set-aside";
+/**
+ * Why the copy set aside was put there, when the host did it (replaceForHost), in the host's
+ * words. Absent for work this build could not open, whose reasons are worked out again.
+ */
+const ASIDE_WHY_KEY = "scene-studio/v1/set-aside/why";
 const BURST_MS = 700;
 
 type SavedStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -100,7 +110,8 @@ export function openSaved(storage: SavedStorage): { docs: Docs | null; setAside:
   const { docs, problems } = readSaved(raw);
   if (docs) return { docs, setAside: false };
   console.warn("Saved work did not open. It is set aside in this browser, not deleted.", problems);
-  const keep = () => storage.setItem(ASIDE_KEY, raw);
+  // the reasons are this build's, worked out again when the copy is shown, not a host's
+  const keep = () => { storage.setItem(ASIDE_KEY, raw); try { storage.removeItem(ASIDE_WHY_KEY); } catch { /* nothing to remove */ } };
   try {
     try { keep(); storage.removeItem(KEY); }
     catch { storage.removeItem(KEY); keep(); } // no room for two copies: free the original's space first
@@ -123,6 +134,8 @@ export interface SetAsideWork {
   page: unknown;
   /** Why this build does not open it. */
   problems: string[];
+  /** Why the host set it aside, in its words, when the host did; null for work this build could not open. */
+  why: string | null;
 }
 
 export function blankDocs(): Docs {
@@ -145,7 +158,7 @@ class StudioStore {
     const storage = browserStorage();
     const opened = storage ? openSaved(storage) : { docs: null, setAside: false };
     this.setAsideOnLoad = opened.setAside;
-    this.state = { ...(opened.docs || blankDocs()), view: "edit", phone: true, forceMotion: false, zoom: "fit", tab: "layers", playFrames: true, frameAt: 0, framesOpen: true, rev: 0, docRev: 0, canUndo: false, canRedo: false, saveStatus: "saved", setAside: !!asideText(), focus: null };
+    this.state = { ...(opened.docs || blankDocs()), view: "edit", phone: true, forceMotion: false, zoom: "fit", tab: "layers", playFrames: true, frameAt: 0, framesOpen: true, rev: 0, docRev: 0, canUndo: false, canRedo: false, saveStatus: "saved", setAside: !!asideText(), asideN: 0, focus: null };
   }
 
   /** The saved work that was set aside, with the reasons it does not open, or null when there is none. */
@@ -154,12 +167,62 @@ class StudioStore {
     if (!raw) return null;
     let scene: unknown, page: unknown;
     try { ({ scene, page } = JSON.parse(raw)); } catch { /* not JSON: only the text can be handed back */ }
-    return { raw, scene, page, problems: readSaved(raw).problems };
+    let why: string | null = null;
+    try { why = browserStorage()?.getItem(ASIDE_WHY_KEY) ?? null; } catch { /* read as no reason of the host's */ }
+    return { raw, scene, page, problems: why ? [] : readSaved(raw).problems, why };
   }
 
   discardSetAside(): void {
-    try { browserStorage()?.removeItem(ASIDE_KEY); } catch { /* nothing to remove */ }
+    try { browserStorage()?.removeItem(ASIDE_KEY); browserStorage()?.removeItem(ASIDE_WHY_KEY); } catch { /* nothing to remove */ }
     this.emit({ setAside: false });
+  }
+
+  /** The documents that are open, as the host sees them (host.ts). */
+  work(): StudioWork {
+    return { scene: this.state.scene, page: this.state.page };
+  }
+
+  /**
+   * Opens the host's `work` in place of what is open (StudioControl.replace in host.ts). What is
+   * open is kept aside in this browser first, with the host's `why`, unless it holds nothing of
+   * the person's or is the same work, or `why` is null: the host has it already. It is never
+   * written over a copy already set aside, which would be lost. There is no undo step: undo
+   * would bring back what was set aside, and the next autosave would write it over what the
+   * host opened.
+   *
+   * What opened is saved in this browser at once, not after the usual wait, so that the copy set
+   * aside, the studio's own saved work and what the host records beside it change in the same
+   * moment: a tab closed just after would otherwise leave the old work both open and aside.
+   */
+  replaceForHost(work: StudioWork, why: string | null): "opened" | "set-aside" | "refused" {
+    let scene: SceneDocument, page: PageDocument;
+    try {
+      scene = migrate(JSON.parse(JSON.stringify(work.scene)), "scene");
+      page = migrate(JSON.parse(JSON.stringify(work.page)), "page");
+    } catch {
+      return "refused";
+    }
+    if (validateScene(scene).length || validatePage(page, scene).length) return "refused";
+    const open = this.state;
+    const same = canonicalJson(open.scene) === canonicalJson(scene) && canonicalJson(open.page) === canonicalJson(page);
+    const keep = why !== null && !same && hasWork(open.scene, open.page);
+    if (keep) {
+      const storage = browserStorage();
+      if (!storage || asideText()) return "refused";
+      try {
+        storage.setItem(ASIDE_KEY, JSON.stringify({ scene: open.scene, page: open.page, sel: open.sel, stash: open.stash }));
+        storage.setItem(ASIDE_WHY_KEY, why);
+      } catch {
+        try { storage.removeItem(ASIDE_KEY); storage.removeItem(ASIDE_WHY_KEY); } catch { /* the storage refuses writes */ }
+        return "refused";
+      }
+    }
+    this.past = [];
+    this.future = [];
+    this.lastEdit = 0;
+    this.emit({ scene, page, sel: null, stash: {}, docRev: this.state.docRev + 1, ...(keep ? { setAside: true, asideN: this.state.asideN + 1 } : {}) });
+    this.saveNow();
+    return keep ? "set-aside" : "opened";
   }
 
   getSnapshot = (): StudioState => this.state;
@@ -219,6 +282,7 @@ class StudioStore {
       return false;
     }
     this.emit({ ...patch, docRev: this.state.docRev + 1 });
+    hostHooks.changed?.(this.work());
     this.save();
     return true;
   }
@@ -260,30 +324,37 @@ class StudioStore {
     const d = JSON.parse(s) as Docs;
     this.lastEdit = 0;
     this.emit({ scene: d.scene, page: d.page, stash: d.stash || {}, sel: d.sel && getLayer(d.scene, d.sel) ? d.sel : null, docRev: this.state.docRev + 1 });
+    hostHooks.changed?.(this.work());
     this.save();
     return true;
   }
 
   private save(): void {
     clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => {
-      const { scene, page, sel, stash } = this.state;
-      let status: StudioState["saveStatus"] = "saved";
-      // Work that would not open again is never written over work that does. The fields keep
-      // the documents valid one by one; this is the rule behind all of them, present and future.
-      const problems = [...validateScene(scene).map((e) => `scene: ${e}`), ...validatePage(page, scene).map((e) => `page: ${e}`)];
-      if (problems.length) {
-        status = "not-valid";
-        console.warn("Not saved: this would not open again. The last work that does is kept.", problems);
-      } else {
-        try {
-          localStorage.setItem(KEY, JSON.stringify({ scene, page, sel, stash }));
-        } catch {
-          status = "too-big";
-        }
+    this.saveTimer = window.setTimeout(() => this.saveNow(), 350);
+  }
+
+  /** Saves the work in this browser at once, in place of any save that was waiting. */
+  private saveNow(): void {
+    clearTimeout(this.saveTimer);
+    const { scene, page, sel, stash } = this.state;
+    let status: StudioState["saveStatus"] = "saved";
+    // Work that would not open again is never written over work that does. The fields keep
+    // the documents valid one by one; this is the rule behind all of them, present and future.
+    const problems = [...validateScene(scene).map((e) => `scene: ${e}`), ...validatePage(page, scene).map((e) => `page: ${e}`)];
+    if (problems.length) {
+      status = "not-valid";
+      console.warn("Not saved: this would not open again. The last work that does is kept.", problems);
+    } else {
+      try {
+        localStorage.setItem(KEY, JSON.stringify({ scene, page, sel, stash }));
+      } catch {
+        status = "too-big";
       }
-      if (status !== this.state.saveStatus) this.emit({ saveStatus: status });
-    }, 350);
+    }
+    if (status !== this.state.saveStatus) this.emit({ saveStatus: status });
+    // in the same moment as the write, so what the host keeps beside it is about the same work
+    if (status === "saved") hostHooks.saved?.({ scene, page });
   }
 }
 

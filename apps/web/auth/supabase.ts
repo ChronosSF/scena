@@ -79,11 +79,16 @@ const timedFetch: typeof fetch = (input, init) => fetch(input, { ...init, signal
  * one. So a request for a renewal is answered here, as refused, and never sent. A session
  * that still has time is read as it is; one that has run out reads as no session. Either way
  * the browser keeps its cookie, and proxy.ts renews it in front of the next request.
+ *
+ * The refusal carries its code as `error_code` too: auth-js 2.119.0 takes `code` only from an
+ * answer that names Supabase's API version in a header, and `error_code` otherwise, so with
+ * `code` alone the error it hands back would have none, and could not be told from another.
  */
+export const RENEWAL_NOT_MADE_HERE = "renewal_not_made_here";
 const readingFetch: typeof fetch = (input, init) => {
   const address = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   return URL.canParse(address) && new URL(address).searchParams.get("grant_type") === "refresh_token"
-    ? Promise.resolve(Response.json({ code: "renewal_not_made_here", message: "a page reads the session and does not renew it" }, { status: 400 }))
+    ? Promise.resolve(Response.json({ code: RENEWAL_NOT_MADE_HERE, error_code: RENEWAL_NOT_MADE_HERE, message: "a page reads the session and does not renew it" }, { status: 400 }))
     : timedFetch(input, init);
 };
 

@@ -116,19 +116,22 @@ export function ResetDialog({ open, onClose }: { open: boolean; onClose: () => v
 }
 
 /**
- * Saved work that this version could not open. It is kept in the browser, not deleted
- * (store.ts, openSaved); this is where the user learns why, gets the files, or lets it go.
+ * Saved work that this version could not open, or that the host set aside to open its own
+ * (host.ts, replace). It is kept in the browser, not deleted (store.ts); this is where the user
+ * learns why, gets the files, or lets it go.
  */
 export function SetAsideDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { setAside } = useStudio();
-  const work = useMemo(() => (open && setAside ? store.setAsideWork() : null), [open, setAside]);
+  const { setAside, asideN } = useStudio();
+  const work = useMemo(() => (open && setAside ? store.setAsideWork() : null), [open, setAside, asideN]);
   const problems = work?.problems || [];
   const asFiles = !!work && !!work.scene && !!work.page;
   return (
     <Dialog open={!!work} onClose={onClose} labelledBy="aside-h">
       <div className="dlg-body">
         <h2 className="dlg-title" id="aside-h">Saved work did not open</h2>
-        <p className="dlg-text">This version of the studio could not open the work saved in this browser, so it started with an empty canvas. Nothing was deleted: the saved work is kept here until you discard it. To bring it back, download it, correct it and import it.</p>
+        {work?.why
+          ? <p className="dlg-text" data-ui="aside-why">{work.why} Nothing was deleted: the work that was in this browser is kept here until you discard it. To bring it back, download it and import it.</p>
+          : <p className="dlg-text">This version of the studio could not open the work saved in this browser, so it started with an empty canvas. Nothing was deleted: the saved work is kept here until you discard it. To bring it back, download it, correct it and import it.</p>}
         {problems.length ? (
           <ul className="errors">
             {problems.slice(0, 6).map((p, i) => <li key={i}>{p}</li>)}

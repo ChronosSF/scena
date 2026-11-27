@@ -48,6 +48,10 @@ export const WORDS = {
     state: "behind", tone: "warn", short: "Changed elsewhere",
     tip: "This page was saved from another tab or device, and that version is the one in your account now. This tab does not have its changes. If you edit here, this tab's version replaces it; reload to work on the saved one.",
   },
+  outdated: {
+    state: "outdated", tone: "warn", short: "Reload to save",
+    tip: "Not saved to your account: the studio was updated while this tab was open, and this tab can no longer save there. Your work is saved in this browser. Reload the page, and it is saved to your account again.",
+  },
   "held-aside": {
     state: "held", tone: "warn", short: "Not saved",
     tip: "Not saved to your account: your account has another version of this page, and this browser already keeps other work aside, which opening it would lose. Download or discard that work (the More menu, \"Saved work that did not open\"), then reload.",
@@ -76,6 +80,7 @@ export function refusedWords(problems: readonly string[]): SaveWords {
 export const NOTICES = {
   offline: WORDS.offline.tip,
   retrying: WORDS.retrying.tip,
+  outdated: WORDS.outdated.tip,
   "held-aside": WORDS["held-aside"].tip,
   "held-unopenable": WORDS["held-unopenable"].tip,
   replaced: "Saved to your account. It replaced a version saved from another tab or device, which this tab did not have.",

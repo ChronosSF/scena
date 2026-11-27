@@ -75,9 +75,26 @@ export async function saveToAccount(q: DraftQueries, sent: unknown): Promise<Sav
     if (saved.reason === "invalid") return { ok: false, reason: "invalid", problems: saved.problems };
     return unsaved(saved.reason, saved.problems);
   } catch (e) {
-    console.error(`drafts: the draft could not be saved: ${(e as Error).message}`);
+    console.error(`drafts: the draft could not be saved: ${whatFailed(e)}`);
     return notSaved("unavailable");
   }
+}
+
+/**
+ * What went wrong, for the server's log, without the person's page. A query that fails throws
+ * an error whose message is the statement and its parameters (drizzle-orm), and the draft is
+ * one of them; what the database itself said is in the error's cause. So the cause is logged
+ * when there is one, and of an error with none only its name when its message is a statement.
+ */
+export function whatFailed(e: unknown): string {
+  const error = (e !== null && typeof e === "object" ? e : {}) as { name?: unknown; message?: unknown; cause?: unknown };
+  const text = (v: unknown) => (typeof v === "string" && v ? v : null);
+  if (error.cause !== null && typeof error.cause === "object") {
+    const cause = error.cause as { code?: unknown; message?: unknown };
+    return [text(error.name), text(cause.code), text(cause.message)].filter(Boolean).join(": ") || "a query failed";
+  }
+  const message = text(error.message) ?? String(e);
+  return /^Failed query/.test(message) ? (text(error.name) ?? "a query failed") : message;
 }
 
 // A refusal a person cannot act on (the page went away between the read and the write, say):
@@ -95,7 +112,7 @@ export async function accountRevision(q: DraftQueries): Promise<RevisionAnswer> 
     const page = await q.pageOf(asking.account.id);
     return { ok: true, pageId: page?.id ?? null, revision: page?.draftRevision ?? null };
   } catch (e) {
-    console.error(`drafts: the page could not be read: ${(e as Error).message}`);
+    console.error(`drafts: the page could not be read: ${whatFailed(e)}`);
     return { ok: false, reason: "unavailable" };
   }
 }

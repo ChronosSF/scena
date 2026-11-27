@@ -6,7 +6,7 @@
 // A visitor who is not signed in gets the studio exactly as the single-file build has it: the
 // work is saved in this browser, and nothing is sent anywhere.
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { unstable_isUnrecognizedActionError as isUnknownAction, useRouter } from "next/navigation";
 import { Studio, exposeForChecks, showMoreFaces, type StudioSaving } from "@scena/studio";
 import type { AccountPage } from "../../drafts/answer.ts";
 import { accountDraftRevision, saveDraftToAccount } from "../../drafts/actions.ts";
@@ -33,6 +33,10 @@ function useAccountSaving(signedIn: boolean, saved: AccountPage | null): StudioS
   const router = useRouter();
   const [keeper] = useState(() => (signedIn ? new AccountAutosave(saved, {
     save: (draft) => saveDraftToAccount(draft),
+    // A save that threw. An action the server does not know is a tab from before the app was
+    // deployed again; a fetch that fails altogether is a TypeError in every browser; anything
+    // else is an answer that was an error (a 500, a body the server would not take).
+    failed: (error) => (isUnknownAction(error) ? "outdated" : error instanceof TypeError || !navigator.onLine ? "no-answer" : "error"),
     revision: () => accountDraftRevision(),
     storage: browserStorage(),
     setTimer: (fn, ms) => window.setTimeout(fn, ms),

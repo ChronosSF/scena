@@ -8,9 +8,9 @@ import { validatePage, type PageDocument } from "@scena/scene";
 import { DESK_SCENE, PIA_PAGE } from "@scena/scenes";
 import type { SaveWords, StudioControl, StudioWork } from "@scena/studio";
 import type { AccountPage, DraftToSave, RevisionAnswer, SaveAnswer } from "../drafts/answer.ts";
-import { AccountAutosave, LOOK_EVERY_MS, canonical, onReadyMadeScene, readRecord, whichOpens, type Browser, type InStep } from "../drafts/autosave.ts";
+import { AccountAutosave, LOOK_EVERY_MS, canonical, onReadyMadeScene, readRecord, whichOpens, type Browser, type Failure, type InStep } from "../drafts/autosave.ts";
 import { NOTICES, REFUSED_LEAD, WORDS, refusedNotice } from "../drafts/messages.ts";
-import { accountRevision, baseOf, onOwnScene, saveToAccount, type Asking, type DraftQueries } from "../drafts/save.ts";
+import { accountRevision, baseOf, onOwnScene, saveToAccount, whatFailed, type Asking, type DraftQueries } from "../drafts/save.ts";
 
 const clone = <T>(o: T): T => JSON.parse(JSON.stringify(o));
 const USER = "0b7e7dee-87b4-4a43-9a9a-6f1c0b2d9a11", PAGE = "6f9619ff-8b86-4d01-b42d-00c04fc964ff", OTHER = "11111111-2222-4333-8444-555555555555";
@@ -111,6 +111,26 @@ describe("what the server decides (drafts/save.ts)", () => {
     log.mockRestore();
   });
 
+  test("what a failed query logs is what the database said, never the statement and its parameters, which hold the person's page", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5435"), { code: "ECONNREFUSED" });
+    const statement = ["Failed query: update \"pages\" set \"draft\" = $1", `params: {"links":{"newsletter":{"title":"a secret"}}},${USER}`].join("\n");
+    const failed = Object.assign(new Error(statement, { cause }), { name: "DrizzleQueryError" });
+    expect(await saveToAccount(queries({ save: async () => { throw failed; } }).q, { page: clone(PIA_PAGE), base: 3 })).toEqual({ ok: false, reason: "unavailable" });
+    expect(await accountRevision(queries({ pageOf: async () => { throw failed; } }).q)).toEqual({ ok: false, reason: "unavailable" });
+    const lines = log.mock.calls.map((c) => String(c[0]));
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(line).toContain("DrizzleQueryError: ECONNREFUSED: connect ECONNREFUSED");
+      for (const kept of ["secret", "Failed query", USER]) expect(line, kept).not.toContain(kept);
+    }
+    // with no cause to go by, a message that is a statement is not logged at all
+    expect(whatFailed(new Error(statement))).toBe("Error");
+    expect(whatFailed(new Error("connection refused"))).toBe("connection refused");
+    expect(whatFailed("not an error")).toBe("not an error");
+    log.mockRestore();
+  });
+
   test("a tab asks for the revision of the person's own page, or hears there is none", async () => {
     expect(await accountRevision(queries().q)).toEqual({ ok: true, pageId: PAGE, revision: 3 });
     expect(await accountRevision(queries({ pageOf: async () => null }).q)).toEqual({ ok: true, pageId: null, revision: null });
@@ -154,6 +174,18 @@ describe("which work opens (whichOpens)", () => {
     expect(whichOpens(account(3), savedHere, { ...took, pageId: OTHER })).toBe("account");
   });
 
+  test("the work here, when the page handed in is older than the version the record says the account took: an old copy of the route", () => {
+    // saved here as revision 5; the studio's route comes back as the server sent it at revision 3
+    const savedHere = edited("Saved from here");
+    const at5 = record({ base: 5, local: canonical(savedHere), unsent: false });
+    expect(whichOpens(account(3), savedHere, at5)).toBe("newer");
+    expect(whichOpens(account(3), savedHere, { ...at5, unsent: true })).toBe("newer");
+    // one revision on is news, not an old copy
+    expect(whichOpens(account(6, edited("From the phone")), savedHere, at5)).toBe("moved-on");
+    // work the record does not describe is set aside as ever
+    expect(whichOpens(account(3), edited("Typed since"), at5)).toBe("account");
+  });
+
   test("the account's page, over anything else: work made from an older revision, another page, or work the record does not describe", () => {
     expect(whichOpens(account(4), edited("Typed here"), record())).toBe("account");
     expect(whichOpens(account(3), edited("Typed here"), record({ pageId: OTHER }))).toBe("account");
@@ -191,8 +223,10 @@ function fakeBrowser(respond: (draft: DraftToSave, n: number) => Promise<SaveAns
   const sent: { draft: DraftToSave; at: number }[] = [];
   const looked: number[] = [];
   let revisionAnswer: RevisionAnswer = { ok: true, pageId: PAGE, revision: 3 };
+  let failure: Failure = "no-answer";
   const browser: Browser = {
     save: async (draft) => { sent.push({ draft, at: Date.now() }); return respond(draft, sent.length); },
+    failed: () => failure,
     revision: async () => { looked.push(Date.now()); return revisionAnswer; },
     storage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => { storage.set(k, v); } },
     setTimer: (fn, ms) => setTimeout(fn, ms),
@@ -200,7 +234,7 @@ function fakeBrowser(respond: (draft: DraftToSave, n: number) => Promise<SaveAns
     now: () => Date.now(),
     signedOut: vi.fn(),
   };
-  return { browser, sent, looked, storage, answerRevision: (a: RevisionAnswer) => { revisionAnswer = a; } };
+  return { browser, sent, looked, storage, answerRevision: (a: RevisionAnswer) => { revisionAnswer = a; }, failAs: (f: Failure) => { failure = f; } };
 }
 
 const desk = (page: PageDocument = clone(PIA_PAGE)): StudioWork => ({ scene: DESK_SCENE, page });
@@ -513,6 +547,145 @@ describe("the autosave in the browser (AccountAutosave)", () => {
     offline.keeper.detach(); // closed before the next try
     const reopened = started(account(4, edited("Typed")), desk(), fakeBrowser(() => okAnswer(5), other));
     expect(reopened.studio.replaced.map((r) => [r.work.page.links.newsletter!.title, r.why])).toEqual([["Typed", NOTICES["set-aside"]]]);
+  });
+
+  /** A tab that saved "One" and "Two", as revisions 4 and 5, into `storage`. */
+  async function savedToFive(storage: Map<string, string>) {
+    const tab = started(account(3), desk(), fakeBrowser((_, n) => okAnswer(3 + n), storage));
+    for (const title of ["One", "Two"]) {
+      await edit(tab.keeper, tab.studio, title);
+      await vi.advanceTimersByTimeAsync(1650);
+    }
+    expect(tab.words()).toBe(WORDS.saved);
+    return tab;
+  }
+  const sentBy = (b: ReturnType<typeof fakeBrowser>) => b.sent.map((s) => [s.draft.page.links.newsletter!.title, s.draft.base]);
+
+  test("an old copy of the route (Back, then Forward): the work here stays, nothing is sent or said, and the server is asked what the account has", async () => {
+    const storage = new Map<string, string>();
+    (await savedToFive(storage)).keeper.detach();
+    // the studio again, handed the page as the server sent it at revision 3
+    const b = fakeBrowser(() => okAnswer(6), storage);
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 5 });
+    const back = started(account(3), desk(edited("Two")), b);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect([back.studio.replaced, back.studio.said, b.sent, back.words(), b.looked.length]).toEqual([[], [], [], WORDS.saved, 1]);
+    // the next save is made from the revision the record had, not the old copy's
+    await edit(back.keeper, back.studio, "Three");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(sentBy(b)).toEqual([["Three", 5]]);
+    expect(back.studio.said).toEqual([]);
+    back.keeper.detach();
+
+    // and when the account has moved on since, the answer to that question says so
+    const moved = fakeBrowser(() => okAnswer(9), storage);
+    moved.answerRevision({ ok: true, pageId: PAGE, revision: 8 });
+    const behind = started(account(3), desk(edited("Three")), moved);
+    await vi.advanceTimersByTimeAsync(0);
+    expect([behind.studio.replaced, behind.words(), behind.studio.said]).toEqual([[], WORDS.behind, [[NOTICES.behind, "error"]]]);
+  });
+
+  test("an old copy of the route with changes not sent: they go at once, from the record's revision, and nothing is said of what they replace", async () => {
+    const storage = new Map<string, string>();
+    const tab = await savedToFive(storage);
+    await edit(tab.keeper, tab.studio, "Typed, then Back");
+    tab.keeper.detach(); // gone inside the two seconds
+    const b = fakeBrowser(() => okAnswer(7, true), storage); // replaced: the account may be a revision on by this browser's own save
+    const back = started(account(3), desk(edited("Typed, then Back")), b);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sentBy(b)).toEqual([["Typed, then Back", 5]]);
+    expect([back.studio.replaced, back.studio.said, back.words(), b.looked]).toEqual([[], [], WORDS.saved, []]);
+  });
+
+  test("an old copy from before the page was made: the work goes, and says nothing of replacing this browser's own version", async () => {
+    const storage = new Map<string, string>();
+    (await savedToFive(storage)).keeper.detach();
+    const b = fakeBrowser(() => okAnswer(6, true), storage);
+    const back = started(null, desk(edited("Two")), b);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sentBy(b)).toEqual([["Two", null]]);
+    expect([back.studio.said, back.words()]).toEqual([[], WORDS.saved]);
+    // with no record of it, a first save that replaced a version replaced another tab's, and says so
+    const fresh = started(null, desk(edited("Typed here")), fakeBrowser(() => okAnswer(2, true)));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fresh.studio.said).toEqual([[NOTICES.replaced, ""]]);
+  });
+
+  test("an account that is behind what this browser was told it took (a database put back): the work here goes to it", async () => {
+    const storage = new Map<string, string>();
+    (await savedToFive(storage)).keeper.detach();
+    const b = fakeBrowser(() => okAnswer(3), storage);
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 2 });
+    const back = started(account(2, edited("An older copy")), desk(edited("Two")), b);
+    expect(back.words()).toBe(WORDS.saved); // as the record has it, until the server has answered
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sentBy(b)).toEqual([["Two", 2]]);
+    expect([back.studio.replaced, back.studio.said, back.words()]).toEqual([[], [], WORDS.saved]);
+  });
+
+  test("a refusal that comes after the page was changed again: the work that is open goes, and the old refusal is neither shown nor said", async () => {
+    let release: (a: SaveAnswer) => void = () => {};
+    const b = fakeBrowser((_, n) => (n === 1 ? new Promise<SaveAnswer>((r) => { release = r; }) : okAnswer(4)));
+    const { keeper, studio, words } = started(account(3), desk(), b);
+    await edit(keeper, studio, "Refused");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(b.sent).toHaveLength(1);
+    await edit(keeper, studio, "Corrected");
+    await vi.advanceTimersByTimeAsync(3000); // its two seconds run out with the first save still out
+    expect(b.sent).toHaveLength(1);
+    release({ ok: false, reason: "invalid", problems: ["links: refused"] });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(sentBy(b)).toEqual([["Refused", 3], ["Corrected", 3]]);
+    expect([words(), studio.said]).toEqual([WORDS.saved, []]);
+  });
+
+  test("after a try that got no answer the server is not asked whether the account has moved on: it may have, by this tab's own save", async () => {
+    const b = fakeBrowser(() => { throw new Error("no answer"); });
+    b.answerRevision({ ok: true, pageId: PAGE, revision: 4 }); // the try did reach the account
+    const { keeper, studio, words } = started(account(3), desk(), b);
+    await edit(keeper, studio, "Sent, and the answer lost");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect(words()).toBe(WORDS.offline);
+    await keeper.looked();
+    expect([b.looked, words(), studio.said]).toEqual([[], WORDS.offline, [[NOTICES.offline, "error"]]]);
+  });
+
+  test("a save answered with an error is the server's doing, not the connection's; one the server no longer knows stops, and asks for a reload", async () => {
+    const b = fakeBrowser(() => { throw new Error("500"); });
+    b.failAs("error");
+    const { keeper, studio, words } = started(account(3), desk(), b);
+    await edit(keeper, studio, "Typed");
+    await vi.advanceTimersByTimeAsync(1650);
+    expect([words(), studio.said]).toEqual([WORDS.retrying, [[NOTICES.retrying, "error"]]]);
+    await vi.advanceTimersByTimeAsync(2000); // tried again, as after any failure
+    expect(b.sent).toHaveLength(2);
+    // the app was deployed again while this tab was open: its save is not known to the server
+    b.failAs("outdated");
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(b.sent).toHaveLength(3);
+    expect([words(), studio.said.at(-1)]).toEqual([WORDS.outdated, [NOTICES.outdated, "error"]]);
+    // nothing more is sent, whatever is typed or heard, and nothing more is said
+    await edit(keeper, studio, "Typed after");
+    keeper.online();
+    keeper.heard({ pageId: PAGE, revision: 9 });
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect([b.sent.length, words(), studio.said.length]).toEqual([3, WORDS.outdated, 2]);
+    // the record goes on, as work not sent: loaded again, it opens and goes at once
+    expect(readRecord(b.browser.storage)).toEqual({ pageId: PAGE, base: 3, local: canonical(edited("Typed after")), sent: null, unsent: true });
+    const again = fakeBrowser(() => okAnswer(4), b.storage);
+    const reloaded = started(account(3), desk(edited("Typed after")), again);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sentBy(again)).toEqual([["Typed after", 3]]);
+    expect(reloaded.words()).toBe(WORDS.saved);
+    // and when it is the first try that the server does not know, an edit after it says so still
+    const first = fakeBrowser(() => { throw new Error("not found"); });
+    first.failAs("outdated");
+    const tab = started(account(3), desk(), first);
+    await edit(tab.keeper, tab.studio, "Typed");
+    await vi.advanceTimersByTimeAsync(1650);
+    await edit(tab.keeper, tab.studio, "Typed again");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect([first.sent.length, tab.words()]).toEqual([1, WORDS.outdated]);
   });
 
   test("work the account has already ends the tries: the next edit says Saving… and goes two seconds after it", async () => {

@@ -390,6 +390,69 @@ export async function autosaveChecks({ chrome, origin, stack, check, out }: Auto
     check("and the other way round, and a second time on the same device: each opens the other's version as quietly, and goes on saving",
       quiet(phoneBack, "Laptop again") && quiet(laptopTwice, "Phone again"), { phone: phoneBack, laptop: laptopTwice });
 
+    // ── Back, then Forward ────────────────────────────────────────────────────────────────
+    // The home page's link opens the studio without loading a new document, and the browser's
+    // Back and Forward then bring the studio's route back as the server sent it the first
+    // time, with the account's page as it was then. The work saved since must stay.
+    const viaHome = async (p: Person) => {
+      await p.page.goto(origin);
+      await p.page.eval(`window.__sameDocument = true`);
+      await p.keys.clickOn('a[href="/studio"]');
+      await settled(() => where(p), (path) => path === "/studio", 10_000);
+      await studioReady(p);
+    };
+    const backAndForward = async (p: Person) => {
+      await p.page.eval(`history.back()`);
+      await settled(() => where(p), (path) => path === "/", 10_000);
+      await p.page.eval(`history.forward()`);
+      await settled(() => where(p), (path) => path === "/studio", 10_000);
+      await studioReady(p);
+    };
+    const sameDocument = (p: Person) => p.page.eval<boolean>(`window.__sameDocument === true`);
+    await viaHome(lee);
+    await settled(() => titleIn(lee), (t) => t === "Phone again");
+    await saveFrom(lee, "Typed before going back");
+    const sentBefore = (await savesSent(lee)).length, revisionAtBack = (await pageOf(leeAddress))!.revision;
+    await backAndForward(lee);
+    const cameBack = await settled(async () => ({ title: await titleIn(lee), saying: (await indicator(lee))?.saving }), (s) => s.saying === "saved", 10_000);
+    await sleep(2500); // not a wait for something to happen: past the two seconds, to see that nothing was sent
+    const afterBack = {
+      ...cameBack,
+      sameDocument: await sameDocument(lee),
+      dialog: await lee.page.eval<boolean>(`!!document.querySelector("dialog[open]")`),
+      aside: await lee.page.eval<string | null>(`localStorage.getItem("scene-studio/v1/set-aside")`),
+      said: await announced(lee),
+      saves: (await savesSent(lee)).length - sentBefore,
+      revision: [revisionAtBack, (await pageOf(leeAddress))!.revision],
+    };
+    check("Back and then Forward to the studio keeps the work saved since: the page the route was first sent with does not open over it, and nothing is set aside, sent or said",
+      afterBack.sameDocument && afterBack.title === "Typed before going back" && afterBack.saying === "saved" && !afterBack.dialog && afterBack.aside === null && afterBack.said === ""
+      && afterBack.saves === 0 && afterBack.revision[0] === afterBack.revision[1], afterBack);
+
+    // The dialog for work set aside opens once, as the work is set aside: not again when the
+    // studio comes back from another page of the app, though the copy is still kept. The work
+    // here is changed where the record cannot say so, so the account's page opens over it.
+    await leePhone.page.goto(origin);
+    await leePhone.page.eval(`(() => { const s = JSON.parse(localStorage.getItem("scene-studio/v1")); s.page.links.newsletter.title = "Typed where the record cannot say"; localStorage.setItem("scene-studio/v1", JSON.stringify(s)); window.__sameDocument = true; })()`);
+    await leePhone.keys.clickOn('a[href="/studio"]');
+    await settled(() => where(leePhone), (path) => path === "/studio", 10_000);
+    await studioReady(leePhone);
+    const toldOnce = await settled(() => leePhone.page.eval<boolean>(`!!document.querySelector('dialog[open] [data-ui="aside-why"]')`), (ok) => ok, 10_000);
+    if (toldOnce) await leePhone.keys.clickOn('dialog[open] [data-ui="aside-close"]');
+    await backAndForward(leePhone);
+    await settled(() => indicator(leePhone), (i) => i?.saving === "saved", 10_000);
+    await sleep(500); // not a wait for something to happen: time for a dialog that should not open
+    const cameBackTo = {
+      toldOnce,
+      sameDocument: await sameDocument(leePhone),
+      dialog: await leePhone.page.eval<boolean>(`!!document.querySelector("dialog[open]")`),
+      kept: await leePhone.page.eval<boolean>(`!!localStorage.getItem("scene-studio/v1/set-aside")`),
+      title: await titleIn(leePhone),
+    };
+    check("the dialog for work set aside opens once: not again when the studio comes back from another page of the app, with the copy still kept",
+      cameBackTo.toldOnce && cameBackTo.sameDocument && !cameBackTo.dialog && cameBackTo.kept && cameBackTo.title === "Typed before going back", cameBackTo);
+    if (cameBackTo.dialog) await leePhone.keys.clickOn('dialog[open] [data-ui="aside-close"]');
+
     // ── the top bar with the indicator's words ────────────────────────────────────────────
     // Signed in, at a phone's width and between 900 px and a wide window, editing and
     // previewing, with the indicator in its longest words on a ready-made scene ("Changed

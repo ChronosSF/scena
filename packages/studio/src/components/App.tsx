@@ -70,8 +70,15 @@ export function App({ account, saving }: StudioProps = {}) {
   const [exportOpen, setExportOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [setAsideOpen, setSetAsideOpen] = useState(store.setAsideOnLoad); // said once, as soon as it happens; the More menu has it after that
-  // the same when the host sets the open work aside to open its own (host.ts, replace)
-  useEffect(() => { if (asideN) setSetAsideOpen(true); }, [asideN]);
+  // The same when the host sets the open work aside to open its own (host.ts, replace): once,
+  // as the count goes up. The store outlives this component (an app may show another of its
+  // pages and come back), so the count seen as it mounts is not news.
+  const asideSeen = useRef(asideN);
+  useEffect(() => {
+    if (asideN === asideSeen.current) return;
+    asideSeen.current = asideN;
+    setSetAsideOpen(true);
+  }, [asideN]);
   const [problems, setProblems] = useState<string[]>([]);
   const [dropping, setDropping] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);

@@ -184,6 +184,7 @@ describe the same work. Then (`whichOpens` in `drafts/autosave.ts`):
 | has a page | the same page, whatever order its keys are in | either: they are the same |
 | has a page | made from the page at the account's revision, with changes not yet sent (the record says so) | the work here, and it is sent at once |
 | has a page, one revision on | made from what the record says was on its way, which the account has | the same |
+| has a page, at an earlier revision than the record's | the work the record describes | the work here: the page handed in is an old copy. Sent at once if it has changes not sent, and the server is asked what the account has now |
 | has a page, another version | the version the record says the account took, with nothing typed since (`unsent` is false) | the account's page, quietly: nothing set aside, no dialog, nothing said, Saved |
 | has a page | anything else | the account's page; the work here is set aside in this browser, kept until discarded, and the person is told |
 
@@ -191,7 +192,22 @@ The third row is "refreshing after edits loses nothing", inside the two seconds 
 studio saves in this browser 350 ms after the last change, and the record with it. The fourth is
 a reload while a save was on its way and its answer had not come.
 
-The fifth is switching devices: the laptop saved, the phone saved since, the laptop opens again.
+The fifth is the browser's Back and Forward. The home page's link opens the studio without
+loading a new document, and Next.js then brings a route back, on Back and Forward, as the server
+sent it the first time: with the account's page as it was then, not as it is. A code review of
+the pull request found that the rows below took such a page for news, since they asked only
+whether its revision differed from the record's: the older page opened quietly over the newer
+work, said "Saved", and the next keystroke wrote it over the newer version in the account. It
+was reproduced by hand before it was fixed. A draft's revision only goes up, so a page at an
+earlier revision than the record's is an old copy, and the work here stays. The record's
+revision is taken for the account's, the work goes at once if the record says it has changes
+not sent, and the server is asked at once what the account has (`looked`): a later revision
+there is the two-tab warning, and an earlier one, which only a database put back to an older
+copy can give, sends the work here. A copy from before the page was made hands in no page at
+all; that cannot be told from another person's account with no page, so the work is sent as
+the first row has it, and its save says nothing of replacing a version.
+
+The sixth is switching devices: the laptop saved, the phone saved since, the laptop opens again.
 Nothing of the person's is only on the laptop, so the phone's version opens in its place with
 nothing set aside and nothing said, as often as they go back and forth. Before this row, the
 laptop's own saved version was set aside each time, and the second time, with a copy already
@@ -238,7 +254,14 @@ server has said so for the work that is open, "Offline, retrying" when a save go
 with the validators' messages when it refused the draft, "Changed elsewhere" (Decision 4), and
 "Saved in this browser" with the reason for a page on drawings of one's own or after the session
 ended. Only "Saved" says the account has the work; a test holds every other state to saying
-where the work is. The words are shown beside the icon from 1180 px, the width at which the
+where the work is. A save that throws is told apart by what threw (`Browser.failed`, which
+`MountedStudio.tsx` answers): a fetch that failed altogether is "Offline, retrying"; an answer
+that was an error is "Not saved, retrying", since the connection is not at fault; and an action
+the server no longer knows, which is a tab from before the app was deployed again, is "Reload
+to save". That tab stops sending, since no retry can help it, and goes on writing the record,
+so the work goes to the account when the page is loaded again. A refusal that arrives after
+the page was changed again is of a page no longer open: it is neither shown nor said, and the
+work that is open goes instead. The words are shown beside the icon from 1180 px, the width at which the
 account slot's words show; below it the icon alone, with the whole sentence in the tooltip and
 for screen readers, at every width. With a host the indicator shows on a phone too (it is hidden
 there without one, as before): someone on a phone has to see "Offline". The studio's own
@@ -291,7 +314,7 @@ elsewhere gives the studio, and the single-file build leaves out:
 `replace` opens the host's work with no undo step (undo would bring back what was set aside,
 and the next autosave would write it over what was opened), and saves it in this browser at
 once. It sets aside what was open unless it holds nothing of the person's or is the same work,
-or `why` is null: the host says it keeps what is open already (Decision 6, fifth row), and
+or `why` is null: the host says it keeps what is open already (Decision 6, sixth row), and
 nothing is set aside or said. It refuses rather than lose a copy already set aside. `say` is the
 studio's own toast and live region; with a host it is the only way the indicator's news is
 heard (Decision 7). The store calls the host through two
@@ -337,13 +360,13 @@ revision of its own.
 
 ## Checks
 
-- `pnpm check` runs 392 tests, 58 more than before. Without `DATABASE_URL`, 25 database tests are
-  reported as skipped and 367 pass; with it, all 392 pass.
-  - `apps/web/test/drafts.test.ts` (40): the server's decisions with stand-ins (a request
+- `pnpm check` runs 401 tests, 67 more than before. Without `DATABASE_URL`, 25 database tests are
+  reported as skipped and 376 pass; with it, all 401 pass.
+  - `apps/web/test/drafts.test.ts` (49): the server's decisions with stand-ins (a request
     without a session writes nothing and nothing it sent is read, the account and page from
     the session alone, the first save makes the page, two first saves at once, a page on a scene
     of one's own, the validators' messages through `@scena/db`'s own queries, the base, a
-    database that fails); which work opens, by every row of Decision 6, and how the record is
+    database that fails, and what its log line may hold); which work opens, by every row of Decision 6, and how the record is
     read; the
     autosave in the browser with fake timers (the two seconds, a change while a save is on its
     way, a reload inside the two seconds, the retries and their waits, the indicator while they
@@ -354,7 +377,10 @@ revision of its own.
     and an account's page
     that would not open, both said aloud, two tabs, a save heard while one's own is on its way,
     looking again, a save after one that got no answer, nothing sent while the studio is not on
-    screen); and the indicator's words.
+    screen, an old copy of the route with and without changes not sent, one from before the
+    page was made, an account behind the record, a refusal that comes late, no question to the
+    server after a try with no answer, a save answered with an error, and one the server no
+    longer knows); and the indicator's words.
   - `apps/web/test/session.test.ts` (one more): `whoIsAsking` for each answer of Supabase Auth
     and the database, a session that has run out (could not say, to a save; no one, to a page;
     Supabase Auth not asked), and the studio route's read of the page, and what it does when
@@ -373,8 +399,8 @@ revision of its own.
     page with no address (keeps its draft's handle, found by none, many of them, the first
     address), with a database; the draft's handle and the base checked before the database is
     asked, without one.
-- `pnpm verify:web`: 88 checks with Google off (89 with it on, as CI runs it), the 66 of before
-  and 22 for autosave (`tools/autosave-checks.ts`), against the stack:
+- `pnpm verify:web`: 90 checks with Google off (91 with it on, as CI runs it), the 66 of before
+  and 24 for autosave (`tools/autosave-checks.ts`), against the stack:
   - a visitor who is not signed in has the studio as before and sends nothing;
   - a signed-in person on a canvas of their own drawings is saved in this browser only, told
     why, and sends nothing;
@@ -402,6 +428,10 @@ revision of its own.
   - switching devices, one person in two browsers: the laptop reloaded after the phone saved
     opens the phone's version with no dialog, nothing set aside or said, nothing sent, and
     "Saved"; then the other way round, and a second time on the laptop;
+  - Back and then Forward to the studio, reached by the home page's link: the work saved since
+    stays, with nothing set aside, sent or said, in the same document;
+  - the dialog for work set aside opens once: not again when the studio comes back from another
+    page of the app, with the copy still kept;
   - the top bar with the indicator in its longest words, signed in, at 375, 900, 1024, 1180,
     1200, 1280, 1366 and 1440 px, editing and previewing: its groups keep apart, nothing runs
     off, and the words show from 1180 px; with the own-scene words in Preview at 1180 and 1200
@@ -526,7 +556,7 @@ in turn in the same way:
 Notes on these runs:
 
 - The rows on which work opens quietly are of the rule as a second check by hand left it
-  (Decision 6, fifth row). That check ran the whole gate again, took out the 20 guards of the
+  (Decision 6, sixth row). That check ran the whole gate again, took out the 20 guards of the
   first table once more, with the two whose lines had changed since taken out where they are
   now, and the ones of this table: all were caught by the unit tests but the studio's own
   warning said with a host, which the browser check catches. It then built the app with the
@@ -552,6 +582,43 @@ Notes on these runs:
   That was the code's gap, not only the check's: it now keeps the word, and the try after the
   failing one goes at once (a unit test, and the take-out above). The gate was run again.
 
+A code review of the pull request then found six things: Back and Forward opening an older
+page over newer work, quietly; a refusal that came late leaving the corrected page unsent;
+every failed save read as "Offline", a tab from before a deploy among them; a tab told that
+another device had saved when the save was its own; the set-aside dialog opening again each
+time the studio came back; and a failed query's log line holding the person's page. The first
+was reproduced by hand before it was fixed, and tried again by hand after. Each fix was taken
+out in turn:
+
+| Taken out | Caught by |
+|---|---|
+| a page at an earlier revision than the record's taken for an old copy (`whichOpens`) | 4 unit tests; the Back and Forward check |
+| the record's revision taken for the account's, on an old copy | 3 unit tests |
+| an old copy's work taken for sent only when the record says so / nothing said of what its save replaces | 1 unit test / 1 unit test |
+| nothing said of replacing a version when no page was handed in and the record has the work | 1 unit test |
+| the server asked at once after an old copy | 2 unit tests |
+| an account behind the record's revision given the work here | 1 unit test |
+| the work that is open going after a late refusal | 1 unit test |
+| no question to the server after a try with no answer | 2 unit tests |
+| an answer that was an error told from no answer (the class / `MountedStudio.tsx`) | 1 unit test / the offline check, which then reads "Not saved, retrying" |
+| a save the server no longer knows ending the tries | 1 unit test |
+| that tab going on writing the record / not hearing other tabs / keeping its words at an edit | 1 unit test each |
+| the log line without the statement, for a save / a read / an error with no cause | 1 unit test each |
+| the set-aside dialog opening only as the count goes up (`App.tsx`) | the check that it opens once |
+| **an action the server does not know told from other errors (`unstable_isUnrecognizedActionError`, `MountedStudio.tsx`)** | **nothing**: it needs the app built again under an open tab |
+
+Notes on these runs:
+
+- The tab's words at an edit were missed at first: the test reached that line only after two
+  failed tries, when the indicator is left alone anyway. It now has a first try the server does
+  not know.
+- The three that only a browser shows (the first row, the dialog, and `MountedStudio.tsx`'s
+  part of the error) were taken out together in one build. `pnpm verify:web` failed on the
+  Back and Forward check, the dialog check and the offline check, and on the centre check,
+  whose laptop the old page had left behind. So the built app brings the old copy back too,
+  not only the development server.
+- The 42 take-outs of the tables above were run again on this tree, with the same result.
+
 ## What waits
 
 - **The unpublished-changes bar**, with publishing (Decision 10).
@@ -570,7 +637,7 @@ Notes on these runs:
   changes replaces them with its own, saying only that it replaced a version it did not have.
 - **And it is gone from the device that made it, too, once that device opens again.** The
   account took the version and nothing was typed there since, so that device's record says
-  nothing is unsent, and the account's newer page opens over it quietly (Decision 6, fifth row):
+  nothing is unsent, and the account's newer page opens over it quietly (Decision 6, sixth row):
   nothing of it is kept aside. The tab that replaced it
   was told at the time. Keeping it would need the server to remember where a replacing save came
   from and what it replaced; that is for issue 16, or for revisions (20 to 22), which would keep
@@ -599,8 +666,17 @@ Notes on these runs:
   its next try, **followed by a save from another device**, leaves the first device's version
   reading as unsent: its record never heard that the account took it. It is set aside and said
   when that device opens again. Nothing is lost.
-- **The account's page is in the studio route's HTML**, for the person it belongs to; the page is
-  rendered for each request and not cached.
+- **The account's page is in the studio route's HTML**, for the person it belongs to; the server
+  renders it for each request and caches nothing. The browser does keep the route as it was
+  sent, for Back and Forward (Decision 6, fifth row), so the page handed in can be an old copy.
+  One that this browser has saved over since is known by its revision. One that only another
+  device has saved over since is not, and is found as any open tab finds it: when the tab is
+  looked at again, or from the answer to its next save.
+- **A tab from before a deploy does not save to the account** until it is loaded again, and says
+  so (Decision 7). What is typed there meanwhile is in this browser, and goes when it is.
+- **A failed query's log line has what the database said, not the statement**, whose parameters
+  include the person's page (`whatFailed` in `drafts/save.ts`), for a save and for the reads
+  `auth/server.ts` makes for the studio.
 - **"Start over", then a ready-made scene, replaces the account's page at the next save**, as any
   edit does. The studio's dialogs say what happens "in this browser", which is true of each step,
   and Undo brings the work back until the studio is closed; the account keeps no older version.
@@ -628,5 +704,5 @@ Notes on these runs:
 - A nullable handle, which every reader of a page now has to expect.
 - A second record in `localStorage` beside the studio's own, and a second place the work can be,
   which the person sees in the indicator.
-- 22 more browser checks, about 130 seconds on this machine, and a sign-in for each
+- 24 more browser checks and the time they take, and a sign-in for each
   person they use.

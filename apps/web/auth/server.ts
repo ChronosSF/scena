@@ -11,7 +11,7 @@ import { cookies } from "next/headers";
 import { getPageByUser, getUser as getProfile, type User as Profile } from "@scena/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AccountPage } from "../drafts/answer.ts";
-import type { Asking } from "../drafts/save.ts";
+import { whatFailed, type Asking } from "../drafts/save.ts";
 import type { AuthConfig } from "./config.ts";
 import { isSessionCookie } from "./cookie.ts";
 import { database, profileQueries } from "./db.ts";
@@ -79,7 +79,7 @@ export const whoIsAsking = cache(async (): Promise<Asking> => {
     return await ask();
   } catch (e) {
     // the configuration is wrong, or the database did not answer
-    console.error(`drafts: who is asking could not be told: ${(e as Error).message}`);
+    console.error(`drafts: who is asking could not be told: ${whatFailed(e)}`);
     return UNAVAILABLE;
   }
 });
@@ -106,7 +106,7 @@ export async function studioAccount(): Promise<StudioAccount> {
     const page = await getPageByUser(database(), account.id);
     return { signIn: true, signedIn: { email: account.email }, saved: page ? { pageId: page.id, revision: page.draftRevision, page: page.draft } : null };
   } catch (e) {
-    console.error(`studio: sign-in is left out of the top bar: ${(e as Error).message}`);
+    console.error(`studio: sign-in is left out of the top bar: ${whatFailed(e)}`);
     return { signIn: false, signedIn: null, saved: null };
   }
 }

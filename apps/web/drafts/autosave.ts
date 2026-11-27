@@ -69,9 +69,18 @@ export interface Heard {
   revision: number;
 }
 
+/**
+ * What a save that threw says of the server: it gave no answer at all (the connection), it
+ * answered with an error, or it does not know this studio's save any more, because the app
+ * was deployed again while this tab was open, and only loading the page again mends that.
+ */
+export type Failure = "no-answer" | "error" | "outdated";
+
 /** What the autosave needs from the browser and the server. */
 export interface Browser {
   save(draft: DraftToSave): Promise<SaveAnswer>;
+  /** What a `save` that threw means; the browser and the framework know, this class does not. */
+  failed(error: unknown): Failure;
   revision(): Promise<RevisionAnswer>;
   storage: Pick<Storage, "getItem" | "setItem"> | null;
   setTimer(fn: () => void, ms: number): unknown;
@@ -117,6 +126,13 @@ export type Opening =
    * quietly, with nothing set aside, since nothing of the person's is only here.
    */
   | "moved-on"
+  /**
+   * The page handed in is older than a version this browser knows the account took. A draft's
+   * revision only goes up, so that page is an old copy: the browser's Back and Forward bring
+   * the studio's route back as the server sent it earlier, without asking again. The work here
+   * stays, at the revision the record has, and the server is asked what the account has now.
+   */
+  | "newer"
   /** Anything else: the account's page opens, and the work here is set aside, kept, and said to be. */
   | "account";
 
@@ -137,6 +153,8 @@ export function whichOpens(account: AccountPage | null, here: PageDocument, reco
   if (record.base === account.revision) return "ahead";
   // the last save reached the account, and its answer did not reach this browser
   if (record.sent !== null && record.base + 1 === account.revision && record.sent === theirs) return "ahead";
+  // the account cannot have gone back: the page handed in is an old copy of it, not news
+  if (record.base > account.revision) return "newer";
   // made from a version the account has moved on from: quiet only when nothing here is unsent
   return record.unsent ? "account" : "moved-on";
 }
@@ -182,6 +200,12 @@ export class AccountAutosave {
   private behind = false;
   /** Saving to the account has stopped: signed out, or the account's page could not be opened. */
   private stopped = false;
+  /**
+   * The server does not know this studio's save any more (Failure, "outdated"). Nothing more is
+   * sent from this tab; the record goes on beside the studio's saves, so that the work goes to
+   * the account once the page is loaded again.
+   */
+  private outdated = false;
   /** Whether the studio is on screen; nothing is sent while it is not (MountedStudio.tsx). */
   private attached = false;
   private lastLook = Number.NEGATIVE_INFINITY;
@@ -217,7 +241,7 @@ export class AccountAutosave {
   }
   /** The words for where things stand now, once nothing is on its way. */
   private settle(): void {
-    if (this.stopped) return;
+    if (this.stopped || this.outdated) return;
     if (this.behind) this.show(WORDS.behind);
     else if (!this.readyMade) this.show(WORDS["own-scene"]);
     else if (this.local !== null && this.local === this.refused) return; // the refusal's words stay
@@ -230,7 +254,22 @@ export class AccountAutosave {
     if (this.studio) return; // React calls an effect twice in development
     this.studio = studio;
     const here = studio.work();
-    const opening = whichOpens(this.account, here.page, readRecord(this.browser.storage));
+    const record = readRecord(this.browser.storage);
+    const opening = whichOpens(this.account, here.page, record);
+    // The page handed in is an old copy (Opening, "newer"): the record, not that page, says
+    // where the account was when this browser last heard from it.
+    const oldCopy = !!this.account && !!record && record.pageId === this.account.pageId && record.base > this.account.revision;
+    if (opening === "newer") {
+      this.base = record!.base;
+      this.acked = record!.unsent ? null : canonical(here.page);
+      // with changes not sent, a try of this browser's may have reached the account since:
+      // nothing is said of what the next save replaces, rather than something that may be untrue
+      this.unsure = record!.unsent;
+    }
+    // No page was handed in, and the record says the work here went to one: an old copy from
+    // before the page was made, or another person's account. The work goes either way, and its
+    // save says nothing of replacing a version, which would be this browser's own.
+    if (!this.account && record && record.local === canonical(here.page)) this.unsure = true;
     if (opening === "account" || opening === "moved-on") {
       const page = this.account!.page, ready = shipped.get(page.scene.id);
       // checked here, so that a refusal from the studio can only mean a copy already kept aside
@@ -252,14 +291,16 @@ export class AccountAutosave {
     this.local = canonical(open.page);
     this.readyMade = onReadyMadeScene(open.scene);
     this.record();
-    if (opening === "browser" || opening === "ahead") this.schedule(0);
+    if (opening === "browser" || opening === "ahead" || (opening === "newer" && this.local !== this.acked)) this.schedule(0);
     this.settle();
+    // an old copy says nothing of what the account has now: the server is asked at once
+    if (oldCopy) void this.looked();
   };
 
   /** The documents changed: the indicator says so at once, and the two seconds start again. */
   changed = (work: StudioWork): void => {
     this.lastChange = this.browser.now();
-    if (this.stopped) return;
+    if (this.stopped || this.outdated) return;
     this.readyMade = onReadyMadeScene(work.scene);
     // a page on a scene of one's own is not sent, so no try waits for it either
     if (!this.readyMade) { this.cancel(); this.tries = 0; this.show(WORDS["own-scene"]); return; }
@@ -273,6 +314,7 @@ export class AccountAutosave {
     this.local = canonical(work.page);
     this.readyMade = onReadyMadeScene(work.scene);
     this.record();
+    if (this.outdated) return; // recorded, so that it goes once the page is loaded again
     if (!this.readyMade) { this.cancel(); this.tries = 0; this.settle(); return; }
     // the account has this version already, unless a try that got no answer put another there
     if (this.local === this.acked && this.onItsWay === null && !this.unsure) { this.cancel(); this.settled(); return; }
@@ -302,26 +344,41 @@ export class AccountAutosave {
 
   /** Another tab of this browser saved the account's page. */
   heard = (heard: Heard): void => {
-    if (this.stopped || !this.studio) return;
+    if (this.stopped || this.outdated || !this.studio) return;
     if (this.pageId !== null && heard.pageId !== this.pageId) return;
     this.newest = Math.max(this.newest, heard.revision);
     // while a save of this tab's is on its way, its answer decides (answered)
     if (this.onItsWay === null && (this.base === null || heard.revision > this.base)) this.fallBehind();
   };
 
-  /** The tab is looked at again: asks the server whether the account's page has moved on. */
+  /**
+   * The tab is looked at again: asks the server whether the account's page has moved on. Not
+   * while a save is on its way or waiting to try again, nor after a try that got no answer:
+   * the account may then be a revision on by this tab's own save, which is no news from
+   * elsewhere, and the answer to its next save says what there is to say.
+   */
   looked = async (): Promise<void> => {
-    if (this.stopped || !this.studio || this.onItsWay !== null || this.behind) return;
+    const busy = () => this.stopped || this.outdated || this.onItsWay !== null || this.unsure || this.tries > 0;
+    if (busy() || !this.studio || this.behind) return;
     const now = this.browser.now();
     if (now - this.lastLook < LOOK_EVERY_MS) return;
     this.lastLook = now;
     let answer: RevisionAnswer;
     try { answer = await this.browser.revision(); } catch { return; } // asked again next time
-    if (this.stopped || this.onItsWay !== null) return;
+    if (busy()) return;
     if (!answer.ok) { if (answer.reason === "signed-out") this.signedOut(); return; }
     if (answer.revision === null) return;
     if (this.pageId !== null && answer.pageId !== this.pageId) this.fallBehind();
     else if (this.base === null || answer.revision > this.base) { this.newest = Math.max(this.newest, answer.revision); this.fallBehind(); }
+    else if (answer.revision < this.base) {
+      // The account is behind what this browser was told it took: a draft's revision only goes
+      // up, so the database was put back to an earlier copy. The work here is not in it: it goes.
+      this.base = answer.revision;
+      this.acked = null;
+      this.unsure = true;
+      this.schedule(0);
+      this.settle();
+    }
   };
 
   /**
@@ -336,7 +393,7 @@ export class AccountAutosave {
 
   // ── sending ───────────────────────────────────────────────────────────────────────────
   private schedule(ms: number): void {
-    if (this.stopped) return;
+    if (this.stopped || this.outdated) return;
     this.cancel();
     this.timer = this.browser.setTimer(() => { this.timer = null; void this.send(); }, Math.max(0, ms));
   }
@@ -346,27 +403,41 @@ export class AccountAutosave {
   }
 
   private async send(): Promise<void> {
-    if (this.stopped || !this.attached || this.onItsWay !== null || this.local === null || !this.readyMade) return;
+    if (this.stopped || this.outdated || !this.attached || this.onItsWay !== null || this.local === null || !this.readyMade) return;
     const json = this.local;
     if (json === this.refused) return;
     if (json === this.acked && !this.unsure) { this.settled(); return; }
     this.onItsWay = json;
     this.record();
     if (!this.behind && this.tries === 0) this.show(WORDS.saving);
-    let answer: SaveAnswer | null;
+    let answer: SaveAnswer | null, failure: Failure | null = null;
     try {
       answer = await this.browser.save({ page: JSON.parse(json) as PageDocument, base: this.base });
-    } catch {
-      answer = null; // no answer: the connection, or a server that did not answer at all
+    } catch (e) {
+      answer = null; // no answer to go by; what failed says which words are true (Failure)
+      failure = this.browser.failed(e);
     }
     this.onItsWay = null;
-    if (!this.stopped) this.answered(json, answer);
+    if (this.stopped) return;
+    if (failure === "outdated") this.outOfDate();
+    else this.answered(json, answer, failure);
   }
 
-  private answered(json: string, answer: SaveAnswer | null): void {
+  /** The server does not know this studio's save any more: trying again from this tab cannot help, loading the page again does. */
+  private outOfDate(): void {
+    this.outdated = true;
+    this.cancel();
+    this.record(); // nothing is on its way now; the work here goes when the page is loaded again
+    this.show(WORDS.outdated);
+    this.studio?.say(NOTICES.outdated, "error");
+  }
+
+  private answered(json: string, answer: SaveAnswer | null, failure: Failure | null): void {
     if (answer === null || (!answer.ok && answer.reason === "unavailable")) {
+      // either way the save may have been written before it failed
       if (answer === null) this.unsure = true;
-      const state = answer === null ? "offline" : "retrying";
+      // no answer at all is the connection; an answer that was an error is the server's doing
+      const state = answer === null && failure !== "error" ? "offline" : "retrying";
       // said once as the state begins, not at every try or edit: the indicator itself says nothing aloud
       if (this.warned !== state) this.studio?.say(NOTICES[state], "error");
       this.warned = state;
@@ -401,6 +472,14 @@ export class AccountAutosave {
     switch (answer.reason) {
       case "invalid":
         this.refused = json;
+        // Changed while it was on its way: the refusal is of a page that is no longer open, and
+        // the timer that change set has run out with this save still out. The work that is open
+        // goes instead, and is refused in its turn if it has the same fault.
+        if (this.local !== json) {
+          this.schedule(this.lastChange + SAVE_AFTER_MS - this.browser.now());
+          this.settle();
+          return;
+        }
         this.show(refusedWords(answer.problems));
         this.studio?.say(refusedNotice(answer.problems), "error");
         return;
